@@ -459,10 +459,21 @@ class SpotifyAccount:
         index = max(0, int(index))
         if index > 40:
             return {"ok": False, "reason": "that is too far down the queue to skip to"}
+
+        # Firing next N times back to back does not work: Spotify applies them
+        # asynchronously, so past a couple of hops the skips overtake its own
+        # state and land somewhere else entirely. Step once, wait for the track
+        # to actually change, then decide again.
         try:
-            for _ in range(index + 1):
+            for step in range(index + 1):
+                before = self._current_uri()
                 self._api("/me/player/next", "POST")
-                time.sleep(0.12)        # let Spotify settle between skips
+                changed = self._await_change(before)
+                if self._current_uri() == uri:
+                    break                      # arrived early; stop skipping
+                if not changed:
+                    return {"ok": False, "skipped": step,
+                            "reason": "Spotify stopped responding to skips"}
         except urllib.error.HTTPError as exc:
             return {"ok": False, "reason": self._explain(exc)}
         except Exception as exc:
@@ -470,6 +481,23 @@ class SpotifyAccount:
         self._backoff_until = 0
         self._poke.set()
         return {"ok": True, "skipped": index}
+
+    def _current_uri(self):
+        try:
+            data = self._api("/me/player/currently-playing") or {}
+            return (data.get("item") or {}).get("uri")
+        except Exception:
+            return None
+
+    def _await_change(self, before, timeout=2.5):
+        """Wait until Spotify reports a different track, or give up."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(0.18)
+            now = self._current_uri()
+            if now and now != before:
+                return True
+        return False
 
     def seek(self, seconds):
         try:

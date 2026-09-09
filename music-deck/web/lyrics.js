@@ -57,13 +57,14 @@ function applyDesign(np, cfg) {
 
   set('--accent', accent);
   set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
-  set('--fg', text.title_color || '#f4f4f8');
-  set('--dim', text.artist_color || 'rgba(244,244,248,.42)');
+  const pal = design.palette || {};
+  set('--fg', text.title_color || pal.text || '#f4f4f8');
+  set('--dim', text.artist_color || pal.muted || '#9a9aa8');
   set('--hl', opts.highlight === 'text' ? (text.title_color || '#f4f4f8') : accent);
   set('--card-radius', (card.radius ?? 18) + 'px');
   set('--card-fill', follow ? (card.fill || 'transparent') : 'transparent');
   set('--card-border', follow ? (card.border ?? 0) + 'px' : '0px');
-  set('--card-border-color', card.border_color || 'transparent');
+  set('--card-border-color', card.border_color || pal.line || 'transparent');
   const sh = Number(text.shadow || 0);
   set('--text-shadow', sh > 0
     ? `0 ${(0.05 * sh).toFixed(3)}em ${(0.22 * sh).toFixed(3)}em rgba(0,0,0,${Math.min(0.9, sh)})`
@@ -78,14 +79,15 @@ function applyDesign(np, cfg) {
     else applyBackground(s, el.bgImage, bg, set);
     el.bgDim.style.opacity = String(bg.dim ?? 0);
   } else {
-    const own = opts.bg || '#0f0f17';
-    set('--bg', own);
-    if (surround) el.cardBg.style.background = own;
-    s.classList.remove('has-bg-image');
-    el.bgDim.style.opacity = '0';
+    // This window has a look of its own: a full background, not just a colour.
+    const own = opts.bg_own || { mode: 'solid', color: opts.bg || '#0f0f17' };
+    if (surround) applyBackgroundInside(s, el.cardBg, own);
+    else applyBackground(s, el.bgImage, own, set);
+    el.bgDim.style.opacity = String(own.dim ?? 0);
   }
 
   s.classList.toggle('align-left', opts.align === 'left');
+  s.classList.toggle('interactive', !PREVIEW && opts.interactive !== false);
   s.classList.toggle('keep-past', opts.dim_past === false);
   s.classList.toggle('preview', PREVIEW);
   sizeRoot();
@@ -171,6 +173,27 @@ function activeIndex(pos) {
     return Math.min(n - 1, Math.floor((pos / clock.duration) * n));
   }
   return -1;
+}
+
+/* Click a line to jump the song to it. */
+function wireLineSeek() {
+  el.lines.addEventListener('pointerdown', (e) => {
+    if (PREVIEW || (opts && opts.interactive === false)) return;
+    const row = e.target.closest('.line');
+    if (!row || lyrics.status !== 'synced') return;
+    e.stopPropagation();
+    const idx = [...el.lines.children].indexOf(row);
+    const line = lyrics.lines[idx];
+    if (!line) return;
+    const to = Math.max(0, line.t - Number((opts && opts.offset) || 0));
+    clock = { ...clock, position: to, at: performance.now() };
+    active = idx;
+    centreActive();
+    fetch('/api/seek', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds: to }),
+    }).catch(() => {});
+  });
 }
 
 function centreActive(force) {
@@ -283,5 +306,6 @@ fetch('/api/state').then((r) => r.json()).then((d) => {
   onState(d.now);
 }).catch(() => {});
 
+wireLineSeek();
 connect();
 requestAnimationFrame(tick);

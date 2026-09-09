@@ -59,23 +59,13 @@ const SCENES = {
   watercolor: {
     label: 'Watercolour blossoms',
     tile: 560,
-    defaults: { c1: '#f6d9dc', c2: '#e39aa8', c3: '#f2c3c9', scale: 1, density: 1, seed: 7 },
+    defaults: { c1: '#f6d9dc', c2: '#e39aa8', c3: '#8d4a58', scale: 1, density: 1, seed: 7 },
     build(p, rnd) {
       const W = 560, H = 560;
       const dark = shade(p.c2, -0.35);
       let out = `<defs>
         <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.4"/></filter>
-        <filter id="softer" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.2"/></filter>
       </defs><rect width="${W}" height="${H}" fill="${p.c1}"/>`;
-
-      // faint bubbles behind
-      const bubbles = Math.round(5 * p.density);
-      for (let i = 0; i < bubbles; i++) {
-        const x = rnd() * W, y = rnd() * H, r = 34 + rnd() * 62;
-        out += wrapped(x, y, r + 6, W, H, (xx, yy) =>
-          `<g filter="url(#softer)"><circle cx="${f1(xx)}" cy="${f1(yy)}" r="${f1(r)}" fill="${p.c3}" fill-opacity=".38"/>
-           <ellipse cx="${f1(xx - r * .35)}" cy="${f1(yy - r * .38)}" rx="${f1(r * .32)}" ry="${f1(r * .2)}" fill="#fff" fill-opacity=".45" transform="rotate(-25 ${f1(xx - r * .35)} ${f1(yy - r * .38)})"/></g>`);
-      }
 
       // big soft blossoms, two translucent layers each so the overlaps darken
       const blossoms = Math.max(2, Math.round(4 * p.density));
@@ -87,13 +77,21 @@ const SCENES = {
           let g = `<g transform="translate(${f1(xx)} ${f1(yy)}) rotate(${f1(rot)}) scale(${f1(s)})" filter="url(#soft)">`;
           for (let k = 0; k < 5; k++) g += `<path d="${PETAL_SOFT}" fill="${p.c2}" fill-opacity=".5" transform="rotate(${k * 72}) scale(1.12)"/>`;
           for (let k = 0; k < 5; k++) g += `<path d="${PETAL_SOFT}" fill="${p.c2}" fill-opacity=".42" transform="rotate(${k * 72 + 9}) scale(.92)"/>`;
-          g += `</g><g transform="translate(${f1(xx)} ${f1(yy)}) rotate(${f1(rot)}) scale(${f1(s)})" fill="none" stroke="${dark}" stroke-opacity=".55" stroke-width=".38" stroke-linecap="round">`;
+          // Stamens and centre in the detail colour.
+          g += `</g><g transform="translate(${f1(xx)} ${f1(yy)}) rotate(${f1(rot)}) scale(${f1(s)})" fill="none" stroke="${p.c3}" stroke-opacity=".8" stroke-width=".4" stroke-linecap="round">`;
           for (let k = 0; k < 7; k++) {
             const a = k * 51 + 12, L = 2.4 + (k % 3) * .7;
             const ex = Math.sin(a * Math.PI / 180) * L, ey = -Math.cos(a * Math.PI / 180) * L;
             g += `<path d="M${f1(ex * .3)},${f1(ey * .3)} Q${f1(ex * .8 + .4)},${f1(ey * .8)} ${f1(ex)},${f1(ey)}"/>`;
           }
-          return g + '</g>';
+          g += '</g>';
+          g += `<g transform="translate(${f1(xx)} ${f1(yy)}) rotate(${f1(rot)}) scale(${f1(s)})" fill="${p.c3}">`;
+          for (let k = 0; k < 7; k++) {
+            const a = k * 51 + 12, L = 2.4 + (k % 3) * .7;
+            const ex = Math.sin(a * Math.PI / 180) * L, ey = -Math.cos(a * Math.PI / 180) * L;
+            g += `<circle cx="${f1(ex)}" cy="${f1(ey)}" r=".5"/>`;
+          }
+          return g + `<circle r=".9" fill-opacity=".7"/></g>`;
         });
       }
       return out;
@@ -315,6 +313,7 @@ function sceneParams(cfg) {
 function applyBackgroundInside(stage, cardBg, bg) {
   applyBackground(stage, cardBg, bg, (k, v) => { if (k === '--bg') cardBg.style.background = v; });
   stage.classList.remove('has-bg-image');   // artwork lives in the card now
+  stage.style.setProperty('--bg-dim', String((bg || {}).dim ?? 0));
 }
 
 /**
@@ -343,7 +342,8 @@ function applyBackground(stage, layer, bg, setVar) {
     layer.style.backgroundSize =
       bg.fit === 'stretch' ? '100% 100%' : bg.fit === 'tile' ? 'auto' : (bg.fit || 'cover');
     layer.style.backgroundRepeat = bg.fit === 'tile' ? 'repeat' : 'no-repeat';
-    layer.style.backgroundPosition = 'center';
+    // Which part of the picture ends up on screen; each window can differ.
+    layer.style.backgroundPosition = `${bg.pos_x ?? 50}% ${bg.pos_y ?? 50}%`;
   }
   // Blur samples past the edges, so grow the layer to avoid soft borders.
   layer.style.filter = bg.blur ? `blur(${bg.blur}px)` : 'none';

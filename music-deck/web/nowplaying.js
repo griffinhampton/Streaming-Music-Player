@@ -71,12 +71,19 @@ function applyDesign(np) {
   if (np.equalizer) classes.push('show-eq');
   if (text.uppercase) classes.push('uppercase-title');
   if (text.align === 'center') classes.push('align-center');
+  if (np.interactive !== false && !PREVIEW) classes.push('interactive');
   // Keep whichever art state we had; render() owns that class.
   if (s.classList.contains('no-art-image')) classes.push('no-art-image');
   if (s.classList.contains('offline-on')) classes.push('offline-on');
   s.className = classes.join(' ');
 
   const accent = np.accent || '#8b5cf6';
+  const pal = np.palette || {};
+  // Blank means "inherit from the palette", which is what makes one colour
+  // change ripple through the whole design.
+  const TEXT = pal.text || '#f4f4f8';
+  const MUTED = pal.muted || '#9a9aa8';
+  const LINE = pal.line || '#2a2a3a';
   const set = (k, v) => s.style.setProperty(k, v);
 
   set('--accent', accent);
@@ -86,17 +93,17 @@ function applyDesign(np) {
   set('--card-radius', (card.radius ?? 18) + 'px');
   set('--card-pad', (card.padding ?? 12) + 'px');
   set('--card-border', (card.border ?? 1) + 'px');
-  set('--card-border-color', card.border_color || 'transparent');
+  set('--card-border-color', card.border_color || LINE);
   set('--art-radius', (art.radius ?? 10) + 'px');
   set('--art-border', (art.border ?? 0) + 'px');
-  set('--art-border-color', art.border_color || 'transparent');
+  set('--art-border-color', art.border_color || LINE);
   set('--bar-h', (prog.height ?? 5) + 'px');
   set('--bar-color', prog.color || accent);
   set('--title-size', (text.title_size ?? 1.72) + 'em');
   set('--title-weight', text.title_weight ?? 700);
-  set('--title-color', text.title_color || '#f4f4f8');
+  set('--title-color', text.title_color || TEXT);
   set('--artist-size', (text.artist_size ?? 1.0) + 'em');
-  set('--artist-color', text.artist_color || 'rgba(244,244,248,.62)');
+  set('--artist-color', text.artist_color || MUTED);
   set('--label-size', (text.label_size ?? 0.72) + 'em');
   set('--label-color', text.label_color || accent);
   set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
@@ -147,10 +154,20 @@ function renderStickers(list) {
   const paint = (node, items) => {
     node.innerHTML = items.map((st) => {
       const flip = st.flip ? -1 : 1;
-      return `<img class="sticker" src="/asset/${encodeURIComponent(st.asset)}" alt=""
-        style="left:${+st.x || 0}%; top:${+st.y || 0}%; width:${+st.w || 20}%;
-               opacity:${st.opacity ?? 1}; z-index:${Math.abs(st.z ?? 5)};
-               transform: translate(-50%,-50%) rotate(${+st.rot || 0}deg) scaleX(${flip});">`;
+      const url = `/asset/${encodeURIComponent(st.asset)}`;
+      const box = `left:${+st.x || 0}%; top:${+st.y || 0}%; width:${+st.w || 20}%;
+                   opacity:${st.opacity ?? 1}; z-index:${Math.abs(st.z ?? 5)};
+                   transform: translate(-50%,-50%) rotate(${+st.rot || 0}deg) scaleX(${flip});`;
+      if (st.tint && st.color) {
+        // A dropped-in picture keeps its own colours as an <img>. Painting it
+        // through a mask instead lets it take one colour, like the built-in
+        // motifs - the shape survives, the original colours do not.
+        return `<div class="sticker sticker-tinted" style="${box}
+          background-color:${st.color};
+          -webkit-mask-image:url('${url}'); mask-image:url('${url}');
+          aspect-ratio:${st.ar || 1};"></div>`;
+      }
+      return `<img class="sticker" src="${url}" alt="" style="${box}">`;
     }).join('');
   };
   paint(el.back, back);
@@ -263,20 +280,23 @@ function render(now) {
   }
 }
 
+/** One side of the progress bar, per the chosen mode. */
+function timeLabel(mode, pos, dur) {
+  if (mode === 'none' || !isFinite(pos)) return '';
+  if (mode === 'duration') return dur > 0 ? fmt(dur) : '';
+  if (mode === 'remaining') return dur > 0 ? '-' + fmt(dur - pos) : '';
+  return fmt(pos);                                   // elapsed
+}
+
 function tick() {
   let pos = clock.position;
   if (clock.playing) pos += (performance.now() - clock.at) / 1000;
   const dur = clock.duration;
-  if (dur > 0) {
-    pos = Math.min(pos, dur);
-    el.fill.style.width = (pos / dur * 100).toFixed(2) + '%';
-    el.elapsed.textContent = fmt(pos);
-    el.remain.textContent = '-' + fmt(dur - pos);
-  } else {
-    el.fill.style.width = '0%';
-    el.elapsed.textContent = fmt(pos);
-    el.remain.textContent = '';
-  }
+  if (dur > 0) pos = Math.min(pos, dur);
+  el.fill.style.width = dur > 0 ? (pos / dur * 100).toFixed(2) + '%' : '0%';
+  const prog = (design && design.progress) || {};
+  el.elapsed.textContent = timeLabel(prog.left || 'elapsed', pos, dur);
+  el.remain.textContent = timeLabel(prog.right || 'remaining', pos, dur);
   requestAnimationFrame(tick);
 }
 
@@ -324,9 +344,47 @@ function reportMetrics() {
   }).catch(() => {});
 }
 
+/* Clicking the bar seeks. It sits above the drag handler and swallows its own
+   pointer events, so the rest of the window still drags normally. */
+function wireSeeking() {
+  const track = document.querySelector('.progress-track');
+  if (!track) return;
+  const seekTo = (e) => {
+    const dur = clock.duration;
+    if (!dur) return;
+    const r = track.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width)));
+    const to = frac * dur;
+    clock = { ...clock, position: to, at: performance.now() };   // move instantly
+    fetch('/api/seek', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds: to }),
+    }).catch(() => {});
+  };
+  track.addEventListener('pointerdown', (e) => {
+    if (!interactive() || e.button !== 0) return;
+    e.stopPropagation();
+    track.setPointerCapture(e.pointerId);
+    seekTo(e);
+    const move = (ev) => seekTo(ev);
+    const up = (ev) => {
+      track.removeEventListener('pointermove', move);
+      track.removeEventListener('pointerup', up);
+      try { track.releasePointerCapture(ev.pointerId); } catch (_) {}
+    };
+    track.addEventListener('pointermove', move);
+    track.addEventListener('pointerup', up);
+  });
+}
+
+function interactive() {
+  return !PREVIEW && !(design && design.interactive === false);
+}
+
 /* No title bar means dragging is the only way to move it: forward pointer
    deltas to the server, which calls SetWindowPos on the host window. */
 if (!PREVIEW) {
+  wireSeeking();
   let dragging = false, pending = { dx: 0, dy: 0 }, last = null, flushTimer = null;
 
   const flush = () => {

@@ -8,6 +8,10 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Images would otherwise start a native drag, which swallows the pointer and
+   makes those parts of the window impossible to drag by. */
+img { -webkit-user-drag: none; user-drag: none; }
+
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
@@ -75,7 +79,14 @@ html, body {
 .stickers-back  { z-index: 1; }
 .stickers-front { z-index: 6; }
 
+.sticker-tinted {
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-size: contain;    mask-size: contain;
+  -webkit-mask-position: center; mask-position: center;
+}
+
 .sticker {
+  pointer-events: none;         /* the whole window drags, stickers included */
   position: absolute;
   transform-origin: center center;
   display: block;
@@ -118,7 +129,18 @@ html, body {
   display: none;
   background-position: center;
 }
-.card-bg::after { content: ""; position: absolute; inset: 0; background: var(--card-fill); }
+.card-bg::after {
+  content: ""; position: absolute; inset: 0;
+  background: var(--card-fill);
+}
+/* The veil belongs inside the card: with a solid surround the artwork is
+   painted in here, so a dim layer out on the stage would never cover it. */
+.card > .card-bg::before {
+  content: ""; position: absolute; inset: 0;
+  background: #000;
+  opacity: var(--bg-dim, 0);
+  pointer-events: none;
+}
 .stage.surround { background: var(--surround, #000); }
 .stage.surround .card { background: transparent; }
 .stage.surround .card > .card-bg { display: block; }
@@ -246,6 +268,20 @@ html, body {
 
 .progress { margin-top: 0.42em; }
 .stage.hide-progress .progress { display: none; }
+
+/* A 4px line is a hard thing to hit, especially mid-stream. When the bar is
+   clickable the box grows above and below it while the bar itself stays as
+   thin as it was: padding makes the target, negative margin keeps the layout
+   where it was, and content-box clipping keeps the paint on the bar. */
+.stage.interactive .progress-track {
+  cursor: pointer; pointer-events: auto;
+  padding-block: .55em;
+  margin-block: -.55em;
+  height: calc(var(--bar-h) + 1.1em);
+  background-clip: content-box;
+  overflow: visible;
+}
+.stage.interactive .progress-track:hover .progress-fill { filter: brightness(1.25); }
 
 .progress-track {
   height: var(--bar-h);
@@ -416,17 +452,24 @@ html, body {
 .decor > .decor-left  { left: 0; }
 .decor > .decor-right { right: 0; }
 
-.stage.decor-animate .decor-strip span { animation: drift 18s linear infinite; }
-.stage.decor-animate .decor-left span,
-.stage.decor-animate .decor-right span { animation-name: drift-v; }
-@keyframes drift {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-@keyframes drift-v {
-  from { transform: translateY(0); }
-  to   { transform: translateY(-50%); }
-}
+/* Characters slide their text; motif strips slide their tiled background, which
+   is why motifs used to sit still. The four sides run as a circuit - along the
+   top, down the right, back along the bottom, up the left - so an all-round
+   frame flows around the window instead of two edges going one way and two
+   the other. */
+.stage.decor-animate .decor-strip span  { animation: drift var(--decor-time, 24s) linear infinite; }
+.stage.decor-animate .decor-right span  { animation-name: drift-v; }
+.stage.decor-animate .decor-bottom span { animation-name: drift-back; }
+.stage.decor-animate .decor-left span   { animation-name: drift-v-back; }
+
+
+@keyframes drift        { from { transform: translateX(0); }    to { transform: translateX(-50%); } }
+@keyframes drift-back   { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@keyframes drift-v      { from { transform: translateY(0); }    to { transform: translateY(-50%); } }
+@keyframes drift-v-back { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+
+/* The motif span is twice the strip's length, so it can slide half of itself. */
+.stage.decor-motif .decor > .decor-strip > span { position: absolute; top: 0; left: 0; }
 
 .kaomoji {
   font-size: .78em;

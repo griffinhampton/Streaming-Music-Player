@@ -72,6 +72,9 @@ function saveNp(patch) {
   Object.entries(patch).forEach(([k, v]) => setPath(CONFIG.nowplaying, k, v));
   // Push straight into the preview so it never lags behind the sliders.
   pushPreview();
+  if (Object.keys(patch).some((k) => k === 'accent' || k.startsWith('palette.'))) {
+    mirrorPaletteToUi();
+  }
   deepAssign(npPending, patch);
   clearTimeout(npTimer);
   npTimer = setTimeout(() => {
@@ -83,6 +86,14 @@ function saveNp(patch) {
     post('/api/config', { nowplaying: body });
   }, 180);
 }
+
+/* Colours a theme owns but that live on individual controls. Clearing them
+   hands those elements back to the palette. */
+const LOCAL_COLOUR_KEYS = [
+  'text.title_color', 'text.artist_color', 'text.label_color',
+  'card.border_color', 'card.fill', 'art.border_color',
+  'progress.color', 'decor.color',
+];
 
 let uiTimer = null, uiPending = {};
 function saveUi(patch) {
@@ -125,6 +136,21 @@ function saveQ(patch) {
     qPending = {};
     post('/api/config', { queue: body });
   }, 180);
+}
+
+/* When the app is set to follow the pop-out, mirror its palette onto the deck
+   so the two do not drift apart. */
+function mirrorPaletteToUi() {
+  if (!CONFIG || !CONFIG.ui || CONFIG.ui.follow_np === false) return;
+  const np = CONFIG.nowplaying, pal = np.palette || {};
+  const next = {
+    accent: np.accent || CONFIG.ui.accent,
+    text: pal.text || CONFIG.ui.text,
+    muted: pal.muted || CONFIG.ui.muted,
+    border: pal.line || CONFIG.ui.border,
+  };
+  const changed = Object.entries(next).some(([k, v]) => CONFIG.ui[k] !== v);
+  if (changed) saveUi(next);
 }
 
 function deepAssign(target, patch) { Object.assign(target, patch); }
@@ -246,8 +272,12 @@ $('wallSceneReset').addEventListener('click', () => {
   saveUi({ 'scene.c1': '', 'scene.c2': '', 'scene.c3': '' });
   syncSceneColors();
 });
-$('sceneShuffle').addEventListener('click', () =>
-  saveNp({ 'bg.scene.seed': Math.floor(Math.random() * 9999) + 1 }));
+$('sceneShuffle').addEventListener('click', () => {
+  saveNp({ 'bg.scene.seed': Math.floor(Math.random() * 9999) + 1 });
+  // The live windows redraw from the same config, but a reshuffle changes the
+  // whole picture, so nudge them rather than waiting for the next tick.
+  setTimeout(() => { pushPreview(); healWindows(); }, 250);
+});
 $('wallSceneShuffle').addEventListener('click', () =>
   saveUi({ 'scene.seed': Math.floor(Math.random() * 9999) + 1 }));
 
@@ -297,12 +327,14 @@ const THEMES = {
     ui: { accent: '#8b5cf6', bg: '#000000', panel: '#0a0a0c', border: '#1b1b22',
           text: '#f0f0f4', muted: '#7e7e8c', radius: 12, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '' },
-    np: { accent: '#8b5cf6', 'bg.mode': 'solid', 'bg.color': '#0f0f17',
+    np: { accent: '#8b5cf6',
+          'palette.text': '#f4f4f8', 'palette.muted': '#9a9aa8', 'palette.line': '#2a2a3a',
+          'bg.mode': 'solid', 'bg.color': '#0f0f17',
           'surround.mode': 'solid', 'surround.color': '#000000',
-          'card.fill': '', 'card.border': 1, 'card.border_color': '#2a2a3a',
+          'card.fill': '', 'card.border': 1, 'card.border_color': '',
           'card.glow': true, 'card.radius': 18, 'card.padding': 12,
-          'text.font': 'Segoe UI', 'text.title_color': '#f4f4f8',
-          'text.artist_color': '#9a9aa8', 'text.label_color': '',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '',
           'text.shadow': 0, 'progress.glow': true, 'progress.color': '',
           'progress.height': 5, 'art.radius': 10, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': '' },
@@ -311,11 +343,13 @@ const THEMES = {
     ui: { accent: '#ffffff', bg: '#000000', panel: '#000000', border: '#2b2b2b',
           text: '#ffffff', muted: '#8a8a8a', radius: 2, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '' },
-    np: { accent: '#ffffff', 'bg.mode': 'solid', 'bg.color': '#000000',
+    np: { accent: '#ffffff',
+          'palette.text': '#ffffff', 'palette.muted': '#9a9a9a',
+          'bg.mode': 'solid', 'bg.color': '#000000',
           'surround.mode': 'solid', 'surround.color': '#000000',
           'card.fill': '', 'card.border': 0, 'card.glow': false, 'card.radius': 0,
           'card.padding': 14, 'text.font': 'Segoe UI',
-          'text.title_color': '#ffffff', 'text.artist_color': '#9a9a9a',
+          'text.title_color': '', 'text.artist_color': '',
           'text.label_color': '#8a8a8a', 'text.shadow': 0,
           'progress.glow': false, 'progress.color': '#ffffff',
           'progress.height': 2, 'art.radius': 0, 'art.border': 0,
@@ -325,12 +359,14 @@ const THEMES = {
     ui: { accent: '#60a5fa', bg: '#111114', panel: '#191920', border: '#2a2a33',
           text: '#eceef4', muted: '#8b8b99', radius: 14, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '' },
-    np: { accent: '#60a5fa', 'bg.mode': 'solid', 'bg.color': '#16161c',
+    np: { accent: '#60a5fa',
+          'palette.text': '#eceef4', 'palette.muted': '#98a0b0', 'palette.line': '#2f2f3a',
+          'bg.mode': 'solid', 'bg.color': '#16161c',
           'surround.mode': 'solid', 'surround.color': '#000000',
-          'card.fill': '', 'card.border': 1, 'card.border_color': '#2f2f3a',
+          'card.fill': '', 'card.border': 1, 'card.border_color': '',
           'card.glow': false, 'card.radius': 14, 'card.padding': 12,
-          'text.font': 'Segoe UI', 'text.title_color': '#eceef4',
-          'text.artist_color': '#98a0b0', 'text.label_color': '',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '',
           'text.shadow': 0, 'progress.glow': false, 'progress.color': '',
           'progress.height': 5, 'art.radius': 10, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': '' },
@@ -339,12 +375,14 @@ const THEMES = {
     ui: { accent: '#6d5cf6', bg: '#f4f5f8', panel: '#ffffff', border: '#e1e3ea',
           text: '#15161c', muted: '#6b6e7b', radius: 12, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '' },
-    np: { accent: '#6d5cf6', 'bg.mode': 'solid', 'bg.color': '#f2f3f7',
+    np: { accent: '#6d5cf6',
+          'palette.text': '#14141b', 'palette.muted': '#5c5f6b', 'palette.line': '#dcdee6',
+          'bg.mode': 'solid', 'bg.color': '#f2f3f7',
           'surround.mode': 'solid', 'surround.color': '#f2f3f7',
-          'card.fill': '', 'card.border': 1, 'card.border_color': '#dcdee6',
+          'card.fill': '', 'card.border': 1, 'card.border_color': '',
           'card.glow': false, 'card.radius': 18, 'card.padding': 12,
-          'text.font': 'Segoe UI', 'text.title_color': '#14141b',
-          'text.artist_color': '#5c5f6b', 'text.label_color': '',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '',
           'text.shadow': 0, 'progress.glow': false, 'progress.color': '',
           'progress.height': 5, 'art.radius': 10, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': '' },
@@ -355,13 +393,15 @@ const THEMES = {
           glow: true, 'decor.border': 'motif:hand', 'decor.sides': 'all',
           'decor.opacity': 0.45, 'decor.size': 0.75, 'decor.gap': 0.7,
           'decor.kaomoji': KAOMOJI[2] },
-    np: { accent: '#ff8fd0', 'bg.mode': 'gradient', 'bg.color': '#2a1526',
+    np: { accent: '#ff8fd0',
+          'palette.text': '#fff0f8', 'palette.muted': '#f0b8d8', 'palette.line': '#ff8fd0',
+          'bg.mode': 'gradient', 'bg.color': '#2a1526',
           'surround.mode': 'solid', 'surround.color': '#000000',
           'bg.color2': '#4a1f3d', 'bg.angle': 135,
-          'card.fill': '', 'card.border': 2, 'card.border_color': '#ff8fd0',
+          'card.fill': '', 'card.border': 2, 'card.border_color': '',
           'card.glow': true, 'card.radius': 22, 'card.padding': 16,
-          'text.font': 'Segoe UI', 'text.title_color': '#fff0f8',
-          'text.artist_color': '#f0b8d8', 'text.label_color': '#ffb3e0',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#ffb3e0',
           'text.shadow': 0.35, 'progress.glow': true, 'progress.color': '#ff8fd0',
           'progress.height': 6, 'art.radius': 16, 'art.border': 2,
           'art.border_color': '#ff8fd0',
@@ -375,12 +415,14 @@ const THEMES = {
           text: '#f6e9f2', muted: '#a58aa8', radius: 16, font: 'Segoe UI',
           glow: true, 'decor.border': 'motif:handd', 'decor.sides': 'tb',
           'decor.opacity': 0.4, 'decor.kaomoji': '' },
-    np: { accent: '#f7a8c4', 'bg.mode': 'solid', 'bg.color': '#120c18',
+    np: { accent: '#f7a8c4',
+          'palette.text': '#fdf0f6', 'palette.muted': '#c9a8bd', 'palette.line': '#3a2a44',
+          'bg.mode': 'solid', 'bg.color': '#120c18',
           'surround.mode': 'solid', 'surround.color': '#000000',
-          'card.fill': '', 'card.border': 1, 'card.border_color': '#3a2a44',
+          'card.fill': '', 'card.border': 1, 'card.border_color': '',
           'card.glow': true, 'card.radius': 20, 'card.padding': 14,
-          'text.font': 'Segoe UI', 'text.title_color': '#fdf0f6',
-          'text.artist_color': '#c9a8bd', 'text.label_color': '#f7a8c4',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#f7a8c4',
           'text.shadow': 0.25, 'progress.glow': true, 'progress.color': '#f7a8c4',
           'progress.height': 5, 'art.radius': 14, 'art.border': 0,
           'decor.border': 'motif:handd', 'decor.sides': 'tb', 'decor.size': 1.3,
@@ -392,12 +434,14 @@ const THEMES = {
           text: '#e6faff', muted: '#6f8fa8', radius: 6, font: 'Consolas',
           glow: true, 'decor.border': 'sparkle', 'decor.sides': 'tb',
           'decor.opacity': 0.45, 'decor.kaomoji': '' },
-    np: { accent: '#22d3ee', 'bg.mode': 'solid', 'bg.color': '#04040a',
+    np: { accent: '#22d3ee',
+          'palette.text': '#ffffff', 'palette.muted': '#7fe8f8', 'palette.line': '#22d3ee',
+          'bg.mode': 'solid', 'bg.color': '#04040a',
           'surround.mode': 'solid', 'surround.color': '#000000',
-          'card.fill': '', 'card.border': 2, 'card.border_color': '#22d3ee',
+          'card.fill': '', 'card.border': 2, 'card.border_color': '',
           'card.glow': true, 'card.radius': 6, 'card.padding': 12,
-          'text.font': 'Consolas', 'text.title_color': '#ffffff',
-          'text.artist_color': '#7fe8f8', 'text.label_color': '#ff4fd8',
+          'text.font': 'Consolas', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#ff4fd8',
           'text.shadow': 0.3, 'progress.glow': true, 'progress.color': '#ff4fd8',
           'progress.height': 4, 'art.radius': 4, 'art.border': 1,
           'art.border_color': '#22d3ee',
@@ -409,12 +453,14 @@ const THEMES = {
           text: '#f2e9ff', muted: '#9d8ac4', radius: 16, font: 'Trebuchet MS',
           glow: true, 'decor.border': 'stars', 'decor.sides': 'tb',
           'decor.opacity': 0.45, 'decor.kaomoji': '' },
-    np: { accent: '#ff77e1', 'bg.mode': 'gradient', 'bg.color': '#2b1055',
+    np: { accent: '#ff77e1',
+          'palette.text': '#ffffff', 'palette.muted': '#ffd9f2',
+          'bg.mode': 'gradient', 'bg.color': '#2b1055',
           'surround.mode': 'solid', 'surround.color': '#000000',
           'bg.color2': '#ff6bb5', 'bg.angle': 160,
           'card.fill': '', 'card.border': 0, 'card.glow': false, 'card.radius': 20,
           'card.padding': 14, 'text.font': 'Trebuchet MS',
-          'text.title_color': '#ffffff', 'text.artist_color': '#ffd9f2',
+          'text.title_color': '', 'text.artist_color': '',
           'text.label_color': '#7df9ff', 'text.shadow': 0.5,
           'progress.glow': true, 'progress.color': '#7df9ff', 'progress.height': 5,
           'art.radius': 16, 'art.border': 0,
@@ -426,12 +472,14 @@ const THEMES = {
           text: '#c8ffd8', muted: '#4f8f66', radius: 2, font: 'Consolas',
           glow: false, 'decor.border': 'dashes', 'decor.sides': 'tb',
           'decor.opacity': 0.35, 'decor.kaomoji': '' },
-    np: { accent: '#37d67a', 'bg.mode': 'solid', 'bg.color': '#000000',
+    np: { accent: '#37d67a',
+          'palette.text': '#c8ffd8', 'palette.muted': '#5aa06f', 'palette.line': '#1c5c33',
+          'bg.mode': 'solid', 'bg.color': '#000000',
           'surround.mode': 'solid', 'surround.color': '#000000',
-          'card.fill': '', 'card.border': 1, 'card.border_color': '#1c5c33',
+          'card.fill': '', 'card.border': 1, 'card.border_color': '',
           'card.glow': false, 'card.radius': 0, 'card.padding': 12,
-          'text.font': 'Consolas', 'text.title_color': '#c8ffd8',
-          'text.artist_color': '#5aa06f', 'text.label_color': '#37d67a',
+          'text.font': 'Consolas', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#37d67a',
           'text.shadow': 0, 'progress.glow': false, 'progress.color': '#37d67a',
           'progress.height': 3, 'art.radius': 0, 'art.border': 1,
           'art.border_color': '#1c5c33',
@@ -444,14 +492,16 @@ const THEMES = {
           glow: true, 'decor.sides': 'none', 'decor.kaomoji': '',
           'scene.id': 'embers', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
           wallpaper: '', wallpaper_dim: 0.35 },
-    np: { accent: '#ff2a3a', 'bg.mode': 'scene', 'bg.scene.id': 'embers',
+    np: { accent: '#ff2a3a',
+          'palette.text': '#fff1f1', 'palette.muted': '#e0a3a8',
+          'bg.mode': 'scene', 'bg.scene.id': 'embers',
           'surround.mode': 'solid', 'surround.color': '#000000',
           'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '',
           'bg.scene.scale': 1, 'bg.scene.density': 1, 'bg.dim': 0, 'bg.blur': 0,
           'card.fill': '', 'card.fill_alpha': 1, 'card.border': 0,
           'card.glow': false, 'card.radius': 12, 'card.padding': 12,
-          'text.font': 'Segoe UI', 'text.title_color': '#fff1f1',
-          'text.artist_color': '#e0a3a8', 'text.label_color': '#ff2a3a',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#ff2a3a',
           'text.shadow': 0.5, 'progress.glow': true, 'progress.color': '#ff2a3a',
           'progress.height': 4, 'art.radius': 10, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': '' },
@@ -462,14 +512,16 @@ const THEMES = {
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '',
           'scene.id': 'watercolor', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
           wallpaper: '', wallpaper_dim: 0 },
-    np: { accent: '#e28aa0', 'bg.mode': 'scene', 'bg.scene.id': 'watercolor', 'bg.scene.tile_scale': 0.6,
+    np: { accent: '#e28aa0',
+          'palette.text': '#4d2433', 'palette.muted': '#9a6e7a',
+          'bg.mode': 'scene', 'bg.scene.id': 'watercolor', 'bg.scene.tile_scale': 0.6,
           'surround.mode': 'solid', 'surround.color': '#f6d9dc',
           'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '',
           'bg.scene.scale': 1, 'bg.scene.density': 1, 'bg.dim': 0, 'bg.blur': 0,
           'card.fill': '#ffffff', 'card.fill_alpha': 0.55, 'card.border': 0,
           'card.glow': false, 'card.radius': 22, 'card.padding': 14,
-          'text.font': 'Segoe UI', 'text.title_color': '#4d2433',
-          'text.artist_color': '#9a6e7a', 'text.label_color': '#e28aa0',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#e28aa0',
           'text.shadow': 0, 'progress.glow': false, 'progress.color': '#e28aa0',
           'progress.height': 5, 'art.radius': 14, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': KAOMOJI[3] },
@@ -480,14 +532,16 @@ const THEMES = {
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '',
           'scene.id': 'sakura', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
           wallpaper: '', wallpaper_dim: 0 },
-    np: { accent: '#e88fb0', 'bg.mode': 'scene', 'bg.scene.id': 'sakura', 'bg.scene.tile_scale': 0.65,
+    np: { accent: '#e88fb0',
+          'palette.text': '#5a2f42', 'palette.muted': '#a3788a', 'palette.line': '#f3d3dc',
+          'bg.mode': 'scene', 'bg.scene.id': 'sakura', 'bg.scene.tile_scale': 0.65,
           'surround.mode': 'solid', 'surround.color': '#fbeff1',
           'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '',
           'bg.scene.scale': 1, 'bg.scene.density': 1, 'bg.dim': 0, 'bg.blur': 0,
           'card.fill': '#ffffff', 'card.fill_alpha': 0.6, 'card.border': 1,
-          'card.border_color': '#f3d3dc', 'card.glow': false, 'card.radius': 20,
-          'card.padding': 14, 'text.font': 'Segoe UI', 'text.title_color': '#5a2f42',
-          'text.artist_color': '#a3788a', 'text.label_color': '#e88fb0',
+          'card.border_color': '', 'card.glow': false, 'card.radius': 20,
+          'card.padding': 14, 'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#e88fb0',
           'text.shadow': 0, 'progress.glow': false, 'progress.color': '#e88fb0',
           'progress.height': 5, 'art.radius': 14, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': '' },
@@ -498,14 +552,16 @@ const THEMES = {
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': KAOMOJI[1],
           'scene.id': 'doodle', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
           wallpaper: '', wallpaper_dim: 0 },
-    np: { accent: '#f25f9f', 'bg.mode': 'scene', 'bg.scene.id': 'doodle', 'bg.scene.tile_scale': 0.7,
+    np: { accent: '#f25f9f',
+          'palette.text': '#6d2549', 'palette.muted': '#a85b7f', 'palette.line': '#ffffff',
+          'bg.mode': 'scene', 'bg.scene.id': 'doodle', 'bg.scene.tile_scale': 0.7,
           'surround.mode': 'solid', 'surround.color': '#f7b8d0',
           'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '',
           'bg.scene.scale': 1, 'bg.scene.density': 1, 'bg.dim': 0, 'bg.blur': 0,
           'card.fill': '#ffffff', 'card.fill_alpha': 0.7, 'card.border': 2,
-          'card.border_color': '#ffffff', 'card.glow': false, 'card.radius': 24,
-          'card.padding': 14, 'text.font': 'Segoe UI', 'text.title_color': '#6d2549',
-          'text.artist_color': '#a85b7f', 'text.label_color': '#f25f9f',
+          'card.border_color': '', 'card.glow': false, 'card.radius': 24,
+          'card.padding': 14, 'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#f25f9f',
           'text.shadow': 0, 'progress.glow': false, 'progress.color': '#f25f9f',
           'progress.height': 6, 'art.radius': 16, 'art.border': 2,
           'art.border_color': '#ffffff', 'decor.sides': 'none',
@@ -517,14 +573,16 @@ const THEMES = {
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '',
           'scene.id': 'moon', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
           wallpaper: '', wallpaper_dim: 0.25 },
-    np: { accent: '#e8203e', 'bg.mode': 'scene', 'bg.scene.id': 'moon',
+    np: { accent: '#e8203e',
+          'palette.text': '#f7edf8', 'palette.muted': '#c9a9cf',
+          'bg.mode': 'scene', 'bg.scene.id': 'moon',
           'surround.mode': 'solid', 'surround.color': '#000000',
           'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '',
           'bg.scene.scale': 1, 'bg.scene.density': 1, 'bg.dim': 0, 'bg.blur': 0,
           'card.fill': '', 'card.fill_alpha': 1, 'card.border': 0,
           'card.glow': false, 'card.radius': 10, 'card.padding': 12,
-          'text.font': 'Segoe UI', 'text.title_color': '#f7edf8',
-          'text.artist_color': '#c9a9cf', 'text.label_color': '#e8203e',
+          'text.font': 'Segoe UI', 'text.title_color': '',
+          'text.artist_color': '', 'text.label_color': '#e8203e',
           'text.shadow': 0.25, 'progress.glow': false, 'progress.color': '#e8203e',
           'progress.height': 4, 'art.radius': 8, 'art.border': 0,
           'decor.sides': 'none', 'decor.kaomoji': '' },
@@ -538,6 +596,7 @@ const THEMES = {
 const THEMED_NP = {
   'preset': '',
   'accent': '#8b5cf6',
+  'palette.text': '#f4f4f8', 'palette.muted': '#9a9aa8', 'palette.line': '#2a2a3a',
   'bg.mode': 'solid', 'bg.color': '#0f0f17', 'bg.color2': '#241a3d', 'bg.angle': 135,
   'bg.image': '', 'bg.fit': 'cover', 'bg.dim': 0, 'bg.blur': 0,
   'bg.scene.id': '', 'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '',
@@ -549,11 +608,12 @@ const THEMED_NP = {
   'text.uppercase': false,
   'art.radius': 10, 'art.border': 0, 'art.border_color': '#ffffff33',
   'progress.color': '', 'progress.height': 5, 'progress.glow': false, 'progress.times': true,
+  'progress.left': 'elapsed', 'progress.right': 'remaining',
   'surround.mode': 'solid', 'surround.color': '#000000',
   'decor.border': '', 'decor.custom': '', 'decor.sides': 'none', 'decor.size': 0.7,
   'decor.opacity': 0.85, 'decor.color': '', 'decor.gap': 0.5, 'decor.kaomoji': '',
   'decor.animate': false, 'decor.layer': 'under', 'decor.blur': 0, 'decor.inset': 1,
-  'decor.tint': true, 'decor.place': 'in',
+  'decor.tint': true, 'decor.place': 'in', 'decor.speed': 1,
 };
 
 const THEMED_UI = {
@@ -744,7 +804,9 @@ const previewFrame = $('previewFrame');
 const previewEl = $('preview');
 
 function layoutPreview() {
-  const np = CONFIG.nowplaying;
+  const np = winCfg();
+  // The iframe can finish loading before /api/config comes back.
+  if (!np.width || !np.height) return;
   const stage = $('previewStage');
   const availW = stage.clientWidth - 36;
   const availH = Math.max(120, stage.clientHeight - 36);
@@ -767,9 +829,15 @@ function layoutPreview() {
 }
 
 function pushPreview() {
+  // Send every scope: the frame may be showing any of the three pages, and
+  // each picks out the part it needs.
   try {
-    previewEl.contentWindow.postMessage(
-      { type: 'design', nowplaying: CONFIG.nowplaying }, '*');
+    previewEl.contentWindow.postMessage({
+      type: 'design',
+      nowplaying: CONFIG.nowplaying,
+      lyrics_cfg: CONFIG.lyrics,
+      queue_cfg: CONFIG.queue,
+    }, '*');
   } catch (_) { /* iframe still loading */ }
   layoutPreview();
 }
@@ -779,6 +847,8 @@ function pushPreview() {
 function stickers() { return CONFIG.nowplaying.stickers || (CONFIG.nowplaying.stickers = []); }
 
 function drawStickerBoxes() {
+  // Stickers belong to the pop-out; the other windows have none to drag.
+  if (!CONFIG || selectedWin !== 'np') { $('previewEdit').innerHTML = ''; return; }
   const list = stickers();
   const w = previewFrame.clientWidth, h = previewFrame.clientHeight;
   $('previewEdit').innerHTML = list.map((st, i) => {
@@ -806,6 +876,15 @@ function renderStickerList() {
   const st = list[selSticker];
   $('stickerEdit').hidden = !st;
   $('stickerDelete').disabled = !st;
+  $('stickerUp').disabled = selSticker <= 0;
+  $('stickerDown').disabled = selSticker < 0 || selSticker >= list.length - 1;
+  if (st) {
+    $('stickerTint').checked = !!st.tint;
+    $('stickerColor').value = /^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#ffffff';
+    $('stickerPicker').innerHTML = ASSETS.map((a) => `
+      <div class="asset ${a.id === st.asset ? 'on' : ''}" data-id="${esc(a.id)}"
+           title="${esc(a.name || a.id)}"><img src="${esc(a.url)}" alt="" loading="lazy"></div>`).join('');
+  }
   if (st) {
     document.querySelectorAll('[data-st]').forEach((node) => {
       const key = node.dataset.st;
@@ -923,6 +1002,60 @@ $('stickerDelete').addEventListener('click', () => {
   saveNp({ stickers: list });
   renderStickerList();
 });
+function moveSticker(delta) {
+  const list = stickers();
+  const to = selSticker + delta;
+  if (selSticker < 0 || to < 0 || to >= list.length) return;
+  const [item] = list.splice(selSticker, 1);
+  list.splice(to, 0, item);
+  selSticker = to;
+  saveNp({ stickers: list });
+  renderStickerList();
+}
+$('stickerUp').addEventListener('click', () => moveSticker(-1));
+$('stickerDown').addEventListener('click', () => moveSticker(1));
+
+/* A tinted sticker is drawn through a mask, which has no shape of its own, so
+   the picture's proportions have to be written into the config. Every asset is
+   measured when the list loads, but a picture added seconds ago might not be
+   yet - and a wrong ratio here would stick until you toggled the tint again.
+   So wait for the measurement rather than falling back to a square. */
+function withAspect(assetId, fn) {
+  if (aspect[assetId]) return fn(aspect[assetId]);
+  const img = new Image();
+  img.onload = () => {
+    aspect[assetId] = img.naturalWidth / Math.max(1, img.naturalHeight);
+    fn(aspect[assetId]);
+  };
+  img.onerror = () => fn(1);
+  img.src = '/asset/' + encodeURIComponent(assetId);
+}
+
+$('stickerTint').addEventListener('change', () => {
+  const st = stickers()[selSticker];
+  if (!st) return;
+  withAspect(st.asset, (ar) => updateSticker({
+    tint: $('stickerTint').checked,
+    color: st.color || CONFIG.nowplaying.accent || '#ffffff',
+    ar,
+  }));
+});
+$('stickerColor').addEventListener('input', () => {
+  const st = stickers()[selSticker];
+  if (!st) return;
+  withAspect(st.asset, (ar) =>
+    updateSticker({ color: $('stickerColor').value, tint: true, ar }));
+});
+
+$('stickerPicker').addEventListener('click', (e) => {
+  const cell = e.target.closest('.asset');
+  if (!cell || selSticker < 0) return;
+  withAspect(cell.dataset.id, (ar) => {
+    updateSticker({ asset: cell.dataset.id, ar });
+    renderPickers();
+  });
+});
+
 $('stickerFront').addEventListener('click', () => updateSticker({ z: 5 }));
 $('stickerBack').addEventListener('click', () => updateSticker({ z: -1 }));
 $('stickerFlip').addEventListener('click', () => {
@@ -944,15 +1077,19 @@ function loadAssets() {
 
 function renderPickers() {
   const cell = (a, selected) => `
-    <div class="asset ${selected ? 'on' : ''}" data-id="${esc(a.id)}"
-         title="${esc(a.name || a.id)} · ${Math.round((a.size || 0) / 1024)} KB">
+    <div class="asset ${selected ? 'on' : ''} ${a.builtin ? 'builtin' : ''}" data-id="${esc(a.id)}"
+         title="${esc(a.name || a.id)}${a.builtin ? ' (built in)' : ' · ' + Math.round((a.size || 0) / 1024) + ' KB'}">
       <img src="${esc(a.url)}" alt="" loading="lazy">
-      <button class="del" data-del="${esc(a.id)}" title="Delete">×</button>
+      ${a.builtin ? '' : `<button class="del" data-del="${esc(a.id)}" title="Delete">×</button>`}
     </div>`;
   $('bgPicker').innerHTML =
     ASSETS.map((a) => cell(a, CONFIG.nowplaying.bg.image === a.id)).join('');
   $('wallPicker').innerHTML =
     ASSETS.map((a) => cell(a, CONFIG.ui.wallpaper === a.id)).join('');
+  const lyImg = ((CONFIG.lyrics || {}).bg_own || {}).image;
+  const qImg = ((CONFIG.queue || {}).bg_own || {}).image;
+  $('lyBgPicker').innerHTML = ASSETS.map((a) => cell(a, lyImg === a.id)).join('');
+  $('qBgPicker').innerHTML = ASSETS.map((a) => cell(a, qImg === a.id)).join('');
 }
 
 function pickerHandler(container, apply) {
@@ -970,6 +1107,8 @@ function pickerHandler(container, apply) {
   });
 }
 pickerHandler('bgPicker', (id) => { saveNp({ 'bg.image': id, 'bg.mode': 'image' }); syncControls(); renderPickers(); });
+pickerHandler('lyBgPicker', (id) => { saveLy({ 'bg_own.image': id, 'bg_own.mode': 'image' }); syncControls(); renderPickers(); });
+pickerHandler('qBgPicker', (id) => { saveQ({ 'bg_own.image': id, 'bg_own.mode': 'image' }); syncControls(); renderPickers(); });
 pickerHandler('wallPicker', (id) => { saveUi({ wallpaper: id }); renderPickers(); });
 
 /** Read a File, upload it, hand back the asset id. */
@@ -1030,6 +1169,19 @@ $('stickerAdd').addEventListener('click', () => openPicker('sticker'));
     const rect = previewFrame.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 100;
     const y = ((e.clientY - rect.top) / Math.max(1, rect.height)) * 100;
+    // Only the pop-out has stickers. Dropping onto the other two windows sets
+    // that window's own background instead, which is the only thing an image
+    // could sensibly mean there.
+    if (selectedWin !== 'np') {
+      const id = await uploadFile(files[0]);
+      if (!id) return;
+      const save = selectedWin === 'lyrics' ? saveLy : saveQ;
+      save({ 'bg_own.image': id, 'bg_own.mode': 'image', follow_theme: false });
+      syncControls();
+      renderPickers();
+      toast('Background set for this window');
+      return;
+    }
     for (const file of files) {
       const id = await uploadFile(file);
       if (id) addSticker(id, Math.min(100, Math.max(0, x)), Math.min(100, Math.max(0, y)));
@@ -1088,6 +1240,14 @@ $('surroundSwatches').addEventListener('click', (e) => {
 
 /* Sample whatever sits behind the card, so the margin blends into the artwork
    rather than cutting a frame around it. */
+$('resetColours').addEventListener('click', () => {
+  const blanks = {};
+  for (const k of LOCAL_COLOUR_KEYS) blanks[k] = '';
+  saveNp(blanks);
+  syncControls();
+  toast('Colours handed back to the theme');
+});
+
 $('surroundMatch').addEventListener('click', () => {
   const bg = CONFIG.nowplaying.bg || {};
   let colour = bg.color || '#0f0f17';
@@ -1296,6 +1456,7 @@ setInterval(() => { if (!audio.paused) report(); }, 700);
 /* The card mirrors whatever is on screen. For local files that is our own
    <audio>; for Spotify it is the account or the Windows bridge, and the
    transport talks to Spotify instead. */
+let lastSeekId = null;
 let cardSource = 'local';
 let cardClock = { position: 0, duration: 0, playing: false, at: performance.now() };
 let cardKey = '';
@@ -1427,9 +1588,91 @@ document.querySelectorAll('#sourceMode button').forEach((btn) => {
   });
 });
 
-$('spPrev').addEventListener('click', () => post('/api/spotify/prev'));
-$('spPlay').addEventListener('click', () => post('/api/spotify/playpause'));
-$('spNext').addEventListener('click', () => post('/api/spotify/next'));
+
+/* --------------------------------------------------------- window picker
+
+   Which pop-out the preview and the settings underneath are talking about.
+   One selection drives three things: the page in the preview frame, the size
+   it is drawn at, and which design tabs are on offer. */
+
+const WINDOWS = {
+  np: {
+    page: 'nowplaying.html', size: 'npSize', title: 'This is what the pop-out looks like',
+    cfg: () => (CONFIG || {}).nowplaying,
+  },
+  lyrics: {
+    page: 'lyrics.html', size: 'lySize', title: 'This is what the lyrics window looks like',
+    cfg: () => (CONFIG || {}).lyrics,
+  },
+  queue: {
+    page: 'queue.html', size: 'qSize', title: 'This is what the queue window looks like',
+    cfg: () => (CONFIG || {}).queue,
+  },
+};
+let selectedWin = 'np';
+
+/** The config block for whichever window is selected. */
+function winCfg() { return WINDOWS[selectedWin].cfg() || {}; }
+
+function selectWindow(id) {
+  if (!WINDOWS[id]) return;
+  const changed = id !== selectedWin;
+  selectedWin = id;
+
+  document.querySelectorAll('.wincard').forEach((c) => {
+    const on = c.dataset.win === id;
+    c.classList.toggle('on', on);
+    c.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+
+  // Only offer settings that apply to the window in hand.
+  const tabs = [...document.querySelectorAll('#designTabs button')];
+  tabs.forEach((b) => { b.hidden = !(b.dataset.for === 'all' || b.dataset.for === id); });
+  const active = tabs.find((b) => b.classList.contains('on'));
+  if (!active || active.hidden) {
+    const first = tabs.find((b) => !b.hidden);
+    if (first) first.click();
+  }
+
+  $('previewTitle').textContent = WINDOWS[id].title;
+  // Stickers only exist on the pop-out, so their drag handles go with it.
+  $('previewEdit').hidden = id !== 'np';
+  $('dropHintWhat').textContent = id === 'np'
+    ? 'to add it as a sticker — or as the background'
+    : "to use it as this window's background";
+
+  if (changed) previewEl.src = WINDOWS[id].page + '?preview=1&t=' + Date.now();
+  layoutPreview();
+}
+
+$('windowsBar').addEventListener('click', (e) => {
+  const card = e.target.closest('.wincard');
+  if (!card || e.target.closest('button')) return;   // the toggle speaks for itself
+  selectWindow(card.dataset.win);
+});
+$('windowsBar').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.wincard');
+  if (!card) return;
+  e.preventDefault();
+  selectWindow(card.dataset.win);
+});
+
+/** Show a window's open/closed state and current size on its card. */
+function paintCardState(win, open, rect) {
+  const card = document.querySelector('.wincard[data-win="' + win + '"]');
+  if (!card) return;
+  card.classList.toggle('live', !!open);
+  card.querySelector('.wc-state').textContent = open ? 'live' : 'closed';
+  const btn = card.querySelector('.wc-foot button');
+  if (btn && !btn.disabled) btn.textContent = open ? 'Close' : 'Open';
+
+  const cfg = WINDOWS[win].cfg() || {};
+  const w = (rect && rect.w) || cfg.width;
+  const h = (rect && rect.h) || cfg.height;
+  const label = $(WINDOWS[win].size);
+  if (label && w && h) label.textContent = w + ' \u00d7 ' + h;
+}
 
 /* ------------------------------------------------------------- window */
 
@@ -1450,11 +1693,7 @@ $('npToggle').addEventListener('click', () => {
   }
 });
 
-function paintWindowStatus() {
-  $('npStatus').textContent = npOpen ? 'Window live' : 'Window closed';
-  $('npStatus').className = 'pill ' + (npOpen ? 'pill-on' : 'pill-off');
-  $('npToggle').textContent = npOpen ? 'Close on-screen window' : 'Open on-screen window';
-}
+function paintWindowStatus() { paintCardState('np', npOpen); }
 
 function pollWindow() {
   fetch('/api/window/status').then((r) => r.json()).then((s) => {
@@ -1468,6 +1707,7 @@ function pollWindow() {
       if (document.activeElement !== $('height')) $('height').value = s.rect.h;
       layoutPreview();
     }
+    paintCardState('np', s.open, s.rect);
   }).catch(() => {});
 }
 
@@ -1521,11 +1761,7 @@ $('quitBtn').addEventListener('click', () => {
 
 let lyOpen = false;
 
-function paintLyStatus() {
-  $('lyStatus').textContent = lyOpen ? 'live' : 'closed';
-  $('lyStatus').className = 'pill ' + (lyOpen ? 'pill-on' : 'pill-off');
-  $('lyToggle').textContent = lyOpen ? 'Close lyrics window' : 'Open lyrics window';
-}
+function paintLyStatus() { paintCardState('lyrics', lyOpen); }
 
 $('lyToggle').addEventListener('click', () => {
   if (lyOpen) {
@@ -1550,7 +1786,9 @@ function pollLyrics() {
       CONFIG.lyrics.height = s.rect.h;
       if (document.activeElement !== $('lyWidth')) $('lyWidth').value = s.rect.w;
       if (document.activeElement !== $('lyHeight')) $('lyHeight').value = s.rect.h;
+      if (selectedWin === 'lyrics') layoutPreview();
     }
+    paintCardState('lyrics', s.open, s.rect);
   }).catch(() => {});
   fetch('/api/lyrics').then((r) => r.json()).then((d) => {
     const n = d.lines ? d.lines.length : 0;
@@ -1583,11 +1821,7 @@ setInterval(pollLyrics, 3000);
 
 let qOpen = false;
 
-function paintQStatus() {
-  $('qStatus').textContent = qOpen ? 'live' : 'closed';
-  $('qStatus').className = 'pill ' + (qOpen ? 'pill-on' : 'pill-off');
-  $('qToggle').textContent = qOpen ? 'Close queue window' : 'Open queue window';
-}
+function paintQStatus() { paintCardState('queue', qOpen); }
 
 $('qToggle').addEventListener('click', () => {
   if (qOpen) {
@@ -1612,7 +1846,9 @@ function pollQueueWindow() {
       CONFIG.queue.height = s.rect.h;
       if (document.activeElement !== $('qWidth')) $('qWidth').value = s.rect.w;
       if (document.activeElement !== $('qHeight')) $('qHeight').value = s.rect.h;
+      if (selectedWin === 'queue') layoutPreview();
     }
+    paintCardState('queue', s.open, s.rect);
   }).catch(() => {});
 }
 
@@ -1666,16 +1902,10 @@ function paintSpotify(state) {
 
   const sp = state.spotify;
   if (sp) {
-    body.innerHTML = `<div class="sp-track">
-        ${sp.art_url ? `<img class="sp-art" src="${esc(sp.art_url)}" alt="">` : '<div class="sp-art"></div>'}
-        <div class="sp-meta">
-          <div class="sp-title">${esc(sp.title || 'Unknown')}</div>
-          <div class="sp-artist">${esc(sp.artist || '')}</div>
-        </div></div>`;
+    // One line, not a second copy of the player card above.
+    body.innerHTML = `<div class="muted small">Windows is reporting
+      <b>${esc(sp.title || 'Unknown')}</b>${sp.artist ? ' — ' + esc(sp.artist) : ''}</div>`;
   }
-  $('spPrev').disabled = !status.can_prev;
-  $('spNext').disabled = !status.can_next;
-  $('spPlay').disabled = !status.has;
 
   const acc = status.account || {};
   let line = 'Account: not connected';
@@ -1685,9 +1915,16 @@ function paintSpotify(state) {
   }
   if (acc.error) line += ` \u2014 ${acc.error}`;
   $('spAccStatus').textContent = line;
+  // A pop-out asked to seek a local file; we hold the audio element.
+  const sk = state.local_seek;
+  if (sk && sk.id !== lastSeekId) {
+    lastSeekId = sk.id;
+    if (cardSource === 'local' && audio.duration) audio.currentTime = sk.to;
+  }
   paintSpotifyAccount(acc, state.spotify_account || null);
   paintSourcePanels(state);
   paintCard(state.now);
+  queueFollowsTrack(state);
   if (acc.connected && spWaiting) {
     spWaiting = false;
     $('spPending').hidden = true;
@@ -1929,10 +2166,23 @@ $('spConnect2').addEventListener('click', () => {
   });
 });
 
-/* keep the queue fresh only while the panel is on screen */
+/* Keep the queue fresh whenever the panel is on screen - including in Auto
+   mode, where Spotify's queue is showing because Spotify is what is playing. */
 setInterval(() => {
-  if (CONFIG && CONFIG.source_mode === 'spotify' && spConnected) refreshSpotifyPanel();
-}, 5000);
+  if (!CONFIG || !spConnected) return;
+  if ($('spotifyMain').hidden) return;
+  refreshSpotifyPanel();
+}, 4000);
+
+/* A track change means the queue moved on; refresh without waiting for the timer. */
+let lastQueueTrack = '';
+function queueFollowsTrack(state) {
+  const now = state.now || {};
+  const key = [now.source, now.title, now.artist].join('|');
+  if (key === lastQueueTrack) return;
+  lastQueueTrack = key;
+  if (spConnected && !$('spotifyMain').hidden) setTimeout(refreshSpotifyPanel, 600);
+}
 
 /* ------------------------------------------------------------- boot */
 
@@ -1964,6 +2214,7 @@ fetch('/api/config').then((r) => r.json()).then((cfg) => {
   paintWindowStatus();
   paintLyStatus();
   paintQStatus();
+  selectWindow('np');
   paintSourcePanels();
   pollWindow();
   pollLyrics();

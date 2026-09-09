@@ -59,12 +59,13 @@ function applyDesign(np, cfg) {
 
   set('--accent', accent);
   set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
-  set('--fg', text.title_color || '#f4f4f8');
-  set('--dim', text.artist_color || 'rgba(244,244,248,.5)');
+  const pal = design.palette || {};
+  set('--fg', text.title_color || pal.text || '#f4f4f8');
+  set('--dim', text.artist_color || pal.muted || '#9a9aa8');
   set('--card-radius', (card.radius ?? 18) + 'px');
   set('--card-fill', follow ? (card.fill || 'transparent') : 'transparent');
   set('--card-border', follow ? (card.border ?? 0) + 'px' : '0px');
-  set('--card-border-color', card.border_color || 'transparent');
+  set('--card-border-color', card.border_color || pal.line || 'transparent');
   const sh = Number(text.shadow || 0);
   set('--text-shadow', sh > 0
     ? `0 ${(0.05 * sh).toFixed(3)}em ${(0.22 * sh).toFixed(3)}em rgba(0,0,0,${Math.min(0.9, sh)})`
@@ -80,17 +81,18 @@ function applyDesign(np, cfg) {
     else applyBackground(s, el.bgImage, bg, set);
     el.bgDim.style.opacity = String(bg.dim ?? 0);
   } else {
-    const own = opts.bg || '#0f0f17';
-    set('--bg', own);
-    if (surround) el.cardBg.style.background = own;
-    s.classList.remove('has-bg-image');
-    el.bgDim.style.opacity = '0';
+    // This window has a look of its own: a full background, not just a colour.
+    const own = opts.bg_own || { mode: 'solid', color: opts.bg || '#0f0f17' };
+    if (surround) applyBackgroundInside(s, el.cardBg, own);
+    else applyBackground(s, el.bgImage, own, set);
+    el.bgDim.style.opacity = String(own.dim ?? 0);
   }
 
   s.classList.toggle('hide-art', opts.show_art === false);
   s.classList.toggle('hide-artist', opts.show_artist === false);
   s.classList.toggle('hide-times', opts.show_times === false);
   s.classList.toggle('hide-head', opts.show_header === false);
+  s.classList.toggle('interactive', !PREVIEW && opts.interactive !== false);
   s.classList.toggle('preview', PREVIEW);
   el.heading.textContent = opts.heading || 'UP NEXT';
 
@@ -147,9 +149,12 @@ function render(data) {
 
   el.stage.dataset.state = 'ok';
   let n = 0;
+  let qi = -1;
   el.rows.innerHTML = items.map((t) => {
     const label = t.now ? '♪' : String(++n);
-    return `<div class="row ${t.now ? 'now' : ''}">
+    if (!t.now) qi++;
+    const addr = t.now ? '' : ` data-uri="${esc(t.uri || '')}" data-i="${qi}"`;
+    return `<div class="row ${t.now ? 'now' : ''}"${addr}>
         <div class="n">${label}</div>
         ${t.art ? `<img src="${esc(t.art)}" alt="" loading="lazy">` : '<img alt="">'}
         <div class="meta">
@@ -164,6 +169,26 @@ function render(data) {
   el.count.textContent = total
     ? (shown < total + (showNow && data.now ? 1 : 0) ? `${shown} of ${total}` : `${total} queued`)
     : '';
+}
+
+/* Click a row to play that track. Spotify has no reorder endpoint, so this
+   advances to it - the same as clicking an item in Spotify's own queue. */
+function wireRowClicks() {
+  el.rows.addEventListener('pointerdown', (e) => {
+    if (PREVIEW || (opts && opts.interactive === false)) return;
+    const row = e.target.closest('.row');
+    if (!row || row.dataset.uri === undefined) return;
+    e.stopPropagation();
+    row.classList.add('busy');
+    fetch('/api/spotify/playuri', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri: row.dataset.uri, index: +row.dataset.i }),
+    }).then((r) => r.json()).then(() => {
+      row.classList.remove('busy');
+      lastKey = '';
+      setTimeout(poll, 900);
+    }).catch(() => row.classList.remove('busy'));
+  });
 }
 
 let pollTimer = null;
@@ -221,6 +246,7 @@ window.addEventListener('resize', () => {
 fetch('/api/state').then((r) => r.json())
   .then((d) => applyDesign(d.nowplaying, d.queue_cfg)).catch(() => {});
 
+wireRowClicks();
 connect();
 poll();
 pollTimer = setInterval(poll, 4000);

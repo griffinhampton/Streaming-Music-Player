@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------- private
+# Everything here belongs to whoever is running the app, not to the project.
+#
+# cache/ is the big one: it holds the Spotify OAuth token, the four Chrome
+# profiles (with their cookies and saved logins), downloaded album art, the
+# lyrics cache and any images dragged in. None of it should ever be committed.
+music-deck/cache/
+cache/
+
+# Written on first run, next to whichever copy of the app you started - so it
+# turns up in dist/ as well as here. Music folder paths and the Spotify client id.
+config.json
+
+# Belt and braces, in case any of these ever appear.
+*.token.json
+spotify_token.json
+.env
+*.pem
+*.key
+
+# ---------------------------------------------------------------- build
+# The throwaway PyInstaller virtualenv and its scratch space.
+.build-env/
+__pycache__/
+*.pyc
+*.spec
+
+# dist/ is deliberately NOT ignored - the built .exe living in the repo is how
+# this gets handed to people.

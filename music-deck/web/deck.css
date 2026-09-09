@@ -182,7 +182,7 @@ select.input option { background: var(--panel); color: var(--fg); }
 }
 
 .icon {
-  width: calc(35px * var(--d)); height: calc(35px * var(--d));
+  width: calc(32px * var(--d)); height: calc(32px * var(--d));
   display: grid; place-items: center;
   font-size: .95em;
   border-radius: 50%;
@@ -196,7 +196,7 @@ select.input option { background: var(--panel); color: var(--fg); }
 .icon.on { border-color: var(--accent); color: var(--accent); }
 .icon:disabled { opacity: .3; cursor: default; }
 .icon-big {
-  width: calc(46px * var(--d)); height: calc(46px * var(--d)); font-size: 1.15em;
+  width: calc(40px * var(--d)); height: calc(40px * var(--d)); font-size: 1.1em;
   background: var(--accent); border-color: transparent; color: var(--on-accent);
   box-shadow: var(--glow);
 }
@@ -212,9 +212,18 @@ select.input option { background: var(--panel); color: var(--fg); }
   padding: calc(12px * var(--d)) calc(16px * var(--d)) calc(16px * var(--d));
   min-height: 0;
 }
-.col { display: flex; flex-direction: column; gap: calc(12px * var(--d)); min-height: 0; }
+.col { display: flex; flex-direction: column; gap: calc(12px * var(--d)); min-height: 0; overflow-y: auto; }
 .rail { display: flex; flex-direction: column; gap: calc(12px * var(--d)); overflow-y: auto; min-height: 0; }
 .rail > .panel { flex: 0 0 auto; }
+
+/* The settings are long. Rather than a scroll area inside the rail's own
+   scroll area - two bars, neither obviously the one you want - the panel keeps
+   its full height and the rail scrolls it, with the tabs pinned so you can
+   still change section from anywhere in the list. */
+.panel.design > .tabs {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--panel);
+}
 
 .panel {
   display: flex; flex-direction: column;
@@ -293,7 +302,7 @@ select.input option { background: var(--panel); color: var(--fg); }
 
 /* ---------------------------------------------------------------- library */
 
-.library { flex: 1 1 auto; min-height: 140px; }
+.library { flex: 1 1 0; min-height: 140px; }
 .folder-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 14px 0; }
 .folder-bar:empty { display: none; }
 .chip {
@@ -337,11 +346,15 @@ select.input option { background: var(--panel); color: var(--fg); }
 
 /* ---------------------------------------------------------------- player */
 
-.player { padding: calc(14px * var(--d)); gap: calc(12px * var(--d)); }
+.player { padding: calc(13px * var(--d)); gap: calc(9px * var(--d)); }
+.player-controls { display: flex; align-items: center; gap: calc(10px * var(--d)); }
+.player-controls .transport { flex: 0 0 auto; gap: 6px; }
+.player-controls .volume { flex: 1 1 auto; min-width: 84px; }
+.vol-icon { font-size: .85em; opacity: .7; }
 .now { display: flex; gap: 12px; align-items: center; }
 .now-art {
   position: relative;
-  width: calc(66px * var(--d)); height: calc(66px * var(--d)); flex: 0 0 auto;
+  width: calc(54px * var(--d)); height: calc(54px * var(--d)); flex: 0 0 auto;
   border-radius: calc(var(--radius) * .7); overflow: hidden;
   border: 1px solid var(--line);
 }
@@ -360,8 +373,6 @@ select.input option { background: var(--panel); color: var(--fg); }
 
 .seek .times { display: flex; justify-content: space-between; font-size: .78em; color: var(--dim); font-variant-numeric: tabular-nums; margin-top: -2px; }
 .transport { display: flex; align-items: center; justify-content: center; gap: 9px; }
-.transport-sm { gap: 7px; padding: 0 14px calc(10px * var(--d)); }
-.transport-sm .icon { width: 32px; height: 32px; font-size: .8em; }
 .volume { display: flex; align-items: center; gap: 9px; }
 .volume .range { flex: 1 1 auto; }
 .volume .mono { width: 24px; text-align: right; }
@@ -506,8 +517,10 @@ code {
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 @media (max-width: 1100px) {
+  /* Stacked into one column, the grid itself is the scroller - so neither
+     column may keep a scrollbar of its own. */
   .grid { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
-  .rail { overflow: visible; }
+  .rail, .col { overflow: visible; }
   .library { min-height: 260px; }
   .spotify-main { min-height: 430px; }
 }
@@ -616,7 +629,7 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 
 /* Tall enough that the search box and a few queue rows always fit;
    without this the panel shrinks and clips its own contents. */
-.spotify-main { flex: 1 1 auto; min-height: 360px; }
+.spotify-main { flex: 1 1 0; min-height: 240px; }
 .sp-setup { padding: calc(12px * var(--d)) calc(14px * var(--d)); display: flex; flex-direction: column; gap: 9px; overflow-y: auto; }
 .sp-setup .steps { padding-left: 1.3em; display: flex; flex-direction: column; gap: 4px; }
 
@@ -653,3 +666,99 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 .sp-row.now { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .sp-row.now .n { color: var(--accent); }
 .sp-results .sp-row { cursor: pointer; }
+
+
+/* ---------------------------------------------------------------- windows bar
+
+   The three outputs, side by side, so what is live is answerable at a glance
+   and every window is one click from opening. */
+
+.windows {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(10px * var(--d));
+  padding: calc(12px * var(--d)) calc(16px * var(--d)) 0;
+}
+
+.wincard {
+  display: flex; flex-direction: column; gap: calc(3px * var(--d));
+  padding: calc(10px * var(--d)) calc(13px * var(--d));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 130ms ease, background 130ms ease;
+}
+.wincard:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.wincard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The selected card is what the preview and every setting below refer to. */
+.wincard.on {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+}
+
+.wc-head { display: flex; align-items: center; gap: 7px; }
+.wc-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: color-mix(in srgb, var(--fg) 20%, transparent);
+}
+.wincard.live .wc-dot { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.wc-name { font-size: .97em; font-weight: 600; }
+.wc-state {
+  margin-left: auto; font-size: .72em; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--dim);
+}
+.wincard.live .wc-state { color: var(--good); }
+.wc-sub { font-size: .8em; color: var(--dim); }
+.wc-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: calc(4px * var(--d));
+}
+.wc-size { font-size: .78em; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Once a window is live the button is a way out, not a call to action. */
+.wincard.live .wc-foot .btn-primary {
+  background: transparent; box-shadow: none; color: var(--fg);
+  border-color: color-mix(in srgb, var(--bad) 50%, var(--line));
+}
+.wincard.live .wc-foot .btn-primary:hover {
+  background: color-mix(in srgb, var(--bad) 16%, transparent);
+}
+
+.tabs button[hidden] { display: none !important; }
+
+@media (max-width: 1000px) {
+  .wc-sub { display: none; }
+}
+
+/* Names the source switch, so it does not read as another window control. */
+.topbar-label {
+  margin-left: auto; font-size: .78em; color: var(--dim);
+  letter-spacing: .04em; white-space: nowrap;
+}
+.topbar-label + .segmented { margin-right: auto; }
+
+/* ------------------------------------------------------- spotify setup help
+
+   The long version is folded away: someone who just wants the Client ID box
+   should not have to scroll past six paragraphs to reach it. */
+
+.sp-help > summary {
+  font-size: .82em; color: var(--dim); cursor: pointer;
+  padding: 5px 0; list-style: none; user-select: none;
+}
+.sp-help > summary::-webkit-details-marker { display: none; }
+.sp-help > summary::before { content: '▸ '; }
+.sp-help[open] > summary::before { content: '▾ '; }
+.sp-help > summary:hover { color: var(--fg); }
+.sp-help[open] > summary { color: var(--fg); }
+
+.faq { display: flex; flex-direction: column; gap: 9px; padding: 4px 0 6px 14px; }
+.faq dt { color: color-mix(in srgb, var(--fg) 78%, var(--dim)); font-weight: 600; }
+.faq dd { margin: 2px 0 0; }
+
+.sp-setup .steps li { margin-bottom: 5px; }
+.sp-setup .steps code { display: inline-block; margin-top: 2px; }

@@ -52,6 +52,7 @@ DEFAULT_CONFIG = {
     "volume": 0.7,
     "ui": {
         "preset": "",                # last app preset applied
+        "follow_np": True,           # take accent and text colours from the pop-out
         "accent": "#8b5cf6",
         "bg": "#000000",
         "panel": "#0a0a0c",
@@ -100,6 +101,14 @@ DEFAULT_CONFIG = {
         "show_times": True,
         "follow_theme": True,        # colours, font and background from the pop-out
         "bg": "#0f0f17",
+        "interactive": True,         # click a track to play it
+        "bg_own": {              # used when follow_theme is off
+            "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
+            "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
+            "pos_x": 50, "pos_y": 50,
+            "scene": {"id": "", "c1": "", "c2": "", "c3": "",
+                      "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
+        },
     },
     "lyrics": {
         "online": True,              # ask lrclib.net when no .lrc file exists
@@ -115,6 +124,14 @@ DEFAULT_CONFIG = {
         "offset": 0.0,               # seconds; + shows lines earlier
         "follow_theme": True,        # colours, font and background from the pop-out
         "bg": "#0f0f17",             # used when not following the theme
+        "interactive": True,         # click a line to jump to it
+        "bg_own": {              # used when follow_theme is off
+            "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
+            "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
+            "pos_x": 50, "pos_y": 50,
+            "scene": {"id": "", "c1": "", "c2": "", "c3": "",
+                      "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
+        },
     },
     "nowplaying": {
         "preset": "midnight",
@@ -127,6 +144,14 @@ DEFAULT_CONFIG = {
         "borderless": True,
         "topmost": True,
         "accent": "#8b5cf6",
+        # The four colours everything else inherits from. Any specific colour
+        # left blank takes its value from here, so changing one of these
+        # restyles the whole pop-out at once.
+        "palette": {
+            "text": "#f4f4f8",       # titles and primary text
+            "muted": "#9a9aa8",      # artist, times, secondary text
+            "line": "#2a2a3a",       # borders and rules
+        },
         "bg": {
             "mode": "solid",         # solid | gradient | image | scene
             "color": "#0f0f17",
@@ -136,6 +161,8 @@ DEFAULT_CONFIG = {
             "fit": "cover",          # cover | contain | stretch | tile
             "dim": 0.0,              # dark veil over the image, 0..1
             "blur": 0,
+            "pos_x": 50,             # which part of the picture shows, 0-100
+            "pos_y": 50,
             "scene": {               # generated artwork, see web/scenes.js
                 "id": "",            # watercolor | sakura | doodle | moon | embers
                 "c1": "", "c2": "", "c3": "",   # blank = the scene's own colours
@@ -180,7 +207,13 @@ DEFAULT_CONFIG = {
             "color": "",
             "times": True,
             "glow": True,
+            # What sits either side of the bar: elapsed | remaining | duration | none
+            "left": "elapsed",
+            "right": "remaining",
         },
+        # Clicking inside the pop-outs drives playback. Off makes them inert,
+        # which is safer if you click around your canvas a lot while live.
+        "interactive": True,
         "label": {"show": True, "text": "NOW PLAYING"},
         "surround": {
             "mode": "solid",         # solid = one colour around the card | theme = the background
@@ -201,6 +234,7 @@ DEFAULT_CONFIG = {
             "inset": 1.0,            # how far the card steps in from the frame (0-1)
             "tint": True,            # recolour the artwork so it reads on any background
             "place": "in",           # in = inside the card's frame | out = around it
+            "speed": 1.0,            # drift speed; higher is faster
         },
         "source_badge": False,
         "equalizer": True,
@@ -394,8 +428,9 @@ class AssetStore:
               ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}
     MAX_BYTES = 12 * 1024 * 1024
 
-    def __init__(self, folder):
+    def __init__(self, folder, builtin=None):
         self.folder = folder
+        self.builtin = builtin           # shipped artwork, read-only
         os.makedirs(folder, exist_ok=True)
         self.index_path = os.path.join(folder, "index.json")
         self._index = self._load_index()
@@ -443,7 +478,16 @@ class AssetStore:
             return {"ok": False, "reason": str(exc)}
 
     def path(self, asset_id):
-        name = os.path.basename(asset_id or "")
+        asset_id = urllib.parse.unquote(asset_id or "")
+        # Shipped artwork is addressed as "builtin:<file>" and never written to.
+        if asset_id.startswith("builtin:"):
+            if not self.builtin:
+                return None
+            name = os.path.basename(asset_id.split(":", 1)[1])
+            full = os.path.join(self.builtin, name)
+            ok = os.path.splitext(name)[1].lower() in self.OK_EXT
+            return full if ok and os.path.isfile(full) else None
+        name = os.path.basename(asset_id)
         if not name or name == "index.json":
             return None
         if os.path.splitext(name)[1].lower() not in self.OK_EXT:
@@ -467,9 +511,26 @@ class AssetStore:
         except Exception:
             pass
         out.sort(key=lambda a: a["added"], reverse=True)
-        return out
+
+        shipped = []
+        try:
+            for name in sorted(os.listdir(self.builtin or "")):
+                if os.path.splitext(name)[1].lower() not in self.OK_EXT:
+                    continue
+                shipped.append({
+                    "id": "builtin:" + name,
+                    "url": "/asset/builtin:" + urllib.parse.quote(name),
+                    "name": os.path.splitext(name)[0],
+                    "builtin": True, "added": 0,
+                    "size": os.path.getsize(os.path.join(self.builtin, name)),
+                })
+        except Exception:
+            pass
+        return out + shipped
 
     def delete(self, asset_id):
+        if (asset_id or "").startswith("builtin:"):
+            return False             # shipped artwork is read-only
         full = self.path(asset_id)
         if not full:
             return False
@@ -482,7 +543,7 @@ class AssetStore:
             return False
 
 
-ASSET_STORE = AssetStore(ASSETS)
+ASSET_STORE = AssetStore(ASSETS, paths.builtin_dir())
 
 
 # ================================================================= state
@@ -493,6 +554,9 @@ class Hub:
     def __init__(self):
         self.local = {"track_id": None, "playing": False, "position": 0.0,
                       "duration": 0.0, "volume": CONFIG["volume"], "dpr": 1.0}
+        # A seek asked for by a pop-out. The deck owns the <audio> element, so
+        # the request rides the state broadcast and the deck applies it.
+        self.local_seek = None
         self._subs = []
         self._lock = threading.Lock()
 
@@ -585,6 +649,7 @@ class Hub:
                     "redirect_uri": SPOTIFY.redirect_uri,
                 },
             },
+            "local_seek": self.local_seek,
             "source_mode": mode,
             "spotify_account": {
                 "shuffle": account.get("shuffle", False),
@@ -934,7 +999,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, data, mime, {"Cache-Control": "max-age=600"})
 
         if path.startswith("/asset/"):
-            asset = ASSET_STORE.path(path.split("/")[-1])
+            asset = ASSET_STORE.path(path[len("/asset/"):])
             if not asset:
                 return self._send(404, "no asset", "text/plain")
             with open(asset, "rb") as f:
@@ -1135,6 +1200,17 @@ class Handler(BaseHTTPRequestHandler):
             if data.get("index") is not None:
                 return self._json(SPOTIFY.skip_to(data.get("uri", ""), data.get("index")))
             return self._json(SPOTIFY.play_to_front(data.get("uri", "")))
+
+        if path == "/api/seek":
+            # Whichever source is on screen; the pop-outs do not need to know.
+            now = HUB.snapshot()["now"] or {}
+            if now.get("source") == "local":
+                seconds = float(data.get("seconds", 0))
+                HUB.local_seek = {"to": seconds, "id": time.time()}
+                HUB.update_local({"position": seconds})
+                HUB.broadcast()
+                return self._json({"ok": True, "source": "local"})
+            return self._json(SPOTIFY.seek(data.get("seconds", 0)))
 
         if path == "/api/spotify/seek":
             return self._json(SPOTIFY.seek(data.get("seconds", 0)))

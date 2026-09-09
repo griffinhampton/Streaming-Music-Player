@@ -29,6 +29,20 @@ Two sources, picked automatically or by hand:
   - **Your Spotify account** (optional, see below): also sees playback on your
     phone, the web player or a Connect speaker, and can control it from there.
 
+## How the deck is laid out
+
+Across the top sit the three windows you can put on stream, side by side. Each
+card says whether that window is **live** or **closed**, what size it is, and
+carries the button that opens or closes it — so there is one place to look and
+one place to click.
+
+Clicking a card also *selects* it. The preview underneath switches to that
+window, and the settings on the right narrow to the ones that apply to it, so
+you are never scrolling past lyrics settings to reach the pop-out's.
+
+Below that: the preview and your library (or Spotify's queue) on the left, the
+player and every design setting on the right.
+
 ## Start it
 
 - **From the .exe** – double-click `Music Deck.exe`. First launch takes a few
@@ -41,11 +55,11 @@ Chrome or Edge has to be installed (Edge always is on Windows 10/11).
 
 ## Put it on stream (TikTok Studio)
 
-1. In the deck, click **Open on-screen window**.
+1. In the deck, press **Open** on the **Now Playing** card at the top.
 2. TikTok Studio → **Add source → Window** → pick **Music Deck - Now Playing**.
 3. Size and place it on your canvas like any other source.
-4. Want lyrics or the queue? **Lyrics tab** / **Queue tab → Open window**, then
-   add **Music Deck - Lyrics** or **Music Deck - Queue** the same way.
+4. Want lyrics or the queue? Press **Open** on those cards too, then add
+   **Music Deck - Lyrics** or **Music Deck - Queue** the same way.
 
 The windows do not need to stay visible on your desktop – window capture reads
 the window itself, even behind a fullscreen game.
@@ -60,8 +74,11 @@ audio is Spotify's as usual.
 - Grab the **bottom-right corner** of a pop-out and stretch it any way you like.
   With layout on **Auto**, the card re-arranges itself for the shape: wide
   becomes a bar, square becomes a stacked card, a thin strip goes compact.
-- **Window tab** has shape presets (horizontal, wide strip, square, portrait,
-  slim), exact width and height, snap-to-corner, and always-on-top.
+- **Size tab** has shape presets (horizontal, wide strip, square, portrait,
+  slim), exact width and height, snap-to-corner, and always-on-top. The lyrics
+  and queue windows have the same controls in their own **Settings** tab.
+- Wherever you drag a window to, its card at the top keeps showing the real
+  size.
 
 Sizes are in real screen pixels, and the preview shows the pop-out at the
 size it actually has on screen.
@@ -77,8 +94,23 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   blossoms, cute doodles, red moon, embers. Three colours, motif size, density,
   tile size and a shuffle button, so no two setups look alike. Nothing is
   downloaded; the art is drawn on the fly.
-- **Layout / Text / Art & bar** – fonts, sizes, colours, gradients, dropped-in
+- **Background → Picture** – the artwork that ships with the app, plus anything
+  you drop in yourself. **Across** and **Down** choose which part of a picture
+  shows, and **Darken** lays a veil over it so the text stays readable. Each of
+  the three windows keeps its own picture and its own framing, so one wide image
+  can be cropped differently in each — or they can be three different images.
+- **Theme colours** – text, secondary text, and lines/borders in one place.
+  Everything else inherits them unless you have given that one thing a colour of
+  its own, so changing one swatch carries through the pop-out, the lyrics and
+  the queue at once. Picking a theme sets these three and leaves the per-element
+  colours free, so you can recolour a theme straight away without hunting
+  through every control; **Reset all colours to theme** hands back any overrides
+  you did set. Tick *Match the pop-out's colours* under App look and the deck
+  itself follows.
+- **Theme / Text / Art & bar** – fonts, sizes, colours, gradients, dropped-in
   images, corner radius, glow, card fill and its opacity, progress bar style.
+- **Progress bar** – choose what sits at each end: elapsed, remaining, total
+  length, or nothing. The two ends are set separately.
 - **Corners and margin** – the only reason a pop-out has a margin is its
   rounded corners (and any decor frame holding the card in), so you get both
   ways out:
@@ -92,9 +124,13 @@ Everything in the **Design** panel changes the pop-out live in the preview.
 - **Decor** – a frame around the edge: hand-drawn cherry blossom, petals,
   waves, or characters (sparkles, stars, your own). Behind the card as a
   watermark or in front; the card can step in from it as much as you like.
-  Emoticons next to the label.
+  Pick which sides it runs along, how far apart the motifs sit, and how fast
+  they drift — set to move, they circulate around the frame rather than sliding
+  off the ends. Emoticons next to the label.
 - **Stickers** – drop PNGs onto the preview, then drag them into place. Size,
-  rotation, opacity, flip, in front of or behind the card.
+  rotation, opacity, flip, layer order, in front of or behind the card, and
+  **Tint it** to redraw one as a single-colour silhouette that follows your
+  theme (the shape survives, its own colours do not).
 - **Lyrics** – text size, lines shown, alignment, timing nudge, whether it
   matches the pop-out's look.
 - **Queue** – heading, album art, artist, track length, and whether to include
@@ -104,6 +140,26 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   ceiling.
 - **App look** – restyle the deck itself: colours, font, density, a wallpaper
   from the same generated artwork or your own image, a frame, an emoticon.
+
+### Clicking the windows themselves
+
+Tick **Clickable** and the pop-outs stop being pictures:
+
+- **Now Playing** – click anywhere on the progress bar to jump there.
+- **Lyrics** – click a line to jump back (or ahead) to it.
+- **Queue** – click a track to jump to it. (Not move it: Spotify has no
+  reorder endpoint, so this advances to that track the way Spotify's own app
+  does — see the limit noted further down.)
+
+Leave it off and a window is inert, so a stray click cannot skip your track
+mid-stream. Dragging the window around works either way.
+
+### The artwork that comes with it
+
+The **built in themes** folder next to the app is read on startup and its
+pictures appear in every image picker, alongside anything you add. Drop your own
+files in there and they show up next time you start. They cannot be deleted from
+inside the app, so the shipped set and your own uploads never get mixed up.
 
 ## The left panel follows the source
 
@@ -142,14 +198,31 @@ Spotify desktop app through Windows, which covers the common case.
 It uses the PKCE flow, so there is no client secret to keep safe. Tokens are
 stored in `cache/spotify_token.json` on your PC and go nowhere else.
 
-1. Spotify panel → **Connect account…**
-2. Open **developer.spotify.com/dashboard** → **Create app**. Any name.
-3. In **Redirect URIs** paste exactly what the deck shows:
-   `http://127.0.0.1:8713/spotify/callback`
-4. Copy the app's **Client ID** into the deck and press **Connect Spotify**.
-   Spotify's approval page opens in its own window; approve there and it closes
-   itself. The deck shows *waiting for approval…* until it lands, and offers a
-   plain link as a fallback if the window cannot open.
+Switch the source to **Spotify** and the whole walkthrough is in the left panel,
+with a troubleshooting list for the errors Spotify's page can throw. The short
+version:
+
+1. Open **developer.spotify.com/dashboard**, log in with your normal Spotify
+   account, press **Create app**. Name and description can be anything — nobody
+   else sees them.
+2. In **Redirect URIs** paste exactly what the deck shows --
+   `http://127.0.0.1:8713/spotify/callback` — and press **Add**. It has to match
+   character for character: `127.0.0.1` not `localhost`, `http` not `https`, no
+   trailing slash. A mismatch is what *INVALID_CLIENT: Invalid redirect URI*
+   means.
+3. Tick **Web API** under *which API/SDKs are you planning to use*, agree to the
+   terms, **Save**.
+4. Open the app's **Settings** and copy the **Client ID** — the long string, not
+   the secret. There is no secret to copy: the deck uses the flow that does not
+   take one.
+5. Paste it into the deck and press **Connect Spotify**. The approval page opens
+   in its own window; approve there and it closes itself. The deck shows
+   *waiting for approval…* until it lands, and offers a plain link as a
+   fallback if the window cannot open.
+
+If it connects but says nothing is playing, start a track first — Spotify only
+reports a device that is actually playing — then press **Refresh** and pick the
+right device in the dropdown.
 
 Notes:
 
@@ -206,6 +279,7 @@ music-deck/
     scenes.js        the generated artwork
     decor.js         the edge frames
   config.json        your settings (created on first run)
+  ../built in themes/  artwork shipped with the app; bundled into the .exe
   cache/             library index, album art, lyrics, uploads, Chrome profiles
   build.bat          makes the .exe
 ```

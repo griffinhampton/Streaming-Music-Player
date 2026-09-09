@@ -22,18 +22,61 @@
     <span class="tag">local first</span>
   </div>
 
-  <div class="segmented" id="sourceMode" role="group" aria-label="What goes on screen">
+  <span class="topbar-label">Playing from</span>
+  <div class="segmented" id="sourceMode" role="group" aria-label="Where the music comes from">
     <button data-mode="auto" class="on">Auto</button>
     <button data-mode="local">My files</button>
     <button data-mode="spotify">Spotify</button>
   </div>
 
   <div class="topbar-right">
-    <span id="npStatus" class="pill pill-off">Window closed</span>
-    <button id="npToggle" class="btn btn-primary">Open on-screen window</button>
     <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Music Deck completely">Quit</button>
   </div>
 </header>
+
+<!-- The three windows you can put on stream. Picking one decides what the
+     preview below shows and which settings appear; the button on each card
+     opens or closes that window. -->
+<nav class="windows" id="windowsBar" aria-label="Stream windows">
+  <div class="wincard on" data-win="np" tabindex="0" role="button" aria-pressed="true">
+    <div class="wc-head">
+      <span class="wc-dot"></span>
+      <span class="wc-name">Now Playing</span>
+      <span class="wc-state" id="npStatus">closed</span>
+    </div>
+    <p class="wc-sub">The track, the art and the progress bar</p>
+    <div class="wc-foot">
+      <span class="wc-size" id="npSize"></span>
+      <button id="npToggle" class="btn btn-primary btn-sm">Open</button>
+    </div>
+  </div>
+
+  <div class="wincard" data-win="lyrics" tabindex="0" role="button" aria-pressed="false">
+    <div class="wc-head">
+      <span class="wc-dot"></span>
+      <span class="wc-name">Lyrics</span>
+      <span class="wc-state" id="lyStatus">closed</span>
+    </div>
+    <p class="wc-sub">The words, scrolling in time</p>
+    <div class="wc-foot">
+      <span class="wc-size" id="lySize"></span>
+      <button id="lyToggle" class="btn btn-primary btn-sm">Open</button>
+    </div>
+  </div>
+
+  <div class="wincard" data-win="queue" tabindex="0" role="button" aria-pressed="false">
+    <div class="wc-head">
+      <span class="wc-dot"></span>
+      <span class="wc-name">Queue</span>
+      <span class="wc-state" id="qStatus">closed</span>
+    </div>
+    <p class="wc-sub">What Spotify plays next</p>
+    <div class="wc-foot">
+      <span class="wc-size" id="qSize"></span>
+      <button id="qToggle" class="btn btn-primary btn-sm">Open</button>
+    </div>
+  </div>
+</nav>
 
 <main class="grid">
 
@@ -42,7 +85,7 @@
 
     <section class="panel preview-panel">
       <div class="panel-head">
-        <h2>This is what the pop-out looks like</h2>
+        <h2 id="previewTitle">This is what the pop-out looks like</h2>
         <div class="row gap">
           <span id="previewSize" class="muted small mono">760 × 190</span>
           <button id="previewReload" class="btn btn-ghost btn-sm">Refresh</button>
@@ -56,7 +99,7 @@
         </div>
         <div class="drop-hint" id="dropHint">
           <b>Drop a PNG here</b>
-          <span>to add it as a sticker &mdash; or as the background</span>
+          <span id="dropHintWhat">to add it as a sticker &mdash; or as the background</span>
         </div>
       </div>
 
@@ -78,14 +121,37 @@
 
       <!-- shown until the account is connected -->
       <div id="spSetup" class="sp-setup">
-        <p class="hint">Connect your Spotify account to see and drive what is playing —
-          including on your phone, the web player or a speaker.</p>
+        <p class="hint">Music Deck already reads the title and artist of whatever Spotify is
+          playing on <b>this</b> PC — that needs no login at all. Connecting your account adds
+          the things Windows cannot tell us: the <b>queue</b>, the <b>album art</b> at full size,
+          and control of Spotify wherever it is playing — your phone, the web player, a speaker.</p>
+
+        <p class="hint">Spotify has no shared key for apps like this one, so you make your own,
+          which takes about two minutes. It stays on this PC and is tied to your account, not ours.</p>
+
         <ol class="hint steps">
-          <li>Open <b>developer.spotify.com/dashboard</b> → <b>Create app</b>.</li>
-          <li>Under Redirect URIs add exactly:
-            <code id="spRedirect2">http://127.0.0.1:8713/spotify/callback</code></li>
-          <li>Paste the app's <b>Client ID</b> below and press Connect.</li>
+          <li><b>Open the dashboard.</b>
+            Go to <b>developer.spotify.com/dashboard</b> and log in with your normal Spotify
+            account. Press <b>Create app</b>.</li>
+          <li><b>Fill the form.</b>
+            <i>App name</i> and <i>description</i> can be anything — "Music Deck" is fine; nobody
+            else sees them. Leave the website blank.</li>
+          <li><b>Add the redirect URI.</b>
+            In <i>Redirect URIs</i> paste this exactly, then press <b>Add</b>:
+            <code id="spRedirect2">http://127.0.0.1:8713/spotify/callback</code>
+            This is the address on your own PC that Spotify sends you back to after you approve.
+            One wrong character and the approval page will refuse.</li>
+          <li><b>Tick Web API.</b>
+            Under <i>Which API/SDKs are you planning to use?</i> tick <b>Web API</b>.
+            Agree to the terms and press <b>Save</b>.</li>
+          <li><b>Copy the Client ID.</b>
+            On the app's page open <b>Settings</b>. Copy the <b>Client ID</b> — the long string of
+            letters and numbers. You do <i>not</i> need the client secret; Music Deck uses the
+            flow that does not take one, so there is no secret to leak.</li>
+          <li><b>Paste it below and press Connect.</b>
+            A window opens asking you to approve. Say yes and it closes itself.</li>
         </ol>
+
         <input id="spClientId2" class="input" type="text" placeholder="Client ID"
                spellcheck="false" autocomplete="off">
         <div class="row gap wrap">
@@ -95,8 +161,49 @@
         <p id="spManual2" class="hint" hidden>
           No window? <a id="spManualLink2" href="#" target="_blank" rel="noreferrer">open the approval page</a>.
         </p>
-        <p class="hint">Reading what is playing works on any account; controlling playback
-          needs Spotify Premium.</p>
+
+        <details class="sp-help">
+          <summary>It said no — what went wrong?</summary>
+          <dl class="hint faq">
+            <dt>INVALID_CLIENT: Invalid redirect URI</dt>
+            <dd>The redirect URI in the dashboard does not match. It must be
+              <code>http://127.0.0.1:8713/spotify/callback</code> — <b>127.0.0.1</b>, not
+              <code>localhost</code>; <b>http</b>, not https; no trailing slash. Press <b>Add</b>
+              after pasting it, then <b>Save</b> at the bottom of the page.</dd>
+
+            <dt>INVALID_CLIENT: Invalid client id</dt>
+            <dd>The Client ID is wrong or has a stray space. Copy it again from the app's
+              Settings page — it is the ID, not the secret.</dd>
+
+            <dt>The approval window never appeared</dt>
+            <dd>Use the link that shows up under the Connect button and approve in your normal
+              browser instead.</dd>
+
+            <dt>Connected, but it says nothing is playing</dt>
+            <dd>Spotify only reports a device that is actually playing. Start a track, then
+              press <b>Refresh</b>. If you have several devices, pick the right one in the
+              dropdown at the top of this panel.</dd>
+
+            <dt>Buttons do nothing / "Player command failed"</dt>
+            <dd>Controlling playback through the API needs <b>Spotify Premium</b>. Reading the
+              queue and what is playing works on a free account; skip, pause and seek do not.</dd>
+
+            <dt>You changed the port</dt>
+            <dd>The redirect URI has to match the port Music Deck is running on. If you started
+              it on a different port, add that address in the dashboard too.</dd>
+          </dl>
+        </details>
+
+        <details class="sp-help">
+          <summary>Sending this to a friend</summary>
+          <p class="hint">A Spotify app starts in <i>development mode</i>, which only lets accounts
+            you have listed use it — up to 25, added by email under <b>Settings → User Management</b>.
+            So either add your friends there, or have each of them make their own app and paste
+            their own Client ID. Everything else in Music Deck works for them with no setup at all.</p>
+        </details>
+
+        <p class="hint">None of this sends your listening anywhere. The token lives in
+          <code>cache/spotify_token.json</code> next to the app and talks only to Spotify.</p>
       </div>
 
       <!-- shown once connected -->
@@ -163,20 +270,25 @@
         <input id="seek" class="range" type="range" min="0" max="1000" value="0">
         <div class="times"><span id="deckElapsed">0:00</span><span id="deckDuration">0:00</span></div>
       </div>
-      <div class="transport">
-        <button id="shuffle" class="icon" title="Shuffle">🔀</button>
-        <button id="prev" class="icon" title="Previous">⏮</button>
-        <button id="playpause" class="icon icon-big" title="Play / pause (Space)">▶</button>
-        <button id="next" class="icon" title="Next">⏭</button>
-        <button id="repeat" class="icon" title="Repeat">🔁</button>
-      </div>
-      <div class="volume">
-        <span class="muted small">Volume</span>
-        <input id="volume" class="range" type="range" min="0" max="100" value="70">
-        <span id="volLabel" class="muted small mono">70</span>
+      <div class="player-controls">
+        <div class="transport">
+          <button id="shuffle" class="icon" title="Shuffle">🔀</button>
+          <button id="prev" class="icon" title="Previous">⏮</button>
+          <button id="playpause" class="icon icon-big" title="Play / pause (Space)">▶</button>
+          <button id="next" class="icon" title="Next">⏭</button>
+          <button id="repeat" class="icon" title="Repeat">🔁</button>
+        </div>
+        <div class="volume" title="Volume">
+          <span class="vol-icon" aria-hidden="true">🔊</span>
+          <input id="volume" class="range" type="range" min="0" max="100" value="70"
+                 aria-label="Volume">
+          <span id="volLabel" class="muted small mono">70</span>
+        </div>
       </div>
     </section>
 
+    <!-- Just where the music is coming from. What is playing, and the buttons
+         to drive it, live in the player card above - no need to say it twice. -->
     <section class="panel spotify">
       <div class="panel-head tight">
         <h2>Spotify <span class="tag tag-soft">via Windows</span></h2>
@@ -185,12 +297,6 @@
       <div id="spotifyBody" class="spotify-body">
         <div class="muted small">Looking for a media session…</div>
       </div>
-      <div class="transport transport-sm">
-        <button id="spPrev" class="icon" title="Previous">⏮</button>
-        <button id="spPlay" class="icon" title="Play / pause">⏯</button>
-        <button id="spNext" class="icon" title="Next">⏭</button>
-      </div>
-      <p class="hint">Read straight from Windows by default — no login needed.</p>
 
       <div class="sp-account">
         <div class="row gap between">
@@ -245,17 +351,18 @@
         </select>
       </div>
 
+      <!-- data-for says which window a tab belongs to; the rest are hidden. -->
       <div class="tabs" id="designTabs">
-        <button data-tab="layout" class="on">Layout</button>
-        <button data-tab="bg">Background</button>
-        <button data-tab="text">Text</button>
-        <button data-tab="bits">Art &amp; bar</button>
-        <button data-tab="decor">Decor</button>
-        <button data-tab="stickers">Stickers</button>
-        <button data-tab="lyrics">Lyrics</button>
-        <button data-tab="queue">Queue</button>
-        <button data-tab="window">Window</button>
-        <button data-tab="app">App look</button>
+        <button data-tab="layout" data-for="np" class="on">Theme</button>
+        <button data-tab="window" data-for="np">Size</button>
+        <button data-tab="bg" data-for="np">Background</button>
+        <button data-tab="text" data-for="np">Text</button>
+        <button data-tab="bits" data-for="np">Art &amp; bar</button>
+        <button data-tab="decor" data-for="np">Decor</button>
+        <button data-tab="stickers" data-for="np">Stickers</button>
+        <button data-tab="lyrics" data-for="lyrics">Settings</button>
+        <button data-tab="queue" data-for="queue">Settings</button>
+        <button data-tab="app" data-for="all">App look</button>
       </div>
 
       <!-- layout -->
@@ -292,6 +399,25 @@
             <div class="swatches" id="swatches"></div>
           </div>
         </label>
+
+        <label class="field">
+          <span>Theme colours</span>
+          <div class="field two">
+            <label><span>Text</span>
+              <input class="color wide" type="color" data-np="palette.text" data-kind="color"></label>
+            <label><span>Secondary text</span>
+              <input class="color wide" type="color" data-np="palette.muted" data-kind="color"></label>
+          </div>
+          <label><span>Lines and borders</span>
+            <input class="color wide" type="color" data-np="palette.line" data-kind="color"></label>
+          <span class="hint">Everything inherits these unless you set that thing's own colour.
+            Change one here and it carries through the pop-out, lyrics and queue at once.
+            Use <b>Reset to theme</b> on any colour to hand it back.</span>
+        </label>
+
+        <div class="row gap wrap">
+          <button class="btn btn-ghost btn-sm" id="resetColours">Reset all colours to theme</button>
+        </div>
 
         <label class="field">
           <span>Text scale <b class="mono" data-out="scale">1.00</b></span>
@@ -441,6 +567,15 @@
         </div>
 
         <label class="field">
+          <span>Colour beneath the image</span>
+          <div class="row gap">
+            <input class="color" type="color" data-np="bg.color" data-kind="color">
+            <span class="hint">Shows wherever the image does not reach, and through
+              anything transparent in it.</span>
+          </div>
+        </label>
+
+        <label class="field">
           <span>Fit</span>
           <select class="input" data-np="bg.fit" data-kind="str">
             <option value="cover">Cover</option>
@@ -455,6 +590,17 @@
           <input class="range" type="range" min="0" max="40"
                  data-np="bg.blur" data-kind="range" data-out="bg.blur">
         </label>
+
+        <div class="field two">
+          <label><span>Across <b class="mono" data-out="bg.pos_x">50</b>%</span>
+            <input class="range" type="range" min="0" max="100"
+                   data-np="bg.pos_x" data-kind="range" data-out="bg.pos_x"></label>
+          <label><span>Down <b class="mono" data-out="bg.pos_y">50</b>%</span>
+            <input class="range" type="range" min="0" max="100"
+                   data-np="bg.pos_y" data-kind="range" data-out="bg.pos_y"></label>
+        </div>
+        <p class="hint">Which part of the picture shows. Each window has its own,
+          so one wide image can be framed differently in each.</p>
 
         <label class="field">
           <span>Darken <b class="mono" data-out="bg.dim">0.00</b></span>
@@ -566,10 +712,30 @@
             <button class="btn btn-ghost btn-sm" data-clear="progress.color">Use accent</button>
           </div>
         </label>
+        <div class="field two">
+          <label><span>Left of the bar</span>
+            <select class="input" data-np="progress.left" data-kind="str">
+              <option value="elapsed">Time played</option>
+              <option value="remaining">Time left</option>
+              <option value="duration">Full length</option>
+              <option value="none">Nothing</option>
+            </select></label>
+          <label><span>Right of the bar</span>
+            <select class="input" data-np="progress.right" data-kind="str">
+              <option value="remaining">Time left</option>
+              <option value="elapsed">Time played</option>
+              <option value="duration">Full length</option>
+              <option value="none">Nothing</option>
+            </select></label>
+        </div>
+
         <div class="checks">
           <label class="check"><input type="checkbox" data-np="progress.times" data-kind="bool"><span>Show times</span></label>
           <label class="check"><input type="checkbox" data-np="progress.glow" data-kind="bool"><span>Bar glow</span></label>
+          <label class="check"><input type="checkbox" data-np="interactive" data-kind="bool"><span>Clickable pop-out</span></label>
         </div>
+        <p class="hint">Clickable lets you scrub the progress bar right on the pop-out.
+          The lyrics and queue windows have their own switch.</p>
       </div>
 
 
@@ -670,18 +836,23 @@
                  data-np="decor.kaomoji" data-kind="str">
         </label>
 
+        <label class="field">
+          <span>Drift speed <b class="mono" data-out="decor.speed">1.00</b>&times;</span>
+          <input class="range" type="range" min="10" max="500"
+                 data-np="decor.speed" data-kind="range" data-div="100"
+                 data-out="decor.speed" data-dp="2">
+          <span class="hint">With all four sides on, the pattern travels around the
+            window as a loop rather than each pair sliding the same way.</span>
+        </label>
+
         <div class="checks">
-          <label class="check"><input type="checkbox" data-np="decor.animate" data-kind="bool"><span>Drift slowly</span></label>
+          <label class="check"><input type="checkbox" data-np="decor.animate" data-kind="bool"><span>Drift</span></label>
         </div>
       </div>
 
 
       <!-- lyrics -->
       <div class="tabpane" data-pane="lyrics">
-        <div class="row gap">
-          <button id="lyToggle" class="btn btn-primary btn-sm">Open lyrics window</button>
-          <span id="lyStatus" class="pill pill-off">closed</span>
-        </div>
         <p class="hint">A second pop-out that scrolls the words in time with the song.
           Add it in TikTok Studio as <b>Music Deck - Lyrics</b> and drag it wherever you like.
           Local tracks use a <b>.lrc</b> file next to the song when there is one.</p>
@@ -692,6 +863,7 @@
           <label class="check"><input type="checkbox" data-ly="follow_theme" data-kind="bool"><span>Match the pop-out</span></label>
           <label class="check"><input type="checkbox" data-ly="dim_past" data-kind="bool"><span>Fade sung lines</span></label>
           <label class="check"><input type="checkbox" data-ly="show_header" data-kind="bool"><span>Song title on top</span></label>
+          <label class="check"><input type="checkbox" data-ly="interactive" data-kind="bool"><span>Click a line to jump</span></label>
         </div>
 
         <label class="field">
@@ -723,10 +895,48 @@
           <input class="range" type="range" min="-30" max="30"
                  data-ly="offset" data-kind="range" data-div="10" data-lyout="offset" data-dp="1">
         </label>
-        <label class="field">
-          <span>Background when not matching the pop-out</span>
-          <input class="color wide" type="color" data-ly="bg" data-kind="color">
-        </label>
+
+        <div class="divider"></div>
+        <div class="own-bg" id="lyricsOwnBg">
+          <p class="hint">This window's own background, used when it is not matching
+            the pop-out. Each window can show a different picture, or a different
+            part of the same one.</p>
+          <label class="field">
+            <span>Background</span>
+            <div class="segmented small" data-ly="bg_own.mode" data-kind="seg">
+              <button data-v="solid">Solid</button>
+              <button data-v="gradient">Gradient</button>
+              <button data-v="image">Image</button>
+            </div>
+          </label>
+          <div class="field two">
+            <label><span>Colour</span>
+              <input class="color wide" type="color" data-ly="bg_own.color" data-kind="color"></label>
+            <label><span>Second colour</span>
+              <input class="color wide" type="color" data-ly="bg_own.color2" data-kind="color"></label>
+          </div>
+          <label class="field">
+            <span>Picture</span>
+            <div class="asset-picker" id="lyBgPicker"></div>
+          </label>
+          <div class="field two">
+            <label><span>Across <b class="mono" data-lyout="bg_own.pos_x">50</b>%</span>
+              <input class="range" type="range" min="0" max="100"
+                     data-ly="bg_own.pos_x" data-kind="range"
+                     data-lyout="bg_own.pos_x"></label>
+            <label><span>Down <b class="mono" data-lyout="bg_own.pos_y">50</b>%</span>
+              <input class="range" type="range" min="0" max="100"
+                     data-ly="bg_own.pos_y" data-kind="range"
+                     data-lyout="bg_own.pos_y"></label>
+          </div>
+          <label class="field">
+            <span>Darken <b class="mono" data-lyout="bg_own.dim">0.00</b></span>
+            <input class="range" type="range" min="0" max="90"
+                   data-ly="bg_own.dim" data-kind="range" data-div="100"
+                   data-lyout="bg_own.dim" data-dp="2">
+          </label>
+        </div>
+
 
         <div class="field two">
           <label><span>Width</span>
@@ -748,10 +958,6 @@
 
       <!-- queue window -->
       <div class="tabpane" data-pane="queue">
-        <div class="row gap">
-          <button id="qToggle" class="btn btn-primary btn-sm">Open queue window</button>
-          <span id="qStatus" class="pill pill-off">closed</span>
-        </div>
         <p class="hint">A pop-out showing what Spotify plays next. Add it in TikTok Studio
           as <b>Music Deck - Queue</b>. Needs the Spotify account connected.</p>
 
@@ -780,12 +986,51 @@
           <label class="check"><input type="checkbox" data-q="show_artist" data-kind="bool"><span>Artist</span></label>
           <label class="check"><input type="checkbox" data-q="show_times" data-kind="bool"><span>Track length</span></label>
           <label class="check"><input type="checkbox" data-q="follow_theme" data-kind="bool"><span>Match the pop-out</span></label>
+          <label class="check"><input type="checkbox" data-q="interactive" data-kind="bool"><span>Click a track to play</span></label>
         </div>
 
-        <label class="field">
-          <span>Background when not matching the pop-out</span>
-          <input class="color wide" type="color" data-q="bg" data-kind="color">
-        </label>
+
+        <div class="divider"></div>
+        <div class="own-bg" id="queueOwnBg">
+          <p class="hint">This window's own background, used when it is not matching
+            the pop-out. Each window can show a different picture, or a different
+            part of the same one.</p>
+          <label class="field">
+            <span>Background</span>
+            <div class="segmented small" data-q="bg_own.mode" data-kind="seg">
+              <button data-v="solid">Solid</button>
+              <button data-v="gradient">Gradient</button>
+              <button data-v="image">Image</button>
+            </div>
+          </label>
+          <div class="field two">
+            <label><span>Colour</span>
+              <input class="color wide" type="color" data-q="bg_own.color" data-kind="color"></label>
+            <label><span>Second colour</span>
+              <input class="color wide" type="color" data-q="bg_own.color2" data-kind="color"></label>
+          </div>
+          <label class="field">
+            <span>Picture</span>
+            <div class="asset-picker" id="qBgPicker"></div>
+          </label>
+          <div class="field two">
+            <label><span>Across <b class="mono" data-qout="bg_own.pos_x">50</b>%</span>
+              <input class="range" type="range" min="0" max="100"
+                     data-q="bg_own.pos_x" data-kind="range"
+                     data-qout="bg_own.pos_x"></label>
+            <label><span>Down <b class="mono" data-qout="bg_own.pos_y">50</b>%</span>
+              <input class="range" type="range" min="0" max="100"
+                     data-q="bg_own.pos_y" data-kind="range"
+                     data-qout="bg_own.pos_y"></label>
+          </div>
+          <label class="field">
+            <span>Darken <b class="mono" data-qout="bg_own.dim">0.00</b></span>
+            <input class="range" type="range" min="0" max="90"
+                   data-q="bg_own.dim" data-kind="range" data-div="100"
+                   data-qout="bg_own.dim" data-dp="2">
+          </label>
+        </div>
+
 
         <div class="field two">
           <label><span>Width</span>
@@ -833,10 +1078,27 @@
             <label><span>Y %</span><input class="input" type="number" min="-20" max="120" data-st="y"></label>
           </div>
           <div class="row gap wrap">
-            <button class="btn btn-ghost btn-sm" id="stickerFront">Bring to front</button>
-            <button class="btn btn-ghost btn-sm" id="stickerBack">Send behind card</button>
+            <button class="btn btn-ghost btn-sm" id="stickerUp">↑ Move up</button>
+            <button class="btn btn-ghost btn-sm" id="stickerDown">↓ Move down</button>
+            <button class="btn btn-ghost btn-sm" id="stickerFront">In front of card</button>
+            <button class="btn btn-ghost btn-sm" id="stickerBack">Behind card</button>
             <button class="btn btn-ghost btn-sm" id="stickerFlip">Flip</button>
           </div>
+
+          <label class="field">
+            <span>Colour</span>
+            <div class="row gap">
+              <label class="check"><input type="checkbox" id="stickerTint"><span>Tint it</span></label>
+              <input class="color" type="color" id="stickerColor">
+            </div>
+            <span class="hint">A dropped-in picture keeps its own colours. Tinting redraws it
+              as a single-colour silhouette, the way the built-in patterns work.</span>
+          </label>
+
+          <label class="field">
+            <span>Swap the picture</span>
+            <div class="asset-picker" id="stickerPicker"></div>
+          </label>
         </div>
       </div>
 
@@ -996,6 +1258,7 @@
 
         <div class="checks">
           <label class="check"><input type="checkbox" data-ui="glow" data-kind="bool"><span>Accent glow</span></label>
+          <label class="check"><input type="checkbox" data-ui="follow_np" data-kind="bool"><span>Match the pop-out's colours</span></label>
         </div>
 
         <div class="divider"></div>

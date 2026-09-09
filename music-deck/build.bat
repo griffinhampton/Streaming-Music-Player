@@ -18,6 +18,7 @@ rem Paths must be absolute: PyInstaller resolves them against the spec folder.
 "%ENV%\Scripts\pyinstaller.exe" --noconfirm --clean --onefile --noconsole ^
   --name "Music Deck" --icon "%~dp0music-deck.ico" ^
   --add-data "%~dp0web;web" --add-data "%~dp0smtc.ps1;." ^
+  --add-data "%~dp0..\built in themes;builtin" ^
   --hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox ^
   --distpath "%~dp0..\dist" --workpath "%ENV%\work" --specpath "%ENV%" ^
   server.py || goto :fail
