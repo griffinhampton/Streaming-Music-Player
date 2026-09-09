@@ -1,0 +1,180 @@
+{
+  "port": 8713,
+  "music_dirs": [],
+  "source_mode": "auto",
+  "theme": "ember",
+  "volume": 0.7,
+  "ui": {
+    "preset": "",
+    "accent": "#ff2a3a",
+    "bg": "#0a0304",
+    "panel": "#150607",
+    "border": "#3b0f13",
+    "text": "#ffe9e9",
+    "muted": "#a86b70",
+    "radius": 10,
+    "font": "Segoe UI",
+    "density": "normal",
+    "glow": true,
+    "wallpaper": "",
+    "wallpaper_dim": 0.35,
+    "scene": {
+      "id": "embers",
+      "c1": "",
+      "c2": "",
+      "c3": "",
+      "scale": 1,
+      "density": 1,
+      "tile_scale": 1,
+      "seed": 1
+    },
+    "decor": {
+      "border": "",
+      "custom": "",
+      "sides": "none",
+      "size": 0.7,
+      "opacity": 0.5,
+      "color": "",
+      "gap": 0.6,
+      "kaomoji": "",
+      "animate": false,
+      "layer": "over",
+      "blur": 0
+    }
+  },
+  "spotify": {
+    "client_id": "f95ac86a599f4402813682444a726c17",
+    "use_account": true
+  },
+  "queue": {
+    "width": 385,
+    "height": 551,
+    "x": 370,
+    "y": 631,
+    "borderless": true,
+    "topmost": true,
+    "scale": 1.0,
+    "rows": 30,
+    "heading": "UP NEXT",
+    "show_header": true,
+    "show_now": false,
+    "show_art": true,
+    "show_artist": true,
+    "show_times": true,
+    "follow_theme": true,
+    "bg": "#0f0f17"
+  },
+  "lyrics": {
+    "online": true,
+    "width": 857,
+    "height": 276,
+    "x": 32,
+    "y": 32,
+    "borderless": true,
+    "topmost": true,
+    "scale": 1.0,
+    "lines": 5,
+    "align": "center",
+    "highlight": "accent",
+    "dim_past": true,
+    "show_header": false,
+    "offset": 0.0,
+    "follow_theme": true,
+    "bg": "#0f0f17"
+  },
+  "nowplaying": {
+    "preset": "",
+    "layout": "bar",
+    "width": 1007,
+    "height": 553,
+    "x": 1542,
+    "y": 332,
+    "scale": 0.83,
+    "borderless": true,
+    "topmost": true,
+    "accent": "#ff2a3a",
+    "bg": {
+      "mode": "scene",
+      "color": "#0f0f17",
+      "color2": "#241a3d",
+      "angle": 135,
+      "image": "",
+      "fit": "cover",
+      "dim": 0,
+      "blur": 0,
+      "scene": {
+        "id": "sakura",
+        "c1": "",
+        "c2": "",
+        "c3": "#ffffff",
+        "scale": 0.71,
+        "density": 1,
+        "tile_scale": 1,
+        "seed": 1
+      }
+    },
+    "card": {
+      "radius": 12,
+      "padding": 12,
+      "border": 0,
+      "border_color": "#2a2a3a",
+      "fill": "",
+      "fill_alpha": 1,
+      "glow": false
+    },
+    "text": {
+      "font": "Segoe UI",
+      "align": "left",
+      "title_size": 1.72,
+      "title_color": "#fff1f1",
+      "title_weight": 700,
+      "artist_size": 1.0,
+      "artist_color": "#e0a3a8",
+      "label_size": 0.72,
+      "label_color": "#ff2a3a",
+      "shadow": 0.5,
+      "uppercase": false,
+      "marquee": true
+    },
+    "art": {
+      "show": true,
+      "radius": 10,
+      "border": 0,
+      "border_color": "#ffffff33"
+    },
+    "progress": {
+      "show": true,
+      "height": 4,
+      "color": "#ff2a3a",
+      "times": true,
+      "glow": true
+    },
+    "label": {
+      "show": true,
+      "text": "NOW PLAYING"
+    },
+    "surround": {
+      "mode": "solid",
+      "color": "#000000"
+    },
+    "decor": {
+      "border": "",
+      "custom": "",
+      "sides": "none",
+      "size": 0.7,
+      "opacity": 0.85,
+      "color": "",
+      "gap": 0.5,
+      "kaomoji": "",
+      "animate": false,
+      "layer": "under",
+      "blur": 0,
+      "inset": 1,
+      "tint": true,
+      "place": "in"
+    },
+    "source_badge": false,
+    "equalizer": true,
+    "stickers": []
+  }
+}

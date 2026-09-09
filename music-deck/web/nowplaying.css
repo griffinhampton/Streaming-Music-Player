@@ -1,0 +1,472 @@
+/* Now Playing window.
+
+   Nothing here is hard-coded to a look: every colour, size and toggle comes
+   from a CSS custom property that nowplaying.js sets from your config. The one
+   fixed rule is that the page is never transparent - this is a real browser
+   window, and "transparent" in a browser window means white. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0f0f17;
+  user-select: none;
+  cursor: default;
+}
+
+.stage {
+  --accent: #8b5cf6;
+  --bg: #0f0f17;
+  --fg: #f4f4f8;
+  --dim: rgba(244,244,248,.62);
+  --card-fill: transparent;
+  --card-radius: 18px;
+  --card-pad: 12px;
+  --card-border: 1px;
+  --card-border-color: #2a2a3a;
+  --art-radius: 10px;
+  --art-border: 0px;
+  --art-border-color: #ffffff33;
+  --track: rgba(255,255,255,.16);
+  --bar-h: 5px;
+  --bar-color: var(--accent);
+  --title-size: 1.72em;
+  --title-weight: 700;
+  --title-color: var(--fg);
+  --artist-size: 1.0em;
+  --artist-color: var(--dim);
+  --label-size: 0.72em;
+  --label-color: var(--accent);
+  --text-shadow: none;
+  --font: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+
+  position: relative;
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+}
+
+/* ---------------------------------------------------------------- background */
+
+.bg-image {
+  position: absolute; inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  display: none;
+}
+.stage.has-bg-image .bg-image { display: block; }
+
+.bg-dim {
+  position: absolute; inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- stickers */
+
+.stickers { position: absolute; inset: 0; pointer-events: none; }
+.stickers-back  { z-index: 1; }
+.stickers-front { z-index: 6; }
+
+.sticker {
+  position: absolute;
+  transform-origin: center center;
+  display: block;
+  will-change: transform;
+}
+
+/* ---------------------------------------------------------------- card */
+
+.card {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.85em;
+  width: 100%; height: 100%;
+  padding: var(--card-pad);
+  background: var(--card-fill);
+  border: var(--card-border) solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+}
+
+/* A soft wash of the accent behind the text. */
+.card::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at 12% 50%,
+              color-mix(in srgb, var(--accent) 26%, transparent), transparent 62%);
+  pointer-events: none;
+  display: none;
+}
+.stage.card-glow .card::after { display: block; }
+
+.card > * { position: relative; z-index: 1; }
+
+/* With a solid surround, the theme's background is painted here - inside the
+   card's rounded clip - and the stage shows one flat colour around it. */
+.card > .card-bg {
+  position: absolute; inset: 0; z-index: 0;
+  display: none;
+  background-position: center;
+}
+.card-bg::after { content: ""; position: absolute; inset: 0; background: var(--card-fill); }
+.stage.surround { background: var(--surround, #000); }
+.stage.surround .card { background: transparent; }
+.stage.surround .card > .card-bg { display: block; }
+.stage.surround .bg-image { display: none; }
+
+/* ---------------------------------------------------------------- art */
+
+.art-wrap {
+  position: relative;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
+  border-radius: var(--art-radius);
+  border: var(--art-border) solid var(--art-border-color);
+  overflow: hidden;
+  background: rgba(255,255,255,.06);
+}
+.art { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art-fallback {
+  position: absolute; inset: 0;
+  display: none;
+  align-items: center; justify-content: center;
+  background: linear-gradient(135deg,
+              color-mix(in srgb, var(--accent) 65%, #1b1b28),
+              color-mix(in srgb, var(--accent) 22%, #0d0d16));
+  color: rgba(255,255,255,.85);
+}
+.art-fallback svg { width: 42%; height: 42%; }
+.stage.no-art-image .art { display: none; }
+.stage.no-art-image .art-fallback { display: flex; }
+.stage.hide-art .art-wrap { display: none; }
+
+/* Little equaliser so a glance tells you it is live. */
+.bars {
+  position: absolute; right: .35em; bottom: .35em;
+  display: none; align-items: flex-end; gap: .12em;
+  height: .9em; padding: .2em .28em;
+  background: rgba(0,0,0,.45);
+  border-radius: .5em;
+}
+.stage.show-eq[data-state="playing"] .bars { display: flex; }
+.bars i {
+  width: .13em; height: 100%;
+  background: var(--accent);
+  border-radius: .1em;
+  animation: bounce 900ms ease-in-out infinite;
+}
+.bars i:nth-child(2) { animation-delay: 140ms; }
+.bars i:nth-child(3) { animation-delay: 300ms; }
+.bars i:nth-child(4) { animation-delay: 460ms; }
+@keyframes bounce {
+  0%, 100% { transform: scaleY(.30); }
+  50%      { transform: scaleY(1); }
+}
+
+/* ---------------------------------------------------------------- text */
+
+.info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.16em;
+}
+
+.label-row { display: flex; align-items: center; gap: .6em; }
+
+.label {
+  font-size: var(--label-size);
+  font-weight: 700;
+  letter-spacing: .18em;
+  color: var(--label-color);
+  text-transform: uppercase;
+  text-shadow: var(--text-shadow);
+}
+.stage.hide-label .label { display: none; }
+
+.source-badge {
+  font-size: 0.62em;
+  font-weight: 600;
+  letter-spacing: .08em;
+  padding: .18em .55em;
+  border-radius: 1em;
+  color: var(--artist-color);
+  border: 1px solid var(--card-border-color);
+  text-transform: uppercase;
+}
+.source-badge:empty, .stage.hide-source .source-badge { display: none; }
+
+.title-clip, .artist-clip { overflow: hidden; white-space: nowrap; }
+
+.title {
+  font-size: var(--title-size);
+  font-weight: var(--title-weight);
+  color: var(--title-color);
+  line-height: 1.16;
+  letter-spacing: -0.01em;
+  display: inline-block;
+  white-space: nowrap;
+  text-shadow: var(--text-shadow);
+}
+.stage.uppercase-title .title { text-transform: uppercase; letter-spacing: .02em; }
+
+.artist {
+  font-size: var(--artist-size);
+  font-weight: 500;
+  color: var(--artist-color);
+  line-height: 1.3;
+  display: inline-block;
+  white-space: nowrap;
+  text-shadow: var(--text-shadow);
+}
+
+/* Titles wider than the window slide back and forth instead of truncating. */
+.marquee { animation: slide var(--marquee-time, 12s) linear infinite alternate; }
+@keyframes slide {
+  0%   { transform: translateX(0); }
+  8%   { transform: translateX(0); }
+  92%  { transform: translateX(var(--marquee-shift, 0px)); }
+  100% { transform: translateX(var(--marquee-shift, 0px)); }
+}
+
+/* ---------------------------------------------------------------- progress */
+
+.progress { margin-top: 0.42em; }
+.stage.hide-progress .progress { display: none; }
+
+.progress-track {
+  height: var(--bar-h);
+  border-radius: 1em;
+  background: var(--track);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 1em;
+  background: linear-gradient(90deg, var(--bar-color),
+              color-mix(in srgb, var(--bar-color) 45%, #ffffff));
+}
+.stage.bar-glow .progress-fill {
+  box-shadow: 0 0 .6em color-mix(in srgb, var(--bar-color) 60%, transparent);
+}
+.times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: .28em;
+  font-size: 0.66em;
+  font-variant-numeric: tabular-nums;
+  color: var(--artist-color);
+}
+.stage.hide-times .times { display: none; }
+
+/* ---------------------------------------------------------------- layouts */
+
+.stage.align-center .info { align-items: center; text-align: center; }
+.stage.align-center .label-row { justify-content: center; }
+.stage.align-center .title-clip,
+.stage.align-center .artist-clip { width: 100%; text-align: center; }
+
+.layout-card .card { flex-direction: column; text-align: center; gap: .6em; }
+.layout-card .art-wrap { height: auto; width: 46%; max-height: 55%; }
+.layout-card .info { flex: 0 0 auto; width: 100%; align-items: center; text-align: center; }
+.layout-card .label-row { justify-content: center; }
+.layout-card .title-clip, .layout-card .artist-clip { width: 100%; text-align: center; }
+.layout-card .progress { width: 100%; }
+.layout-card .card::after {
+  background: radial-gradient(circle at 50% 12%,
+              color-mix(in srgb, var(--accent) 26%, transparent), transparent 62%);
+}
+
+.layout-compact .card { gap: .7em; }
+.layout-compact .label { display: none; }
+.layout-compact .times { display: none; }
+.layout-compact .progress { margin-top: .3em; }
+
+/* ---------------------------------------------------------------- states */
+
+.stage[data-state="idle"] .title { color: var(--artist-color); font-weight: 600; }
+.stage[data-state="paused"] .card { opacity: .82; }
+
+.changing .title, .changing .artist, .changing .art-wrap {
+  animation: pop 380ms cubic-bezier(.2,.8,.25,1);
+}
+@keyframes pop {
+  from { opacity: 0; transform: translateY(0.35em); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------------------------------------------------------------- handles */
+
+.handles {
+  position: absolute; inset: 0;
+  z-index: 20;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+}
+.stage:hover .handles { opacity: 1; }
+.stage.preview .handles { display: none; }
+
+.hint {
+  position: absolute; left: 50%; top: .3em;
+  transform: translateX(-50%);
+  font-size: .62em; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255,255,255,.7);
+  background: rgba(0,0,0,.55);
+  padding: .18em .7em; border-radius: 1em;
+  font-family: system-ui, sans-serif;
+}
+.close {
+  position: absolute; right: .3em; top: .3em;
+  width: 1.7em; height: 1.7em;
+  display: grid; place-items: center;
+  font-size: .9em; line-height: 1;
+  color: #fff;
+  background: rgba(220,40,60,.85);
+  border: none; border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  font-family: system-ui, sans-serif;
+}
+.close:hover { background: rgb(230,50,70); }
+
+/* Resize grip: three little diagonal lines in the bottom-right corner. */
+.grip {
+  position: absolute; right: 0; bottom: 0;
+  width: 1.6em; height: 1.6em;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  background:
+    linear-gradient(135deg, transparent 0 55%, rgba(255,255,255,.75) 55% 62%, transparent 62% 70%,
+                    rgba(255,255,255,.75) 70% 77%, transparent 77% 85%,
+                    rgba(255,255,255,.75) 85% 92%, transparent 92%);
+  border-bottom-right-radius: var(--card-radius, 12px);
+}
+
+.offline {
+  position: absolute; left: 50%; bottom: .35em;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: none;
+  font-size: .62em; letter-spacing: .06em;
+  color: #ffd9d9;
+  background: rgba(140,20,30,.85);
+  padding: .2em .7em; border-radius: 1em;
+  font-family: system-ui, sans-serif;
+}
+.stage.offline-on .offline { display: block; }
+.stage.preview .offline { display: none; }
+
+/* ---------------------------------------------------------------- decor */
+/* A ring of characters around the edge - flowers, sparkles, whatever you
+   pick. Purely decorative, so it sits above the card but ignores the mouse. */
+
+.decor {
+  position: absolute; inset: 0;
+  z-index: 2;                 /* between the background and the card */
+  pointer-events: none;
+  display: none;
+  color: var(--decor-color, var(--accent));
+  opacity: var(--decor-opacity, .85);
+  font-size: var(--decor-font, .62em);
+  letter-spacing: var(--decor-gap, .5em);
+  line-height: 1;
+}
+.stage.has-decor .decor { display: block; }
+
+/* Each strip is a band --decor-px thick with its glyphs centred inside, so
+   nothing is clipped whatever the font's ascent and descent do. */
+.decor-strip {
+  position: absolute;
+  display: none;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.decor-strip span { display: inline-block; flex: 0 0 auto; }
+
+.stage.decor-top .decor > .decor-top,
+.stage.decor-bottom .decor > .decor-bottom,
+.stage.decor-left .decor > .decor-left,
+.stage.decor-right .decor > .decor-right { display: flex; }
+
+.decor > .decor-top    { top: 0;    left: 0; right: 0; height: var(--decor-px, 1.5em); padding: 0 .4em; }
+.decor > .decor-bottom { bottom: 0; left: 0; right: 0; height: var(--decor-px, 1.5em); padding: 0 .4em; }
+.decor > .decor-left, .decor > .decor-right {
+  top: 0; bottom: 0;
+  width: var(--decor-px, 1.5em);
+  padding: .4em 0;
+  writing-mode: vertical-rl;
+  text-orientation: upright;    /* glyphs stay the right way up */
+}
+.decor > .decor-left  { left: 0; }
+.decor > .decor-right { right: 0; }
+
+.stage.decor-animate .decor-strip span { animation: drift 18s linear infinite; }
+.stage.decor-animate .decor-left span,
+.stage.decor-animate .decor-right span { animation-name: drift-v; }
+@keyframes drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@keyframes drift-v {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+
+.kaomoji {
+  font-size: .78em;
+  color: var(--decor-color, var(--accent));
+  white-space: nowrap;
+}
+.kaomoji:empty { display: none; }
+
+/* Motif strips carry a tiled SVG rather than characters, so they need real
+   thickness and must not inherit the character letter-spacing. */
+.stage.decor-motif .decor-strip { letter-spacing: 0; }
+.stage.decor-motif .decor > .decor-top,
+.stage.decor-motif .decor > .decor-bottom { height: var(--decor-px, 24px); left: 0; right: 0; }
+.stage.decor-motif .decor > .decor-top    { top: 0; }
+.stage.decor-motif .decor > .decor-bottom { bottom: 0; }
+.stage.decor-motif .decor > .decor-left,
+.stage.decor-motif .decor > .decor-right  { width: var(--decor-px, 24px); top: 0; bottom: 0; writing-mode: horizontal-tb; }
+.stage.decor-motif .decor > .decor-left   { left: 0; }
+.stage.decor-motif .decor > .decor-right  { right: 0; }
+
+/* Pull the card in so the frame never sits on top of the artwork or text. */
+/* Inside the card: paint above its background but under the text, and let the
+   card's own overflow clip the strips to its rounded corners. */
+.card > .decor { z-index: 0; }
+.stage.decor-over .card > .decor { z-index: 5; }
+
+/* Outside the card: the strips live in the margin, so the card has to step in
+   far enough to leave room - the whole band in front, a share of it behind. */
+.stage.decor-out.decor-over .decor { z-index: 8; }
+.stage.decor-out.decor-over.decor-top    { padding-top: var(--decor-px, 0); }
+.stage.decor-out.decor-over.decor-bottom { padding-bottom: var(--decor-px, 0); }
+.stage.decor-out.decor-over.decor-left   { padding-left: var(--decor-px, 0); }
+.stage.decor-out.decor-over.decor-right  { padding-right: var(--decor-px, 0); }
+.stage.decor-out.decor-under.decor-top    { padding-top: calc(var(--decor-px, 0px) * var(--decor-inset, 1)); }
+.stage.decor-out.decor-under.decor-bottom { padding-bottom: calc(var(--decor-px, 0px) * var(--decor-inset, 1)); }
+.stage.decor-out.decor-under.decor-left   { padding-left: calc(var(--decor-px, 0px) * var(--decor-inset, 1)); }
+.stage.decor-out.decor-under.decor-right  { padding-right: calc(var(--decor-px, 0px) * var(--decor-inset, 1)); }
+
+/* Inside, the content steps in instead of the whole card. */
+.stage.decor-in.decor-top    .info, .stage.decor-in.decor-top    .art-wrap { margin-top: calc(var(--decor-px, 0px) * .55); }
+.stage.decor-in.decor-bottom .info, .stage.decor-in.decor-bottom .art-wrap { margin-bottom: calc(var(--decor-px, 0px) * .55); }
+.stage.decor-in.decor-left  .card { padding-left: calc(var(--card-pad) + var(--decor-px, 0px) * .7); }
+.stage.decor-in.decor-right .card { padding-right: calc(var(--card-pad) + var(--decor-px, 0px) * .7); }

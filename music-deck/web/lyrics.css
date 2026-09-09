@@ -1,0 +1,189 @@
+/* Lyrics window.
+
+   The current line sits centred and bright; lines already sung fade above it,
+   the next ones wait below. Colours, font and background follow the pop-out's
+   design by default so the two windows look like one set. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0f0f17;
+  user-select: none;
+  cursor: default;
+}
+
+.stage {
+  --accent: #8b5cf6;
+  --bg: #0f0f17;
+  --fg: #f4f4f8;
+  --dim: rgba(244,244,248,.42);
+  --font: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --card-radius: 18px;
+  --card-fill: transparent;
+  --card-border: 0px;
+  --card-border-color: transparent;
+  --hl: var(--accent);
+  --text-shadow: none;
+
+  position: relative;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+}
+
+.bg-image {
+  position: absolute; inset: 0;
+  background-position: center; background-repeat: no-repeat; background-size: cover;
+  display: none;
+}
+.stage.has-bg-image .bg-image { display: block; }
+.bg-dim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+
+.card {
+  position: relative;
+  z-index: 3;
+  width: 100%; height: 100%;
+  padding: .8em 1.1em;
+  display: flex; flex-direction: column;
+  background: var(--card-fill);
+  border: var(--card-border) solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+}
+
+.card > * { position: relative; z-index: 1; }
+.card > .card-bg {
+  position: absolute; inset: 0; z-index: 0;
+  display: none;
+  background-position: center;
+}
+.card-bg::after { content: ""; position: absolute; inset: 0; background: var(--card-fill); }
+.stage.surround { background: var(--surround, #000); }
+.stage.surround .card { background: transparent; }
+.stage.surround .card > .card-bg { display: block; }
+.stage.surround .bg-image { display: none; }
+
+.header {
+  flex: 0 0 auto;
+  font-size: .62em; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: .3em;
+}
+.header:empty { display: none; }
+
+.viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  /* soften the top and bottom so lines melt in and out */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+}
+
+.lines {
+  position: absolute; left: 0; right: 0; top: 0;
+  padding: 0 .6em;              /* headroom for the active line's scale-up */
+  transition: transform 480ms cubic-bezier(.22,.8,.3,1);
+  will-change: transform;
+}
+.stage.no-anim .lines { transition: none; }
+
+.line {
+  font-size: 1em;
+  line-height: 1.32;
+  padding: .22em 0;
+  color: var(--dim);
+  font-weight: 600;
+  text-align: center;
+  transform-origin: center center;
+  transition: color 300ms ease, opacity 300ms ease, transform 420ms cubic-bezier(.22,.8,.3,1);
+  text-shadow: var(--text-shadow);
+  overflow-wrap: anywhere;
+}
+.stage.align-left .line { text-align: left; transform-origin: left center; }
+.line.active {
+  color: var(--hl);
+  transform: scale(1.06);       /* enough to read as "current" without clipping */
+  font-weight: 700;
+}
+.line.past { opacity: .55; }
+.line.future { opacity: .62; }   /* the current line should win on any theme */
+.stage.keep-past .line.past { opacity: .9; color: var(--fg); }
+.line.empty { padding: .1em 0; }
+
+/* Unsynced words just sit there and slide gently with the track. */
+.stage.plain .line { color: var(--fg); opacity: .85; }
+.stage.plain .line.active { color: var(--hl); transform: none; }
+
+.status {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: .8em; font-weight: 600; letter-spacing: .06em;
+  color: var(--dim);
+  text-align: center;
+  white-space: nowrap;
+  display: none;
+}
+.stage[data-state="idle"] .status,
+.stage[data-state="loading"] .status,
+.stage[data-state="none"] .status,
+.stage[data-state="instrumental"] .status { display: block; }
+.stage[data-state="idle"] .viewport,
+.stage[data-state="loading"] .viewport,
+.stage[data-state="none"] .viewport,
+.stage[data-state="instrumental"] .viewport { visibility: hidden; }
+.stage[data-state="loading"] .status::after {
+  content: "…";
+  display: inline-block; width: 1.2em; text-align: left;
+  animation: dots 1.2s steps(4, end) infinite;
+}
+@keyframes dots { 0% { content: ""; } 33% { content: "."; } 66% { content: ".."; } 100% { content: "..."; } }
+
+/* ---------------------------------------------------------------- handles */
+
+.handles { position: absolute; inset: 0; z-index: 20; opacity: 0; transition: opacity 140ms ease; pointer-events: none; }
+.stage:hover .handles { opacity: 1; }
+.stage.preview .handles { display: none; }
+
+.hint {
+  position: absolute; left: 50%; top: .3em; transform: translateX(-50%);
+  font-size: .55em; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255,255,255,.7); background: rgba(0,0,0,.55);
+  padding: .18em .7em; border-radius: 1em; font-family: system-ui, sans-serif;
+}
+.close {
+  position: absolute; right: .3em; top: .3em;
+  width: 1.5em; height: 1.5em; display: grid; place-items: center;
+  font-size: .8em; line-height: 1; color: #fff;
+  background: rgba(220,40,60,.85); border: none; border-radius: 50%;
+  cursor: pointer; pointer-events: auto; font-family: system-ui, sans-serif;
+}
+.close:hover { background: rgb(230,50,70); }
+.grip {
+  position: absolute; right: 0; bottom: 0;
+  width: 1.4em; height: 1.4em;
+  cursor: nwse-resize; pointer-events: auto;
+  background:
+    linear-gradient(135deg, transparent 0 55%, rgba(255,255,255,.75) 55% 62%, transparent 62% 70%,
+                    rgba(255,255,255,.75) 70% 77%, transparent 77% 85%,
+                    rgba(255,255,255,.75) 85% 92%, transparent 92%);
+  border-bottom-right-radius: var(--card-radius, 12px);
+}
+
+.offline {
+  position: absolute; left: 50%; bottom: .35em; transform: translateX(-50%);
+  z-index: 20; display: none;
+  font-size: .55em; letter-spacing: .06em; color: #ffd9d9;
+  background: rgba(140,20,30,.85); padding: .2em .7em; border-radius: 1em;
+  font-family: system-ui, sans-serif;
+}
+.stage.offline-on .offline { display: block; }
+.stage.preview .offline { display: none; }

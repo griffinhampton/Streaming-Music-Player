@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Music Deck</title>
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<div id="appDecor" class="app-decor" aria-hidden="true">
+  <div class="decor-strip decor-top"><span></span></div>
+  <div class="decor-strip decor-bottom"><span></span></div>
+  <div class="decor-strip decor-left"><span></span></div>
+  <div class="decor-strip decor-right"><span></span></div>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>Music Deck</h1>
+    <span id="brandKao" class="kaomoji"></span>
+    <span class="tag">local first</span>
+  </div>
+
+  <div class="segmented" id="sourceMode" role="group" aria-label="What goes on screen">
+    <button data-mode="auto" class="on">Auto</button>
+    <button data-mode="local">My files</button>
+    <button data-mode="spotify">Spotify</button>
+  </div>
+
+  <div class="topbar-right">
+    <span id="npStatus" class="pill pill-off">Window closed</span>
+    <button id="npToggle" class="btn btn-primary">Open on-screen window</button>
+    <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Music Deck completely">Quit</button>
+  </div>
+</header>
+
+<main class="grid">
+
+  <!-- ============================================ left: preview + library -->
+  <div class="col">
+
+    <section class="panel preview-panel">
+      <div class="panel-head">
+        <h2>This is what the pop-out looks like</h2>
+        <div class="row gap">
+          <span id="previewSize" class="muted small mono">760 × 190</span>
+          <button id="previewReload" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+      </div>
+
+      <div class="preview-stage" id="previewStage">
+        <div class="preview-frame" id="previewFrame">
+          <iframe id="preview" src="nowplaying.html?preview=1" title="Overlay preview"></iframe>
+          <div class="preview-edit" id="previewEdit"></div>
+        </div>
+        <div class="drop-hint" id="dropHint">
+          <b>Drop a PNG here</b>
+          <span>to add it as a sticker &mdash; or as the background</span>
+        </div>
+      </div>
+
+      <div class="panel-foot preview-foot">
+        <span class="muted small">Drag stickers right on the preview to move them.</span>
+        <span id="previewNote" class="muted small"></span>
+      </div>
+    </section>
+
+    <section class="panel spotify-main" id="spotifyMain" hidden>
+      <div class="panel-head">
+        <h2>Spotify</h2>
+        <div class="row gap">
+          <span id="spMainStatus" class="pill pill-off">not connected</span>
+          <select id="spDevice" class="input" title="Where Spotify is playing"></select>
+          <button id="spQueueRefresh" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+      </div>
+
+      <!-- shown until the account is connected -->
+      <div id="spSetup" class="sp-setup">
+        <p class="hint">Connect your Spotify account to see and drive what is playing —
+          including on your phone, the web player or a speaker.</p>
+        <ol class="hint steps">
+          <li>Open <b>developer.spotify.com/dashboard</b> → <b>Create app</b>.</li>
+          <li>Under Redirect URIs add exactly:
+            <code id="spRedirect2">http://127.0.0.1:8713/spotify/callback</code></li>
+          <li>Paste the app's <b>Client ID</b> below and press Connect.</li>
+        </ol>
+        <input id="spClientId2" class="input" type="text" placeholder="Client ID"
+               spellcheck="false" autocomplete="off">
+        <div class="row gap wrap">
+          <button id="spConnect2" class="btn btn-primary btn-sm">Connect Spotify</button>
+          <span id="spPending2" class="pill pill-warn" hidden>waiting for approval…</span>
+        </div>
+        <p id="spManual2" class="hint" hidden>
+          No window? <a id="spManualLink2" href="#" target="_blank" rel="noreferrer">open the approval page</a>.
+        </p>
+        <p class="hint">Reading what is playing works on any account; controlling playback
+          needs Spotify Premium.</p>
+      </div>
+
+      <!-- shown once connected -->
+      <div id="spQueueWrap" class="sp-queue-wrap" hidden>
+        <div class="sp-searchbar">
+          <input id="spSearch" class="input" type="search"
+                 placeholder="Search Spotify — click a result to queue it…">
+        </div>
+        <div id="spResults" class="sp-results" hidden></div>
+
+        <div class="sp-list-head">
+          <span id="spQueueCount" class="muted small">Up next</span>
+          <div class="row gap">
+            <button id="spShuffle" class="btn btn-ghost btn-sm" title="Shuffle">🔀</button>
+            <button id="spRepeat" class="btn btn-ghost btn-sm" title="Repeat">🔁</button>
+          </div>
+        </div>
+        <div id="spQueue" class="sp-queue"></div>
+        <p class="hint sp-note"><b>Play now</b> advances to that track, dropping the ones
+          above it — the same thing Spotify's own app does when you click an item in its queue.
+          Spotify's API has no way to reorder or remove queued items, so a true drag-to-reorder
+          is not possible; everything below the track you pick is kept.</p>
+      </div>
+
+      <div class="panel-foot">
+        <span id="spDisconnectWrap"><button id="spDisconnect2" class="btn btn-ghost btn-sm">Disconnect account</button></span>
+        <span id="spQueueErr" class="muted small"></span>
+      </div>
+    </section>
+
+    <section class="panel library" id="libraryPanel">
+      <div class="panel-head">
+        <h2>Library</h2>
+        <div class="row gap">
+          <input id="search" class="input" type="search" placeholder="Search title, artist, album…">
+          <button id="rescan" class="btn btn-ghost btn-sm">Rescan</button>
+        </div>
+      </div>
+      <div id="folderBar" class="folder-bar"></div>
+      <div id="trackList" class="tracks" tabindex="0"></div>
+      <div class="panel-foot">
+        <span id="libCount" class="muted">No folders added yet</span>
+        <button id="addFolder" class="btn btn-ghost btn-sm">+ Add music folder</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================================ right rail -->
+  <div class="rail">
+
+    <section class="panel player">
+      <div class="now">
+        <div class="now-art">
+          <img id="deckArt" alt="">
+          <div id="deckArtFallback" class="art-empty">♪</div>
+        </div>
+        <div class="now-text">
+          <div id="deckSource" class="eyebrow">Nothing playing</div>
+          <div id="deckTitle" class="now-title">—</div>
+          <div id="deckArtist" class="now-artist"></div>
+        </div>
+      </div>
+      <div class="seek">
+        <input id="seek" class="range" type="range" min="0" max="1000" value="0">
+        <div class="times"><span id="deckElapsed">0:00</span><span id="deckDuration">0:00</span></div>
+      </div>
+      <div class="transport">
+        <button id="shuffle" class="icon" title="Shuffle">🔀</button>
+        <button id="prev" class="icon" title="Previous">⏮</button>
+        <button id="playpause" class="icon icon-big" title="Play / pause (Space)">▶</button>
+        <button id="next" class="icon" title="Next">⏭</button>
+        <button id="repeat" class="icon" title="Repeat">🔁</button>
+      </div>
+      <div class="volume">
+        <span class="muted small">Volume</span>
+        <input id="volume" class="range" type="range" min="0" max="100" value="70">
+        <span id="volLabel" class="muted small mono">70</span>
+      </div>
+    </section>
+
+    <section class="panel spotify">
+      <div class="panel-head tight">
+        <h2>Spotify <span class="tag tag-soft">via Windows</span></h2>
+        <span id="spotifyPill" class="pill pill-warn">starting…</span>
+      </div>
+      <div id="spotifyBody" class="spotify-body">
+        <div class="muted small">Looking for a media session…</div>
+      </div>
+      <div class="transport transport-sm">
+        <button id="spPrev" class="icon" title="Previous">⏮</button>
+        <button id="spPlay" class="icon" title="Play / pause">⏯</button>
+        <button id="spNext" class="icon" title="Next">⏭</button>
+      </div>
+      <p class="hint">Read straight from Windows by default — no login needed.</p>
+
+      <div class="sp-account">
+        <div class="row gap between">
+          <span id="spAccStatus" class="muted small">Account: not connected</span>
+          <button id="spAccToggle" class="btn btn-ghost btn-sm">Connect account…</button>
+        </div>
+        <div id="spAccSetup" hidden>
+          <p class="hint">Optional. Lets Music Deck see and control Spotify wherever it is playing —
+            phone, web player, speakers. One-time setup:</p>
+          <ol class="hint steps">
+            <li>Open <b>developer.spotify.com/dashboard</b> → <b>Create app</b>.</li>
+            <li>Under Redirect URIs add exactly: <code id="spRedirect">http://127.0.0.1:8713/spotify/callback</code></li>
+            <li>Copy the app's <b>Client ID</b> into the box, press Connect, approve in the browser.</li>
+          </ol>
+          <input id="spClientId" class="input" type="text" placeholder="Client ID" spellcheck="false" autocomplete="off">
+          <div class="row gap wrap">
+            <button id="spConnect" class="btn btn-primary btn-sm">Connect Spotify</button>
+            <button id="spDisconnect" class="btn btn-ghost btn-sm">Disconnect</button>
+            <span id="spPending" class="pill pill-warn" hidden>waiting for approval…</span>
+          </div>
+          <p id="spManual" class="hint" hidden>
+            No approval window? <a id="spManualLink" href="#" target="_blank" rel="noreferrer">Open the
+            approval page here</a> instead.
+          </p>
+          <label class="check"><input type="checkbox" id="spUseAccount"><span>Prefer the account when both know a track</span></label>
+          <p class="hint">Remote control needs Spotify Premium. Friends using your Client ID must be on the
+            app's user list, or they make their own app and paste their own ID.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------- design -->
+    <section class="panel design">
+      <div class="theme-bar">
+        <span>Theme</span>
+        <select id="fullTheme" class="input">
+          <option value="">— pick a full theme —</option>
+          <option value="midnight">Midnight</option>
+          <option value="minimal">Minimal</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="blossom">Watercolour Blossom</option>
+          <option value="hanami">Hanami</option>
+          <option value="cutecore">Cutecore</option>
+          <option value="bloom">Bloom</option>
+          <option value="sakura">Sakura Night</option>
+          <option value="redmoon">Red Moon</option>
+          <option value="ember">Embers</option>
+          <option value="arcade">Neon Arcade</option>
+          <option value="vapor">Vaporwave</option>
+          <option value="terminal">Terminal</option>
+        </select>
+      </div>
+
+      <div class="tabs" id="designTabs">
+        <button data-tab="layout" class="on">Layout</button>
+        <button data-tab="bg">Background</button>
+        <button data-tab="text">Text</button>
+        <button data-tab="bits">Art &amp; bar</button>
+        <button data-tab="decor">Decor</button>
+        <button data-tab="stickers">Stickers</button>
+        <button data-tab="lyrics">Lyrics</button>
+        <button data-tab="queue">Queue</button>
+        <button data-tab="window">Window</button>
+        <button data-tab="app">App look</button>
+      </div>
+
+      <!-- layout -->
+      <div class="tabpane on" data-pane="layout">
+        <label class="field">
+          <span>Start from a preset</span>
+          <select id="preset" class="input">
+            <option value="">— choose a preset —</option>
+            <option value="midnight">Midnight glass</option>
+            <option value="ink">Solid black</option>
+            <option value="neon">Neon glow</option>
+            <option value="light">Light</option>
+            <option value="sunset">Sunset gradient</option>
+            <option value="chroma">Chroma green (key it out)</option>
+            <option value="magenta">Chroma magenta</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Layout</span>
+          <div class="segmented small" data-np="layout" data-kind="seg">
+            <button data-v="auto">Auto</button>
+            <button data-v="bar">Bar</button>
+            <button data-v="card">Card</button>
+            <button data-v="compact">Compact</button>
+          </div>
+          <span class="hint">Auto follows the window's shape: wide = bar, square = card, thin = strip.</span>
+        </label>
+
+        <label class="field">
+          <span>Accent</span>
+          <div class="row gap">
+            <input class="color" type="color" data-np="accent" data-kind="color">
+            <div class="swatches" id="swatches"></div>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Text scale <b class="mono" data-out="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="200"
+                 data-np="scale" data-kind="range" data-div="100" data-out="scale" data-dp="2">
+        </label>
+
+        <label class="field">
+          <span>Corners</span>
+          <div class="segmented small" id="cornerPick">
+            <button data-r="0">Square</button>
+            <button data-r="12">Soft</button>
+            <button data-r="24">Round</button>
+          </div>
+          <span class="hint">Square corners leave no margin at all &mdash; the card fills the window edge to edge.</span>
+        </label>
+
+        <div class="field two">
+          <label><span>Card radius <b class="mono" data-out="card.radius">18</b>px</span>
+            <input class="range" type="range" min="0" max="80"
+                   data-np="card.radius" data-kind="range" data-out="card.radius"></label>
+          <label><span>Card padding</span>
+            <input class="input" type="number" min="0" max="80" data-np="card.padding" data-kind="int"></label>
+        </div>
+
+        <div class="field two">
+          <label><span>Border width</span>
+            <input class="input" type="number" min="0" max="12" data-np="card.border" data-kind="int"></label>
+          <label><span>Border colour</span>
+            <input class="color wide" type="color" data-np="card.border_color" data-kind="color"></label>
+        </div>
+
+        <label class="field">
+          <span>Around the card</span>
+          <div class="segmented small" data-np="surround.mode" data-kind="seg">
+            <button data-v="solid">Solid colour</button>
+            <button data-v="theme">Theme background</button>
+          </div>
+          <span class="hint">A solid colour that matches your stream canvas makes the window's
+            outline disappear; <b>Theme background</b> lets the artwork run to the edges instead.</span>
+        </label>
+        <label class="field">
+          <span>Margin colour</span>
+          <div class="row gap wrap">
+            <input class="color" type="color" data-np="surround.color" data-kind="color">
+            <div class="swatches" id="surroundSwatches"></div>
+            <button class="btn btn-ghost btn-sm" id="surroundMatch">Match the artwork</button>
+          </div>
+          <span class="hint">Only shows where the card does not reach: rounded corners, and any decor frame
+            the card steps in from.</span>
+        </label>
+
+        <label class="field">
+          <span>Card fill (over the background)</span>
+          <div class="row gap">
+            <input class="color" type="color" data-np="card.fill" data-kind="color">
+            <button class="btn btn-ghost btn-sm" data-clear="card.fill">No fill</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Card fill opacity <b class="mono" data-out="card.fill_alpha">1.00</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-np="card.fill_alpha" data-kind="range" data-div="100"
+                 data-out="card.fill_alpha" data-dp="2">
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="card.glow" data-kind="bool"><span>Accent glow</span></label>
+          <label class="check"><input type="checkbox" data-np="equalizer" data-kind="bool"><span>Equaliser</span></label>
+        </div>
+      </div>
+
+      <!-- background -->
+      <div class="tabpane" data-pane="bg">
+        <label class="field">
+          <span>Background</span>
+          <div class="segmented small" data-np="bg.mode" data-kind="seg">
+            <button data-v="solid">Solid</button>
+            <button data-v="gradient">Gradient</button>
+            <button data-v="scene">Artwork</button>
+            <button data-v="image">Image</button>
+          </div>
+        </label>
+
+        <div class="field two">
+          <label><span>Colour</span>
+            <input class="color wide" type="color" data-np="bg.color" data-kind="color"></label>
+          <label><span>Second colour</span>
+            <input class="color wide" type="color" data-np="bg.color2" data-kind="color"></label>
+        </div>
+
+        <label class="field">
+          <span>Gradient angle <b class="mono" data-out="bg.angle">135</b>°</span>
+          <input class="range" type="range" min="0" max="360"
+                 data-np="bg.angle" data-kind="range" data-out="bg.angle">
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Generated artwork</span>
+          <div class="scene-picker" id="scenePicker"></div>
+        </label>
+        <div class="field two">
+          <label><span>Base</span>
+            <input class="color wide" type="color" data-np="bg.scene.c1" data-kind="color"></label>
+          <label><span>Ink</span>
+            <input class="color wide" type="color" data-np="bg.scene.c2" data-kind="color"></label>
+        </div>
+        <div class="field two">
+          <label><span>Detail</span>
+            <input class="color wide" type="color" data-np="bg.scene.c3" data-kind="color"></label>
+          <label><span>&nbsp;</span>
+            <button class="btn btn-ghost btn-sm" id="sceneReset">Scene's own colours</button></label>
+        </div>
+        <label class="field">
+          <span>Motif size <b class="mono" data-out="bg.scene.scale">1.00</b></span>
+          <input class="range" type="range" min="40" max="220"
+                 data-np="bg.scene.scale" data-kind="range" data-div="100"
+                 data-out="bg.scene.scale" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Density <b class="mono" data-out="bg.scene.density">1.00</b></span>
+          <input class="range" type="range" min="30" max="250"
+                 data-np="bg.scene.density" data-kind="range" data-div="100"
+                 data-out="bg.scene.density" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Tile size <b class="mono" data-out="bg.scene.tile_scale">1.00</b></span>
+          <input class="range" type="range" min="35" max="250"
+                 data-np="bg.scene.tile_scale" data-kind="range" data-div="100"
+                 data-out="bg.scene.tile_scale" data-dp="2">
+        </label>
+        <div class="row gap">
+          <button class="btn btn-ghost btn-sm" id="sceneShuffle">Shuffle layout</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Background image</span>
+          <div class="asset-picker" id="bgPicker"></div>
+        </label>
+        <div class="row gap">
+          <button class="btn btn-ghost btn-sm" id="bgUpload">Upload image…</button>
+          <button class="btn btn-ghost btn-sm" data-clear="bg.image">Clear image</button>
+        </div>
+
+        <label class="field">
+          <span>Fit</span>
+          <select class="input" data-np="bg.fit" data-kind="str">
+            <option value="cover">Cover</option>
+            <option value="contain">Contain</option>
+            <option value="stretch">Stretch</option>
+            <option value="tile">Tile</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Blur <b class="mono" data-out="bg.blur">0</b>px</span>
+          <input class="range" type="range" min="0" max="40"
+                 data-np="bg.blur" data-kind="range" data-out="bg.blur">
+        </label>
+
+        <label class="field">
+          <span>Darken <b class="mono" data-out="bg.dim">0.00</b></span>
+          <input class="range" type="range" min="0" max="90"
+                 data-np="bg.dim" data-kind="range" data-div="100" data-out="bg.dim" data-dp="2">
+        </label>
+      </div>
+
+      <!-- text -->
+      <div class="tabpane" data-pane="text">
+        <label class="field">
+          <span>Font</span>
+          <select class="input" id="fontPick" data-np="text.font" data-kind="str"></select>
+        </label>
+
+        <label class="field">
+          <span>Alignment</span>
+          <div class="segmented small" data-np="text.align" data-kind="seg">
+            <button data-v="left">Left</button>
+            <button data-v="center">Centre</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Title size <b class="mono" data-out="text.title_size">1.72</b></span>
+          <input class="range" type="range" min="60" max="360"
+                 data-np="text.title_size" data-kind="range" data-div="100"
+                 data-out="text.title_size" data-dp="2">
+        </label>
+        <div class="field two">
+          <label><span>Title weight</span>
+            <select class="input" data-np="text.title_weight" data-kind="int">
+              <option value="400">Regular</option>
+              <option value="600">Semibold</option>
+              <option value="700">Bold</option>
+              <option value="900">Black</option>
+            </select></label>
+          <label><span>Title colour</span>
+            <input class="color wide" type="color" data-np="text.title_color" data-kind="color"></label>
+        </div>
+
+        <label class="field">
+          <span>Artist size <b class="mono" data-out="text.artist_size">1.00</b></span>
+          <input class="range" type="range" min="40" max="220"
+                 data-np="text.artist_size" data-kind="range" data-div="100"
+                 data-out="text.artist_size" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Artist colour</span>
+          <input class="color wide" type="color" data-np="text.artist_color" data-kind="color">
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Label text</span>
+          <input class="input" type="text" maxlength="32" placeholder="NOW PLAYING"
+                 data-np="label.text" data-kind="str">
+        </label>
+        <div class="field two">
+          <label><span>Label size</span>
+            <input class="input" type="number" step="0.02" min="0.3" max="2"
+                   data-np="text.label_size" data-kind="float"></label>
+          <label><span>Label colour</span>
+            <input class="color wide" type="color" data-np="text.label_color" data-kind="color"></label>
+        </div>
+
+        <label class="field">
+          <span>Text shadow <b class="mono" data-out="text.shadow">0.00</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-np="text.shadow" data-kind="range" data-div="100"
+                 data-out="text.shadow" data-dp="2">
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="label.show" data-kind="bool"><span>Show label</span></label>
+          <label class="check"><input type="checkbox" data-np="text.uppercase" data-kind="bool"><span>UPPERCASE title</span></label>
+          <label class="check"><input type="checkbox" data-np="text.marquee" data-kind="bool"><span>Scroll long titles</span></label>
+          <label class="check"><input type="checkbox" data-np="source_badge" data-kind="bool"><span>Source badge</span></label>
+        </div>
+      </div>
+
+      <!-- art & bar -->
+      <div class="tabpane" data-pane="bits">
+        <label class="check big"><input type="checkbox" data-np="art.show" data-kind="bool"><span>Show album art</span></label>
+        <div class="field two">
+          <label><span>Art radius</span>
+            <input class="input" type="number" min="0" max="200" data-np="art.radius" data-kind="int"></label>
+          <label><span>Art border</span>
+            <input class="input" type="number" min="0" max="12" data-np="art.border" data-kind="int"></label>
+        </div>
+        <label class="field">
+          <span>Art border colour</span>
+          <input class="color wide" type="color" data-np="art.border_color" data-kind="color">
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="check big"><input type="checkbox" data-np="progress.show" data-kind="bool"><span>Show progress bar</span></label>
+        <label class="field">
+          <span>Bar height <b class="mono" data-out="progress.height">5</b>px</span>
+          <input class="range" type="range" min="1" max="30"
+                 data-np="progress.height" data-kind="range" data-out="progress.height">
+        </label>
+        <label class="field">
+          <span>Bar colour</span>
+          <div class="row gap">
+            <input class="color" type="color" data-np="progress.color" data-kind="color">
+            <button class="btn btn-ghost btn-sm" data-clear="progress.color">Use accent</button>
+          </div>
+        </label>
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="progress.times" data-kind="bool"><span>Show times</span></label>
+          <label class="check"><input type="checkbox" data-np="progress.glow" data-kind="bool"><span>Bar glow</span></label>
+        </div>
+      </div>
+
+
+      <!-- decor -->
+      <div class="tabpane" data-pane="decor">
+        <p class="hint">Characters repeated around the edge of the pop-out.</p>
+
+        <label class="field">
+          <span>Pattern</span>
+          <select class="input" id="decorBorder" data-np="decor.border" data-kind="str"></select>
+        </label>
+
+        <label class="field">
+          <span>Or type your own</span>
+          <input class="input" type="text" maxlength="40" placeholder="e.g. ✿ ❀ ✾ "
+                 data-np="decor.custom" data-kind="str">
+        </label>
+
+        <label class="field">
+          <span>Sides</span>
+          <div class="segmented small" data-np="decor.sides" data-kind="seg">
+            <button data-v="none">Off</button>
+            <button data-v="tb">Top &amp; bottom</button>
+            <button data-v="all">All round</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Placement</span>
+          <div class="segmented small" data-np="decor.place" data-kind="seg">
+            <button data-v="in">Inside the frame</button>
+            <button data-v="out">Around it</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Depth</span>
+          <div class="segmented small" data-np="decor.layer" data-kind="seg">
+            <button data-v="under">Behind (watermark)</button>
+            <button data-v="over">In front</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Card steps in <b class="mono" data-out="decor.inset">1.00</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-np="decor.inset" data-kind="range" data-div="100"
+                 data-out="decor.inset" data-dp="2">
+        </label>
+
+        <label class="field">
+          <span>Soften <b class="mono" data-out="decor.blur">0</b>px</span>
+          <input class="range" type="range" min="0" max="8"
+                 data-np="decor.blur" data-kind="range" data-out="decor.blur">
+        </label>
+
+        <label class="field">
+          <span>Thickness <b class="mono" data-out="decor.size">0.62</b>em</span>
+          <input class="range" type="range" min="20" max="400"
+                 data-np="decor.size" data-kind="range" data-div="100"
+                 data-out="decor.size" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Spacing <b class="mono" data-out="decor.gap">0.50</b></span>
+          <input class="range" type="range" min="0" max="200"
+                 data-np="decor.gap" data-kind="range" data-div="100"
+                 data-out="decor.gap" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Opacity <b class="mono" data-out="decor.opacity">0.85</b></span>
+          <input class="range" type="range" min="5" max="100"
+                 data-np="decor.opacity" data-kind="range" data-div="100"
+                 data-out="decor.opacity" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Colour</span>
+          <div class="segmented small" data-np="decor.tint" data-kind="segbool">
+            <button data-v="1">Tinted</button>
+            <button data-v="0">Artwork colours</button>
+          </div>
+          <div class="row gap">
+            <input class="color" type="color" data-np="decor.color" data-kind="color">
+            <button class="btn btn-ghost btn-sm" data-clear="decor.color">Use accent</button>
+          </div>
+          <span class="hint">Tinted redraws the artwork in one colour so it stays readable on
+            a dark card; the pale originals turn to grey mush there.</span>
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Emoticon next to the label</span>
+          <select class="input" id="kaoPick" data-np="decor.kaomoji" data-kind="str"></select>
+        </label>
+        <label class="field">
+          <span>Or type your own</span>
+          <input class="input" type="text" maxlength="40" placeholder="(◕‿◕)"
+                 data-np="decor.kaomoji" data-kind="str">
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="decor.animate" data-kind="bool"><span>Drift slowly</span></label>
+        </div>
+      </div>
+
+
+      <!-- lyrics -->
+      <div class="tabpane" data-pane="lyrics">
+        <div class="row gap">
+          <button id="lyToggle" class="btn btn-primary btn-sm">Open lyrics window</button>
+          <span id="lyStatus" class="pill pill-off">closed</span>
+        </div>
+        <p class="hint">A second pop-out that scrolls the words in time with the song.
+          Add it in TikTok Studio as <b>Music Deck - Lyrics</b> and drag it wherever you like.
+          Local tracks use a <b>.lrc</b> file next to the song when there is one.</p>
+        <div id="lyInfo" class="hint"></div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-ly="online" data-kind="bool"><span>Look up online (lrclib.net)</span></label>
+          <label class="check"><input type="checkbox" data-ly="follow_theme" data-kind="bool"><span>Match the pop-out</span></label>
+          <label class="check"><input type="checkbox" data-ly="dim_past" data-kind="bool"><span>Fade sung lines</span></label>
+          <label class="check"><input type="checkbox" data-ly="show_header" data-kind="bool"><span>Song title on top</span></label>
+        </div>
+
+        <label class="field">
+          <span>Text size <b class="mono" data-lyout="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="220"
+                 data-ly="scale" data-kind="range" data-div="100" data-lyout="scale" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Lines shown <b class="mono" data-lyout="lines">5</b></span>
+          <input class="range" type="range" min="3" max="11" step="2"
+                 data-ly="lines" data-kind="range" data-lyout="lines">
+        </label>
+        <label class="field">
+          <span>Alignment</span>
+          <div class="segmented small" data-ly="align" data-kind="seg">
+            <button data-v="center">Centre</button>
+            <button data-v="left">Left</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Current line</span>
+          <div class="segmented small" data-ly="highlight" data-kind="seg">
+            <button data-v="accent">Accent colour</button>
+            <button data-v="text">Text colour</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Timing nudge <b class="mono" data-lyout="offset">0.0</b>s</span>
+          <input class="range" type="range" min="-30" max="30"
+                 data-ly="offset" data-kind="range" data-div="10" data-lyout="offset" data-dp="1">
+        </label>
+        <label class="field">
+          <span>Background when not matching the pop-out</span>
+          <input class="color wide" type="color" data-ly="bg" data-kind="color">
+        </label>
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="lyWidth" class="input" type="number" min="200" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="lyHeight" class="input" type="number" min="100" max="2160" step="10"></label>
+        </div>
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="lySnap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+      </div>
+
+
+      <!-- queue window -->
+      <div class="tabpane" data-pane="queue">
+        <div class="row gap">
+          <button id="qToggle" class="btn btn-primary btn-sm">Open queue window</button>
+          <span id="qStatus" class="pill pill-off">closed</span>
+        </div>
+        <p class="hint">A pop-out showing what Spotify plays next. Add it in TikTok Studio
+          as <b>Music Deck - Queue</b>. Needs the Spotify account connected.</p>
+
+        <label class="field">
+          <span>Heading</span>
+          <input class="input" type="text" maxlength="24" placeholder="UP NEXT"
+                 data-q="heading" data-kind="str">
+        </label>
+        <label class="field">
+          <span>Most tracks to show <b class="mono" data-qout="rows">12</b></span>
+          <input class="range" type="range" min="1" max="30"
+                 data-q="rows" data-kind="range" data-qout="rows">
+          <span class="hint">The window shows as many as fit — make it taller for more.
+            This is just the ceiling.</span>
+        </label>
+        <label class="field">
+          <span>Text size <b class="mono" data-qout="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="220"
+                 data-q="scale" data-kind="range" data-div="100" data-qout="scale" data-dp="2">
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-q="show_header" data-kind="bool"><span>Heading</span></label>
+          <label class="check"><input type="checkbox" data-q="show_now" data-kind="bool"><span>Include current track</span></label>
+          <label class="check"><input type="checkbox" data-q="show_art" data-kind="bool"><span>Album art</span></label>
+          <label class="check"><input type="checkbox" data-q="show_artist" data-kind="bool"><span>Artist</span></label>
+          <label class="check"><input type="checkbox" data-q="show_times" data-kind="bool"><span>Track length</span></label>
+          <label class="check"><input type="checkbox" data-q="follow_theme" data-kind="bool"><span>Match the pop-out</span></label>
+        </div>
+
+        <label class="field">
+          <span>Background when not matching the pop-out</span>
+          <input class="color wide" type="color" data-q="bg" data-kind="color">
+        </label>
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="qWidth" class="input" type="number" min="200" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="qHeight" class="input" type="number" min="100" max="2160" step="10"></label>
+        </div>
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="qSnap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+      </div>
+
+      <!-- stickers -->
+      <div class="tabpane" data-pane="stickers">
+        <div class="row gap">
+          <button class="btn btn-primary btn-sm" id="stickerAdd">+ Add sticker…</button>
+          <button class="btn btn-ghost btn-sm" id="stickerDelete" disabled>Remove</button>
+        </div>
+        <p class="hint">Drop PNGs straight onto the preview, then drag them into place.</p>
+
+        <div class="sticker-list" id="stickerList"></div>
+
+        <div id="stickerEdit" class="sticker-edit" hidden>
+          <div class="divider"></div>
+          <label class="field">
+            <span>Size <b class="mono" data-sout="w">20</b>%</span>
+            <input class="range" type="range" min="2" max="100" data-st="w">
+          </label>
+          <label class="field">
+            <span>Rotation <b class="mono" data-sout="rot">0</b>°</span>
+            <input class="range" type="range" min="-180" max="180" data-st="rot">
+          </label>
+          <label class="field">
+            <span>Opacity <b class="mono" data-sout="opacity">1.00</b></span>
+            <input class="range" type="range" min="5" max="100" data-st="opacity" data-div="100" data-dp="2">
+          </label>
+          <div class="field two">
+            <label><span>X %</span><input class="input" type="number" min="-20" max="120" data-st="x"></label>
+            <label><span>Y %</span><input class="input" type="number" min="-20" max="120" data-st="y"></label>
+          </div>
+          <div class="row gap wrap">
+            <button class="btn btn-ghost btn-sm" id="stickerFront">Bring to front</button>
+            <button class="btn btn-ghost btn-sm" id="stickerBack">Send behind card</button>
+            <button class="btn btn-ghost btn-sm" id="stickerFlip">Flip</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- window -->
+      <div class="tabpane" data-pane="window">
+        <label class="field">
+          <span>Shape</span>
+          <div class="row gap wrap" id="sizePresets">
+            <button class="btn btn-ghost btn-sm" data-w="760" data-h="190">Horizontal 760×190</button>
+            <button class="btn btn-ghost btn-sm" data-w="1000" data-h="150">Wide strip 1000×150</button>
+            <button class="btn btn-ghost btn-sm" data-w="420" data-h="420">Square 420×420</button>
+            <button class="btn btn-ghost btn-sm" data-w="360" data-h="560">Portrait 360×560</button>
+            <button class="btn btn-ghost btn-sm" data-w="640" data-h="96">Slim 640×96</button>
+          </div>
+          <span class="hint">Or grab the bottom-right corner of the window itself and stretch it any way you like.</span>
+        </label>
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="width" class="input" type="number" min="160" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="height" class="input" type="number" min="60" max="2160" step="10"></label>
+        </div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="borderless"><span>Borderless</span></label>
+          <label class="check"><input type="checkbox" id="topmost"><span>Always on top</span></label>
+        </div>
+
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="snap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+
+        <p class="hint">
+          In TikTok Studio: <b>Add source → Window</b>, then pick
+          <b>Music Deck - Now Playing</b>. Resizing here changes the real window,
+          so what you capture always matches the preview.
+        </p>
+      </div>
+
+      <!-- app look -->
+      <div class="tabpane" data-pane="app">
+        <label class="field">
+          <span>App preset</span>
+          <select id="uiPreset" class="input">
+            <option value="">— choose a preset —</option>
+            <option value="black">Black minimal</option>
+            <option value="charcoal">Charcoal</option>
+            <option value="midnight">Midnight blue</option>
+            <option value="mono">Pure mono</option>
+            <option value="light">Daylight</option>
+          </select>
+        </label>
+
+        <div class="field two">
+          <label><span>Accent</span>
+            <input class="color wide" type="color" data-ui="accent" data-kind="color"></label>
+          <label><span>Background</span>
+            <input class="color wide" type="color" data-ui="bg" data-kind="color"></label>
+        </div>
+        <div class="field two">
+          <label><span>Panels</span>
+            <input class="color wide" type="color" data-ui="panel" data-kind="color"></label>
+          <label><span>Lines</span>
+            <input class="color wide" type="color" data-ui="border" data-kind="color"></label>
+        </div>
+        <div class="field two">
+          <label><span>Text</span>
+            <input class="color wide" type="color" data-ui="text" data-kind="color"></label>
+          <label><span>Dim text</span>
+            <input class="color wide" type="color" data-ui="muted" data-kind="color"></label>
+        </div>
+
+        <label class="field">
+          <span>Font</span>
+          <select class="input" id="uiFontPick" data-ui="font" data-kind="str"></select>
+        </label>
+
+        <label class="field">
+          <span>Corner radius <b class="mono" data-uout="radius">12</b>px</span>
+          <input class="range" type="range" min="0" max="28"
+                 data-ui="radius" data-kind="range" data-uout="radius">
+        </label>
+
+        <label class="field">
+          <span>Density</span>
+          <div class="segmented small" data-ui="density" data-kind="seg">
+            <button data-v="compact">Compact</button>
+            <button data-v="normal">Normal</button>
+            <button data-v="roomy">Roomy</button>
+          </div>
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>App wallpaper</span>
+          <div class="asset-picker" id="wallPicker"></div>
+        </label>
+        <div class="row gap">
+          <button class="btn btn-ghost btn-sm" id="wallUpload">Upload image…</button>
+          <button class="btn btn-ghost btn-sm" data-uclear="wallpaper">Clear</button>
+        </div>
+        <label class="field">
+          <span>Wallpaper darken <b class="mono" data-uout="wallpaper_dim">0.65</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-ui="wallpaper_dim" data-kind="range" data-div="100"
+                 data-uout="wallpaper_dim" data-dp="2">
+        </label>
+
+
+        <div class="divider"></div>
+        <label class="field">
+          <span>Generated wallpaper</span>
+          <div class="scene-picker" id="wallScenePicker"></div>
+        </label>
+        <div class="field two">
+          <label><span>Base</span>
+            <input class="color wide" type="color" data-ui="scene.c1" data-kind="color"></label>
+          <label><span>Ink</span>
+            <input class="color wide" type="color" data-ui="scene.c2" data-kind="color"></label>
+        </div>
+        <div class="field two">
+          <label><span>Detail</span>
+            <input class="color wide" type="color" data-ui="scene.c3" data-kind="color"></label>
+          <label><span>&nbsp;</span>
+            <button class="btn btn-ghost btn-sm" id="wallSceneReset">Scene's own colours</button></label>
+        </div>
+        <label class="field">
+          <span>Motif size <b class="mono" data-uout="scene.scale">1.00</b></span>
+          <input class="range" type="range" min="40" max="220"
+                 data-ui="scene.scale" data-kind="range" data-div="100"
+                 data-uout="scene.scale" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Density <b class="mono" data-uout="scene.density">1.00</b></span>
+          <input class="range" type="range" min="30" max="250"
+                 data-ui="scene.density" data-kind="range" data-div="100"
+                 data-uout="scene.density" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Tile size <b class="mono" data-uout="scene.tile_scale">1.00</b></span>
+          <input class="range" type="range" min="35" max="250"
+                 data-ui="scene.tile_scale" data-kind="range" data-div="100"
+                 data-uout="scene.tile_scale" data-dp="2">
+        </label>
+        <div class="row gap">
+          <button class="btn btn-ghost btn-sm" id="wallSceneShuffle">Shuffle layout</button>
+          <button class="btn btn-ghost btn-sm" data-uclear="scene.id">No artwork</button>
+        </div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-ui="glow" data-kind="bool"><span>Accent glow</span></label>
+        </div>
+
+        <div class="divider"></div>
+        <p class="hint">Decorate the app window itself.</p>
+        <label class="field">
+          <span>Pattern</span>
+          <select class="input" id="uiDecorBorder" data-ui="decor.border" data-kind="str"></select>
+        </label>
+        <label class="field">
+          <span>Sides</span>
+          <div class="segmented small" data-ui="decor.sides" data-kind="seg">
+            <button data-v="none">Off</button>
+            <button data-v="tb">Top &amp; bottom</button>
+            <button data-v="all">All round</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Opacity <b class="mono" data-uout="decor.opacity">0.50</b></span>
+          <input class="range" type="range" min="5" max="100"
+                 data-ui="decor.opacity" data-kind="range" data-div="100"
+                 data-uout="decor.opacity" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Emoticon in the header</span>
+          <input class="input" type="text" maxlength="40" placeholder="(◕‿◕)"
+                 data-ui="decor.kaomoji" data-kind="str">
+        </label>
+      </div>
+    </section>
+  </div>
+</main>
+
+<audio id="audio" preload="metadata"></audio>
+<input type="file" id="filePicker" accept="image/*" hidden>
+<div id="toast" class="toast"></div>
+
+<script src="scenes.js"></script>
+<script src="decor.js"></script>
+<script src="deck.js"></script>
+</body>
+</html>

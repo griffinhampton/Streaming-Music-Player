@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <defs>
+    <radialGradient id="q" cx="50%" cy="80%" r="85%">
+      <stop offset="0%"  stop-color="#fff4f9"/>
+      <stop offset="60%" stop-color="#ffd9ea"/>
+      <stop offset="100%" stop-color="#ffb8d6"/>
+    </radialGradient>
+    <path id="qp" d="M0,0 C-3.4,-1.9 -4.5,-6.7 -2,-9.3 C-1.2,-10.3 -0.7,-9.4 0,-8.2
+                     C0.7,-9.4 1.2,-10.3 2,-9.3 C4.5,-6.7 3.4,-1.9 0,0 Z"/>
+  </defs>
+  <g fill="url(#q)" stroke="#f79ac4" stroke-width=".45" stroke-opacity=".5">
+    <use href="#qp" transform="translate(10 14) rotate(-32)"/>
+    <use href="#qp" transform="translate(27 9)  rotate(24) scale(.8)"/>
+    <use href="#qp" transform="translate(38 22) rotate(-14)"/>
+    <use href="#qp" transform="translate(17 31) rotate(48) scale(.85)"/>
+    <use href="#qp" transform="translate(33 40) rotate(-40) scale(.75)"/>
+    <use href="#qp" transform="translate(4 38)  rotate(12) scale(.7)"/>
+  </g>
+</svg>
