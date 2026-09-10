@@ -79,6 +79,10 @@ class SpotifyAccount:
         # Set by the server: True while the Windows bridge is already telling
         # us what is playing, so this poller can take its time.
         self.bridge_has = False
+        # Set by the server: True only while the queue window is open. That
+        # window is the one thing that needs the account, so nothing is read
+        # in the background at any other time (the user's call).
+        self._active = False
         self._poke = threading.Event()
         self._stop = threading.Event()
         self._art = {}                # url -> (mime, bytes), a handful at most
@@ -220,9 +224,27 @@ class SpotifyAccount:
     def start(self):
         threading.Thread(target=self._loop, daemon=True).start()
 
+    @property
+    def active(self):
+        return self._active
+
+    def set_active(self, on):
+        """The queue window opened or closed. Background reads - playback,
+        the queue, devices - happen only while it is open: opening it asks
+        once, closing it stops the asking. A button someone presses still
+        goes straight through; that is not a background read."""
+        on = bool(on)
+        if on == self._active:
+            return
+        self._active = on
+        if on:
+            self._want_reconcile = True
+            self._poke.set()
+
     def _loop(self):
         while not self._stop.is_set():
-            if self.connected() and self.client_id and time.time() >= self._backoff_until:
+            if (self._active and self.connected() and self.client_id
+                    and time.time() >= self._backoff_until):
                 try:
                     self._poll()
                 except Cooling:
@@ -242,14 +264,15 @@ class SpotifyAccount:
                 except Exception as exc:
                     self._error = f"Could not reach Spotify: {str(exc)[:80]}"
                     self._backoff_until = time.time() + 10
-            # Nothing here runs on a timer. The loop sleeps until an event asks
-            # for a read: a track change the cached order cannot explain,
-            # connect, Refresh, or a playback-mode write. If that request
-            # arrived inside a rate-limit window it is held, and the sleep ends
-            # exactly when the window does, so the answer lands then rather
-            # than at the next song.
+            # Nothing here runs on a timer, and nothing runs at all while the
+            # queue window is closed. The loop sleeps until an event asks for
+            # a read: the queue window opening, a track change the cached
+            # order cannot explain, connect, Refresh, or a playback-mode
+            # write. If that request arrived inside a rate-limit window it is
+            # held, and the sleep ends exactly when the window does, so the
+            # answer lands then rather than at the next song.
             timeout = None
-            if self._want_reconcile:
+            if self._want_reconcile and self._active:
                 left = self.cooling_for()
                 timeout = left + 0.5 if left > 0 else None
             self._poke.wait(timeout)
@@ -558,16 +581,20 @@ class SpotifyAccount:
     def peek_queue(self):
         """The queue as the state broadcast carries it. Never touches the
         network: the poller keeps this fresh, here it is only read."""
+        # "live" says whether the list is being kept up to date at all: only
+        # while the queue window is open.
         if not self.connected():
             return {"ok": False, "reason": "not connected", "queue": [],
-                    "version": self._queue_version, "retry_in": 0, "age": 0}
+                    "version": self._queue_version, "retry_in": 0, "age": 0,
+                    "live": self._active}
         cooling = self.cooling_for()
         cached = self._queue_cache
         if cached is None:
             return {"ok": False, "reason": self.cooling_reason() if cooling else "loading",
                     "queue": [], "version": self._queue_version,
-                    "retry_in": round(cooling, 1), "age": 0}
+                    "retry_in": round(cooling, 1), "age": 0, "live": self._active}
         out = dict(cached)
+        out["live"] = self._active
         out["version"] = self._queue_version
         out["retry_in"] = round(cooling, 1)
         out["age"] = round(time.time() - self._queue_at)

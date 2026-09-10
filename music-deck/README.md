@@ -277,6 +277,13 @@ says so rather than failing silently if your account cannot do them.
 
 ## Connecting your Spotify account (optional)
 
+Once connected, the app asks Spotify for anything only while the **Queue**
+window is open - opening it reads the queue once, and it keeps up from there.
+With the Queue window closed, Now Playing comes from Windows alone, and a
+transport button you press goes through Windows when the music is on this
+PC; the account is used for a press only when Spotify is playing somewhere
+Windows cannot see, such as a phone.
+
 Needed for the queue view, search and device switching, and for playback on your
 phone or the web player to show up at all. Without it the deck still reads the
 Spotify desktop app through Windows, which covers the common case.

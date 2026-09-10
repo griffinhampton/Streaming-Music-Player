@@ -137,8 +137,18 @@
         </div>
       </div>
 
+      <!-- Captions only: the listener itself, right under the words it makes. -->
+      <div class="cap-listen" id="capListen" hidden>
+        <div class="cap-listen-row">
+          <button class="btn btn-primary" id="capMic">Start listening</button>
+          <span class="cap-state" id="capState" data-tone="off">Off</span>
+          <span class="cap-meter" id="capMeter" hidden title="Microphone level"><i></i></span>
+        </div>
+        <div id="capLast" class="cap-last" aria-live="polite"></div>
+      </div>
+
       <div class="panel-foot preview-foot">
-        <span class="muted small">Drag stickers right on the preview to move them.</span>
+        <span class="muted small" id="stickerHint">Drag stickers right on the preview to move them.</span>
         <span id="previewNote" class="muted small"></span>
       </div>
     </section>
@@ -189,6 +199,7 @@
         <button data-tab="lyrics-text" data-for="lyrics">Text</button>
         <button data-tab="queue-text" data-for="queue">Text</button>
         <button data-tab="bits" data-for="np">Art &amp; bar</button>
+        <button data-tab="captions-listen" data-for="captions">Listening</button>
         <button data-tab="bg" data-for="all">Background</button>
         <button data-tab="controls" data-for="np lyrics queue">Buttons</button>
         <button data-tab="decor" data-for="np">Decor</button>
@@ -799,16 +810,9 @@
       </div>
 
       <!-- captions: look -->
-      <div class="tabpane" data-pane="captions">
-        <p class="hint">A window that turns what you say into your microphone into closed captions, live.
-          Add it in TikTok Studio as <b>Awesome Streaming Deck - Captions</b> and drag it wherever you like.</p>
-
-        <div class="row gap wrap cap-mic">
-          <button class="btn btn-primary" id="capMic">Start listening</button>
-          <span class="cap-state" id="capState" data-tone="off">Off</span>
-          <span class="cap-meter" id="capMeter" hidden title="Microphone level"><i></i></span>
-        </div>
-        <div id="capLast" class="cap-last" aria-live="polite"></div>
+      <!-- captions: listening -->
+      <div class="tabpane" data-pane="captions-listen">
+        <p class="hint">How your voice becomes captions. Start and stop listening right under the preview.</p>
 
         <label class="field">
           <span>Engine</span>
@@ -840,6 +844,12 @@
         </label>
         <p class="hint">Everything is recognized on this PC; no audio is ever sent anywhere. Whisper's
           model downloads once from Hugging Face, then works offline. English only.</p>
+      </div>
+
+      <!-- captions: look -->
+      <div class="tabpane" data-pane="captions">
+        <p class="hint">A window that turns what you say into your microphone into closed captions, live.
+          Add it in TikTok Studio as <b>Awesome Streaming Deck - Captions</b> and drag it wherever you like.</p>
 
         <div class="checks">
           <label class="check"><input type="checkbox" data-cap="follow_theme" data-kind="bool"><span>Use the same background as Now Playing</span></label>

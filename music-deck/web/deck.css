@@ -113,8 +113,16 @@ h2 {
 .pill-bad  { color: var(--bad);  border-color: color-mix(in srgb, var(--bad) 32%, var(--line)); }
 
 /* Captions: the microphone button and, beside it, what the listener is doing.
-   The dot is the state at a glance; the words say why. */
-.cap-mic { align-items: center; }
+   The dot is the state at a glance; the words say why. They sit centered
+   under the captions preview, where the words they produce appear. */
+.cap-listen {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line);
+}
+.cap-listen[hidden] { display: none; }
+.cap-listen-row { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.cap-listen .cap-last { max-width: 64ch; text-align: center; border-left: 0; padding: 0; }
 .cap-state {
   display: inline-flex; align-items: center; gap: .5em;
   min-height: 2.2em; padding: .3em .8em;

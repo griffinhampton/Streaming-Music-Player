@@ -86,6 +86,7 @@ $streamType = [Windows.Storage.Streams.IRandomAccessStreamWithContentType]
 
 $lastKey = ''
 $lastArt = ''
+$artUntil = Get-Date
 
 # ---- Cover art ------------------------------------------------------------
 function Save-Thumbnail($props, $key) {
@@ -107,17 +108,23 @@ function Save-Thumbnail($props, $key) {
         $ext = 'jpg'
         if ($bytes.Length -gt 8 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50) { $ext = 'png' }
 
+        $md5 = [System.Security.Cryptography.MD5]::Create()
         $safe = [System.BitConverter]::ToString(
-            [System.Security.Cryptography.MD5]::Create().ComputeHash(
-                [System.Text.Encoding]::UTF8.GetBytes($key))).Replace('-', '').Substring(0, 12)
+            $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key))).Replace('-', '').Substring(0, 12)
+        # The picture's own hash is part of the name, so a cover that arrives
+        # late - or replaces a stand-in - gets a new address, and every window
+        # loads it instead of keeping the first picture it cached.
+        $sum = [System.BitConverter]::ToString($md5.ComputeHash($bytes)).Replace('-', '').Substring(0, 8)
 
-        $path = Join-Path $ArtDir "smtc_$safe.$ext"
-        [System.IO.File]::WriteAllBytes($path, $bytes)
+        $path = Join-Path $ArtDir "smtc_${safe}_$sum.$ext"
+        if (-not (Test-Path $path)) {
+            [System.IO.File]::WriteAllBytes($path, $bytes)
 
-        # Keep the art folder from growing forever.
-        $old = Get-ChildItem $ArtDir -Filter 'smtc_*' -ErrorAction SilentlyContinue |
-               Sort-Object LastWriteTime -Descending | Select-Object -Skip 40
-        foreach ($f in $old) { Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue }
+            # Keep the art folder from growing forever.
+            $old = Get-ChildItem $ArtDir -Filter 'smtc_*' -ErrorAction SilentlyContinue |
+                   Sort-Object LastWriteTime -Descending | Select-Object -Skip 40
+            foreach ($f in $old) { Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue }
+        }
 
         return $path
     } catch {
@@ -196,8 +203,17 @@ while ($true) {
 
             $key = "$app|$artist|$title|$album"
             if ($key -ne $lastKey) {
-                $lastArt = Save-Thumbnail $props $key
                 $lastKey = $key
+                $lastArt = ''
+                $artUntil = (Get-Date).AddSeconds(15)
+            }
+            # Spotify often hands Windows the title first and the cover a
+            # moment later - sometimes a stand-in picture first, then the real
+            # one. Reading the cover only at the change left whole songs with
+            # no cover, so keep looking for a while after each change.
+            if ((Get-Date) -lt $artUntil) {
+                $found = Save-Thumbnail $props $key
+                if ($found) { $lastArt = $found }
             }
 
             $status = [int]$info.PlaybackStatus

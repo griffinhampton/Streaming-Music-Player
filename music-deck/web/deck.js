@@ -2576,6 +2576,10 @@ function selectWindow(id) {
   $('designingName').textContent = WINDOWS[id].label;
   // Stickers only exist on the pop-out, so their drag handles go with it.
   $('previewEdit').hidden = id !== 'np';
+  // The captions listener sits right under its preview; stickers exist
+  // only on Now Playing, so their hint goes with it.
+  $('capListen').hidden = id !== 'captions';
+  $('stickerHint').hidden = id !== 'np';
   $('dropHintWhat').textContent = id === 'np'
     ? 'PNG, JPEG, GIF or WebP — as a sticker, or as the background'
     : "to use it as this window's background";
@@ -3124,6 +3128,16 @@ let lastQueueVersion = -1, lastQueueView = null, lastTrueNow = null;
 function paintSpotifyQueue(q, force, trueNow) {
   if (!q) return;
   lastQueueView = q;
+  // The app asks Spotify only while the Queue window is open, so with it
+  // closed there is no list to trust - say so rather than show an old one.
+  if (q.live === false && q.reason !== 'not connected') {
+    $('spQueueErr').textContent = '';
+    $('spQueue').innerHTML = '<div class="empty">The queue shows while the Queue window is open — '
+      + 'the app only asks Spotify then.</div>';
+    $('spQueueCount').textContent = 'Up next';
+    lastQueueVersion = -1;              // paint the real list the moment it is live
+    return;
+  }
   // The wait, counted down where the error goes, so a deliberate hold does not
   // read as "broken". This line is cheap to rewrite every tick; the rows below
   // are only rebuilt when the server says the list actually changed.
@@ -3206,7 +3220,13 @@ function paintSpotifyAccount(acc, sp) {
 }
 
 /* search -> click a result to queue it */
-$('spQueueRefresh').addEventListener('click', () => post('/api/spotify/refresh'));
+$('spQueueRefresh').addEventListener('click', () => {
+  if (lastQueueView && lastQueueView.live === false) {
+    toast('Open the Queue window first — the app only asks Spotify while it is open');
+    return;
+  }
+  post('/api/spotify/refresh');
+});
 $('spDevice').addEventListener('change', () => {
   const id = $('spDevice').value;
   if (!id || id === $('spDevice').dataset.active) return;

@@ -913,8 +913,14 @@ class Hub:
         # last resort for playback on a phone or speaker, where Windows sees
         # nothing - get() has already dropped its "playing" claim by then.
         use_account = CONFIG["spotify"].get("use_account", True)
+        # The account is only read while the queue window is open, so with it
+        # closed its view is not kept up to date - and an old view is how a
+        # song that ended long ago used to stay "playing". Windows alone
+        # speaks then.
+        live = SPOTIFY.active
+        acct_has = bool(account.get("has")) and live
         account_view = None
-        if account.get("has") and use_account:
+        if acct_has and use_account:
             art = ""
             if account.get("art"):
                 art = "/spotify/art?u=" + urllib.parse.quote(account["art"], safe="")
@@ -947,6 +953,15 @@ class Hub:
                 "position": spotify["position"],
                 "duration": spotify["duration"],
             }
+        # The cover comes from Windows whenever Windows knows the track: it is
+        # the picture Spotify itself hands the system, it costs no Spotify
+        # call, and it is there whether or not the queue window is open. The
+        # account's picture is only for playback Windows cannot see.
+        if (account_view and bridge_view and bridge_view["art_url"]
+                and SPOTIFY._same_track({"title": account_view["title"],
+                                         "artist": account_view["artist"]},
+                                        (bridge_view["title"], bridge_view["artist"]))):
+            account_view["art_url"] = bridge_view["art_url"]
         if account_view and not account.get("stale"):
             spotify_view = account_view
         else:
@@ -971,14 +986,15 @@ class Hub:
                 "available": spotify.get("available"),
                 "error": spotify.get("error", ""),
                 "has": bool(spotify_view),
-                "app": ("Spotify" if (account.get("has") and CONFIG["spotify"].get("use_account", True))
+                "app": ("Spotify" if (acct_has and CONFIG["spotify"].get("use_account", True))
                         else spotify.get("app", "")),
-                "can_next": bool(account.get("has")) or spotify.get("can_next", False),
-                "can_prev": bool(account.get("has")) or spotify.get("can_prev", False),
+                "can_next": acct_has or spotify.get("can_next", False),
+                "can_prev": acct_has or spotify.get("can_prev", False),
                 "account": {
                     "connected": account.get("connected", False),
-                    "has": account.get("has", False),
-                    "device": account.get("device", ""),
+                    "has": acct_has,
+                    "device": account.get("device", "") if live else "",
+                    "live": live,
                     "error": account.get("error", ""),
                     "client_id_set": account.get("client_id_set", False),
                     "redirect_uri": SPOTIFY.redirect_uri,
@@ -1113,9 +1129,14 @@ def window_action(ov, cfg, page, action, data):
         ov.set_backdrop(sur.get("color", "#000000")
                         if sur.get("mode") == "solid" else "#000000")
         ov.remember_for_rebuild(url, cfg)
+        if ov is QUEUE_WIN:
+            SPOTIFY.set_active(True)          # the one thing the account is for
         return res
     if action == "close":
-        return {"ok": ov.close()}
+        ok = ov.close()
+        if ov is QUEUE_WIN:
+            SPOTIFY.set_active(False)
+        return {"ok": ok}
     if action == "heal":
         url = f"http://127.0.0.1:{CONFIG['port']}/{page}"
         return ov.heal(url, cfg)
@@ -1302,7 +1323,17 @@ class Handler(BaseHTTPRequestHandler):
         /api/spotify/<cmd> want exactly this decision, so it lives once.
         """
         account = SPOTIFY.get()
-        if account.get("has") and CONFIG["spotify"].get("use_account", True):
+        use_account = CONFIG["spotify"].get("use_account", True)
+        if SPOTIFY.active:
+            via_account = bool(account.get("has")) and use_account
+        else:
+            # The queue window is closed, so the account is not being read.
+            # A press still has to reach the music: through Windows when it
+            # plays on this PC (no Spotify call at all), through the account
+            # only when it plays somewhere Windows cannot see.
+            via_account = (use_account and SPOTIFY.connected()
+                           and not BRIDGE.get().get("has"))
+        if via_account:
             res = SPOTIFY.command(cmd)
             if res.get("ok"):
                 HUB.broadcast()
@@ -1820,6 +1851,20 @@ def main():
 
     BRIDGE.start()
     SPOTIFY.start()
+
+    # The account is read only while the queue window is open. Opening and
+    # closing it from the deck says so at once; this also catches the window
+    # going any other way - Alt+F4, its own close button, a crash - with a
+    # window lookup every two seconds.
+    def follow_queue_window():
+        while True:
+            try:
+                SPOTIFY.set_active(QUEUE_WIN.is_open())
+            except Exception:
+                pass
+            time.sleep(2)
+    threading.Thread(target=follow_queue_window, daemon=True).start()
+
     # The microphone is opened only if captions were left on last time.
     CAPTIONS.configure(captions_settings())
     if CONFIG.get("captions", {}).get("enabled"):
