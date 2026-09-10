@@ -1,0 +1,144 @@
+name: Build
+
+# Builds the app on a clean Windows runner from nothing but this repository.
+#
+# That property is the point, and not only for convenience: SignPath's free
+# programme for open-source projects signs artifacts produced by a pipeline it
+# can inspect, never files uploaded from someone's desktop. A build anyone can
+# read and re-run is what makes the signature mean something.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:        # so you can build a release without pushing a tag
+
+permissions:
+  contents: write           # needed only by the release job, to attach files
+
+env:
+  APP_NAME: Awesome Music Streaming Deck
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          # 3.13 works locally but 3.12 is the safer floor for PyInstaller, and
+          # the app itself needs nothing newer - it is standard library only.
+
+      - name: Install PyInstaller
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.22.2
+
+      - name: Check it at least parses
+        # No test suite yet, so this is the honest minimum: every module
+        # compiles, and the front end is syntactically valid.
+        run: |
+          python -m compileall -q music-deck
+          node --version
+          Get-ChildItem music-deck/web/*.js | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Syntax error in $($_.Name)" }
+          }
+
+      - name: Build
+        working-directory: music-deck
+        # --onedir, not --onefile: a self-extracting executable behaves like a
+        # dropper and antivirus engines flag it constantly. See ANTIVIRUS.md.
+        # The artwork folder is deliberately not in the repository, so this
+        # builds without it - exactly as a fresh clone would.
+        run: |
+          pyinstaller --noconfirm --clean --onedir --noconsole `
+            --name "$env:APP_NAME" --icon music-deck.ico `
+            --version-file version.txt `
+            --add-data "web;web" --add-data "smtc.ps1;." `
+            --add-data "music-deck.ico;." `
+            --hidden-import tkinter --hidden-import tkinter.filedialog `
+            --hidden-import tkinter.messagebox `
+            --distpath ../dist --workpath ../build --specpath ../build `
+            server.py
+
+      - name: Check the build actually starts
+        # A build that compiles but cannot serve a page is not a build. Start
+        # it, ask it for the deck, stop it.
+        shell: pwsh
+        run: |
+          $exe = "dist/$env:APP_NAME/$env:APP_NAME.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList '--no-browser','--no-open' `
+                             -WorkingDirectory "dist/$env:APP_NAME" -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..30) {
+              Start-Sleep -Seconds 1
+              try {
+                $r = Invoke-WebRequest 'http://127.0.0.1:8713/deck.html' -UseBasicParsing -TimeoutSec 2
+                if ($r.StatusCode -eq 200) { $ok = $true; break }
+              } catch { }
+            }
+            if (-not $ok) { throw 'The built app did not serve deck.html within 30s' }
+            Write-Host 'Built app served deck.html - good.'
+          } finally {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Installer
+        # Inno Setup ships on the windows-latest image.
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q music-deck/installer.iss
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem dist -Filter *.exe -Recurse -Depth 1 | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash, $_.Name
+          }
+          $lines | Tee-Object -FilePath dist/SHA256SUMS.txt
+
+      # The unsigned artifact. SignPath picks this up by name once the project
+      # is approved - see ANTIVIRUS.md for how to apply and wire it in.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: awesome-music-streaming-deck-unsigned
+          path: |
+            dist/${{ env.APP_NAME }}/
+            dist/Awesome-Music-Streaming-Deck-Setup.exe
+            dist/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    # Only for tags: push v1.0.1 and the installer lands on the releases page.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: awesome-music-streaming-deck-unsigned
+          path: artifact
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifact/Awesome-Music-Streaming-Deck-Setup.exe
+            artifact/SHA256SUMS.txt
+          body: |
+            Download the installer below and run it. It installs to your own
+            user folder, so there is no administrator prompt.
+
+            **Windows will warn you.** This build is not code-signed, which
+            costs money and is the only thing that removes that warning:
+            **More info → Run anyway**. `ANTIVIRUS.md` in the repository
+            explains it properly, including how to verify what you downloaded
+            against the checksums attached here.
+
+            Built from this tag by GitHub Actions — the workflow is in
+            `.github/workflows/build.yml` and you can read exactly what it did.

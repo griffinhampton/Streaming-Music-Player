@@ -7,7 +7,7 @@
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 const API = '/api/queue/window';
 
-let lastPlaying = false, lastTrackKey = null;
+let lastPlaying = false, lastTrackKey = null, lastConnected = null;
 
 const el = {
   stage: document.getElementById('stage'),
@@ -237,6 +237,7 @@ function connect() {
       const data = JSON.parse(e.data);
       applyDesign(data.nowplaying, data.queue_cfg);
       followPlaying(data.now);
+      followAccount(((data.spotify_status || {}).account) || {});
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -282,6 +283,19 @@ pollTimer = setInterval(poll, 120000);
 /* Which way round the play/pause icon goes, and when the list is stale. Both
    ride connect()'s stream above rather than a second subscription: that
    payload already carries `now`. */
+/* Connecting a Spotify account is the moment this window can finally show
+   something, and it is a deliberate act - so react to it at once rather than
+   waiting for the safety-net poll, which is two minutes wide on purpose. */
+function followAccount(acc) {
+  const now = !!acc.connected;
+  if (now === lastConnected) return;
+  lastConnected = now;
+  if (!now) return;
+  quietUntil = 0;              // a fresh connection deserves a fresh try
+  lastTrackKey = null;
+  setTimeout(poll, 400);
+}
+
 function followPlaying(now) {
   now = now || {};
   // A new track means the queue moved on. This is how the list keeps up.

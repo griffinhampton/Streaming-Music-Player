@@ -27,6 +27,12 @@ a small tool may be never.
 
 ### Getting a certificate
 
+The build already runs on GitHub Actions (`.github/workflows/build.yml`), which
+is the prerequisite SignPath cares about most: it signs artifacts produced by a
+pipeline anyone can read, never files uploaded from a desktop. That is what
+makes a signature evidence rather than decoration.
+
+
 | Route | Cost | Notes |
 |---|---|---|
 | **SignPath Foundation** | Free | For OSS projects. Signs from your CI, key never touches your machine. Requires a public repo, an OSI licence and a reproducible build. This is the right answer for this project. |

@@ -2480,7 +2480,6 @@ function paintSpotify(state) {
     $('spPending2').hidden = true;
     $('spManual').hidden = true;
     $('spManual2').hidden = true;
-    toast('Spotify account connected');
   }
   $('spAccToggle').textContent = $('spAccSetup').hidden
     ? (acc.connected ? 'Account settings' : 'Connect account\u2026') : 'Hide';
@@ -2648,7 +2647,22 @@ function paintSpotifyAccount(acc, sp) {
     $('spRepeat').classList.toggle('on', spRepeatMode !== 'off');
     $('spRepeat').textContent = spRepeatMode === 'track' ? '🔂' : '🔁';
   }
-  if (spConnected && !wasConnected) refreshSpotifyPanel();
+  // Just connected. That is a deliberate act with an obvious intent, so show
+  // the result immediately instead of waiting for a poll: drop any rate-limit
+  // hold left over from before, bring the Spotify panel up even in Auto mode
+  // where nothing is playing yet to switch it, and fetch straight away.
+  if (spConnected && !wasConnected) {
+    spQuietUntil = 0;
+    devicesAt = 0;
+    autoShowsSpotify = true;
+    if ($('spotifyMain').hidden) {
+      $('spotifyMain').hidden = false;
+      $('libraryPanel').hidden = true;
+    }
+    refreshSpotifyPanel();
+    refreshDevices(true);
+    toast('Spotify connected');
+  }
 }
 
 /* search -> click a result to queue it */
