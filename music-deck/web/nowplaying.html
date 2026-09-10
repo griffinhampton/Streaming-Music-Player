@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <!-- Fixed title: the server finds this window by name to tuck it inside the
      frameless host window. The host is what shows up in TikTok Studio. -->
-<title>Music Deck - Now Playing (source)</title>
+<title>Awesome Music Streaming Deck - Now Playing (source)</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="stylesheet" href="transport.css">
 <link rel="stylesheet" href="nowplaying.css">
 </head>
 <body>
@@ -47,6 +49,7 @@
         <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
         <div class="times"><span id="elapsed">0:00</span><span id="remain">0:00</span></div>
       </div>
+      <div id="transport" class="transport-row" hidden></div>
     </div>
   </div>
 
@@ -71,6 +74,7 @@
 
 <script src="scenes.js"></script>
 <script src="decor.js"></script>
+<script src="transport.js"></script>
 <script src="nowplaying.js"></script>
 </body>
 </html>

@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <!-- Fixed title: the server finds this window by name to tuck it inside its
-     frameless host. The host ("Music Deck - Lyrics") is what capture sees. -->
-<title>Music Deck - Lyrics (source)</title>
+     frameless host. The host ("Awesome Music Streaming Deck - Lyrics") is what capture sees. -->
+<title>Awesome Music Streaming Deck - Lyrics (source)</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="stylesheet" href="transport.css">
 <link rel="stylesheet" href="lyrics.css">
 </head>
 <body>
@@ -30,10 +32,12 @@
   </div>
 
   <div id="offline" class="offline">Deck disconnected &mdash; reconnecting&hellip;</div>
+  <div id="transport" class="transport-row" hidden></div>
 </div>
 
 <script src="scenes.js"></script>
 <script src="windowctl.js"></script>
+<script src="transport.js"></script>
 <script src="lyrics.js"></script>
 </body>
 </html>

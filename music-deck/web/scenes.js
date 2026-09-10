@@ -31,6 +31,20 @@ function wrapped(x, y, r, W, H, draw) {
   return out;
 }
 
+/* Black or white, whichever can actually be read on `hex`. Buttons drawn in
+   the accent need this, and the pop-outs need it as much as the deck does. */
+function readableOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '#ffffff';
+  const n = parseInt(m[1], 16);
+  const lin = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  return L > 0.45 ? '#0a0a0c' : '#ffffff';
+}
+
 /* Mix a colour toward black (t<0) or white (t>0); hex in, hex out. */
 function shade(hex, t) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
@@ -55,6 +69,82 @@ const PETAL_SOFT = 'M0,0 C-6.2,-3.2 -8.4,-10.2 -3.4,-13.4 C-1.2,-14.8 1.2,-14.8 
 /* ------------------------------------------------------------- scenes */
 
 const SCENES = {
+  stipple: {
+    label: 'Stippled stars',
+    tile: 520,
+    defaults: { c1: '#0b0f1c', c2: '#cfd8ff', c3: '#7f8fd6', scale: 1, density: 1, seed: 12 },
+    build(p, rnd) {
+      const W = 520, H = 520;
+      // Dither: a field of dots whose chance of existing rises toward the top,
+      // so the sky thins out the way a printed gradient does.
+      let out = `<rect width="${W}" height="${H}" fill="${p.c1}"/>`;
+      const step = Math.max(4, 9 / p.scale);
+      const bias = 1.15 * p.density;
+      for (let y = 0; y < H; y += step) {
+        const fall = 1 - (y / H);                    // denser at the top
+        for (let x = 0; x < W; x += step) {
+          if (rnd() > fall * fall * bias * 0.55) continue;
+          const jx = x + (rnd() - 0.5) * step, jy = y + (rnd() - 0.5) * step;
+          const r = (rnd() < 0.12 ? 1.9 : 0.9) * p.scale;
+          const col = rnd() < 0.25 ? p.c3 : p.c2;
+          out += `<circle cx="${f1(jx)}" cy="${f1(jy)}" r="${f1(r)}" fill="${col}" fill-opacity="${f1(0.35 + rnd() * 0.6)}"/>`;
+        }
+      }
+      // A few proper four-pointed stars so it is not only noise.
+      const stars = Math.max(1, Math.round(7 * p.density));
+      for (let i = 0; i < stars; i++) {
+        const x = rnd() * W, y = rnd() * H * 0.8;
+        const s = (5 + rnd() * 7) * p.scale;
+        out += wrapped(x, y, s * 2, W, H, (xx, yy) =>
+          `<path d="M0,-1 C.18,-.28 .28,-.18 1,0 C.28,.18 .18,.28 0,1 C-.18,.28 -.28,.18 -1,0 C-.28,-.18 -.18,-.28 0,-1 Z"
+                 transform="translate(${f1(xx)} ${f1(yy)}) scale(${f1(s)})" fill="${p.c2}" fill-opacity=".9"/>`);
+      }
+      return out;
+    },
+  },
+
+  goo: {
+    label: 'Pooled goo',
+    tile: 600,
+    defaults: { c1: '#050510', c2: '#3d6cf0', c3: '#8ad7ff', scale: 1, density: 1, seed: 21 },
+    build(p, rnd) {
+      const W = 600, H = 600;
+      // Blobs blurred hard and then pushed through a steep contrast curve, which
+      // is what makes separate circles read as one liquid mass.
+      let out = `<defs>
+        <filter id="gooey" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="${f1(13 * p.scale)}" result="b"/>
+          <feColorMatrix in="b" type="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -12"/>
+        </filter>
+        <linearGradient id="gooSheen" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="${p.c2}"/>
+          <stop offset="1" stop-color="${p.c3}"/>
+        </linearGradient>
+      </defs><rect width="${W}" height="${H}" fill="${p.c1}"/>`;
+
+      const blobs = Math.max(3, Math.round(9 * p.density));
+      let g = '';
+      for (let i = 0; i < blobs; i++) {
+        const x = rnd() * W, y = rnd() * H;
+        const r = (48 + rnd() * 70) * p.scale;
+        g += wrapped(x, y, r * 1.6, W, H, (xx, yy) =>
+          `<circle cx="${f1(xx)}" cy="${f1(yy)}" r="${f1(r)}" fill="url(#gooSheen)"/>`);
+      }
+      out += `<g filter="url(#gooey)">${g}</g>`;
+
+      // Highlights, so it reads as wet rather than flat.
+      for (let i = 0; i < blobs; i++) {
+        const x = rnd() * W, y = rnd() * H;
+        const r = (7 + rnd() * 13) * p.scale;
+        out += wrapped(x, y, r * 2, W, H, (xx, yy) =>
+          `<ellipse cx="${f1(xx)}" cy="${f1(yy)}" rx="${f1(r)}" ry="${f1(r * 0.55)}"
+                    fill="${shade(p.c3, 0.55)}" fill-opacity=".5"
+                    transform="rotate(-28 ${f1(xx)} ${f1(yy)})"/>`);
+      }
+      return out;
+    },
+  },
 
   watercolor: {
     label: 'Watercolour blossoms',
@@ -311,9 +401,29 @@ function sceneParams(cfg) {
  * when a solid "surround" colour fills the window around the card.
  */
 function applyBackgroundInside(stage, cardBg, bg) {
-  applyBackground(stage, cardBg, bg, (k, v) => { if (k === '--bg') cardBg.style.background = v; });
+  applyBackground(stage, cardBg, bg, (k, v) => {
+    if (k !== '--bg') return;
+    cardBg.style.background = v;
+    // Also publish it, so the dimming veil can be this theme's own ground
+    // colour rather than flat black.
+    stage.style.setProperty('--bg', v);
+  });
   stage.classList.remove('has-bg-image');   // artwork lives in the card now
   stage.style.setProperty('--bg-dim', String((bg || {}).dim ?? 0));
+}
+
+/* Natural proportions of each picture, measured once. Zooming past "cover"
+   needs to know whether the picture is wider or taller than the box it is
+   going into, and that is the only way to find out. */
+const IMG_AR = {};
+function imageAspect(id) {
+  if (IMG_AR[id] !== undefined) return IMG_AR[id];
+  IMG_AR[id] = null;                              // in flight
+  const im = new Image();
+  im.onload = () => { IMG_AR[id] = im.naturalWidth / Math.max(1, im.naturalHeight); };
+  im.onerror = () => { IMG_AR[id] = 1; };
+  im.src = '/asset/' + encodeURIComponent(id);
+  return null;
 }
 
 /**
@@ -337,13 +447,55 @@ function applyBackground(stage, layer, bg, setVar) {
   if (isScene) {
     paintScene(layer, bg.scene.id, sceneParams(bg.scene));
   } else if (isImage) {
+    // Measure before writing: reading layout straight after a style write on
+    // the same element forces a synchronous reflow, and this runs on every
+    // frame while a slider is dragged.
+    const box = layer.getBoundingClientRect();
     layer.style.backgroundColor = '';
-    layer.style.backgroundImage = `url("/asset/${encodeURIComponent(bg.image)}")`;
-    layer.style.backgroundSize =
-      bg.fit === 'stretch' ? '100% 100%' : bg.fit === 'tile' ? 'auto' : (bg.fit || 'cover');
-    layer.style.backgroundRepeat = bg.fit === 'tile' ? 'repeat' : 'no-repeat';
+    const url = `url("/asset/${encodeURIComponent(bg.image)}")`;
+    const fit = bg.fit || 'cover';
+    let size = fit === 'stretch' ? '100% 100%' : fit === 'tile' ? 'auto' : fit;
+    // Zoom only means anything on top of cover/contain, where the picture is
+    // scaled to the box: past 1 it crops in, which is what the framing dialog
+    // is for.
+    const z = Math.max(1, Number(bg.zoom) || 1);
+    if (z > 1 && (fit === 'cover' || fit === 'contain')) {
+      const ar = imageAspect(bg.image);
+      const boxAR = box.width / Math.max(1, box.height);
+      const pct = (z * 100).toFixed(1) + '%';
+      if (ar === null) size = fit;                // repaint once it is measured
+      else if ((ar > boxAR) === (fit === 'cover')) size = 'auto ' + pct;
+      else size = pct + ' auto';
+    }
+    const repeat = bg.fit === 'tile' ? 'repeat' : 'no-repeat';
     // Which part of the picture ends up on screen; each window can differ.
-    layer.style.backgroundPosition = `${bg.pos_x ?? 50}% ${bg.pos_y ?? 50}%`;
+    const pos = `${bg.pos_x ?? 50}% ${bg.pos_y ?? 50}%`;
+
+    const tint = bg.tint || {};
+    if (tint.on) {
+      // A duotone, the way a two-ink print works: the picture keeps its light
+      // and shade, the gradient supplies the colour. `background-blend-mode:
+      // color` does exactly that in one element, so it works the same whether
+      // the picture is on the stage or inside the card.
+      const k = Math.max(0, Math.min(1, tint.strength ?? 1));
+      const ink = (c, fallback) =>
+        `color-mix(in srgb, ${c || fallback} ${(k * 100).toFixed(0)}%, transparent)`;
+      layer.style.backgroundImage =
+        `linear-gradient(${tint.angle ?? 135}deg, ` +
+        `${ink(tint.c1, '#2a2a3a')}, ${ink(tint.c2, '#8b5cf6')}), ${url}`;
+      layer.style.backgroundSize = `100% 100%, ${size}`;
+      layer.style.backgroundRepeat = `no-repeat, ${repeat}`;
+      layer.style.backgroundPosition = `0 0, ${pos}`;
+      layer.style.backgroundBlendMode = 'color, normal';
+    } else {
+      layer.style.backgroundImage = url;
+      layer.style.backgroundSize = size;
+      layer.style.backgroundRepeat = repeat;
+      layer.style.backgroundPosition = pos;
+      layer.style.backgroundBlendMode = '';
+    }
+  } else {
+    layer.style.backgroundBlendMode = '';
   }
   // Blur samples past the edges, so grow the layer to avoid soft borders.
   layer.style.filter = bg.blur ? `blur(${bg.blur}px)` : 'none';

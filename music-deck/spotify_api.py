@@ -36,6 +36,15 @@ def _b64url(raw):
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
+class Cooling(Exception):
+    """Raised instead of calling out while Spotify has told us to wait.
+
+    Carries nothing: the handler that catches it has `self`, and so can ask
+    cooling_for() for the authoritative number rather than trusting a copy
+    taken when the exception was built.
+    """
+
+
 class SpotifyAccount:
     def __init__(self, cache_dir, redirect_uri):
         self.token_path = os.path.join(cache_dir, "spotify_token.json")
@@ -48,6 +57,9 @@ class SpotifyAccount:
         self._fetched_at = 0.0
         self._error = ""
         self._backoff_until = 0.0
+        # Set by the server: True while the Windows bridge is already telling
+        # us what is playing, so this poller can take its time.
+        self.bridge_has = False
         self._poke = threading.Event()
         self._stop = threading.Event()
         self._art = {}                # url -> (mime, bytes), a handful at most
@@ -170,10 +182,11 @@ class SpotifyAccount:
             if self.connected() and self.client_id and time.time() >= self._backoff_until:
                 try:
                     self._poll()
+                except Cooling:
+                    pass                      # still inside a Retry-After window
                 except urllib.error.HTTPError as exc:
                     if exc.code == 429:
-                        wait = int(exc.headers.get("Retry-After", "5") or 5)
-                        self._backoff_until = time.time() + max(2, wait)
+                        pass                  # _api recorded the wait for us
                     elif exc.code == 401:
                         self._error = "Spotify no longer accepts the login - press Connect again."
                         self.disconnect()
@@ -186,20 +199,26 @@ class SpotifyAccount:
                 except Exception as exc:
                     self._error = f"Could not reach Spotify: {str(exc)[:80]}"
                     self._backoff_until = time.time() + 10
+            # Everything here is a /me/* endpoint, and those trip Spotify's
+            # limiter far sooner than the headline number - a burst of ten can
+            # be enough. So lean on the free source wherever possible: when
+            # Windows is already reporting the track playing on this PC, the
+            # only thing this poll adds is noticing a phone or speaker taking
+            # over, which is worth 30 seconds of latency, not 2.5. Any button
+            # press pokes us awake immediately either way.
+            covered = self.bridge_has
             playing = bool(self._raw and self._raw.get("is_playing"))
-            self._poke.wait(2.5 if playing else 5)
+            self._poke.wait(30 if covered else (10 if playing else 25))
             self._poke.clear()
 
     def _poll(self):
-        token = self._access_token()
-        if not token:
-            return
-        req = urllib.request.Request(
-            API + "/me/player?additional_types=track,episode",
-            headers={"Authorization": "Bearer " + token})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            body = r.read()
-        self._raw = json.loads(body.decode("utf-8")) if body.strip() else None  # 204 = idle
+        if not self._access_token():
+            return                            # nothing to poll with yet
+        # Through _api like everything else: it is the one place that notices a
+        # 429 and records how long Spotify wants us to wait. A hand-rolled
+        # request here would be the single biggest source of calls quietly
+        # exempting itself from that.
+        self._raw = self._api("/me/player?additional_types=track,episode")  # None = idle
         self._fetched_at = time.time()
         self._error = ""
 
@@ -265,18 +284,13 @@ class SpotifyAccount:
             return {"ok": False, "reason": "unknown command"}
         method, path = routes[cmd]
         try:
-            token = self._access_token()
-            req = urllib.request.Request(API + path, data=b"", method=method,
-                                         headers={"Authorization": "Bearer " + token,
-                                                  "Content-Length": "0"})
-            with urllib.request.urlopen(req, timeout=8):
-                pass
+            self._api(path, method)
+        except Cooling:
+            return {"ok": False, "reason": self.cooling_reason(),
+                    "retry_in": round(self.cooling_for(), 1)}
         except urllib.error.HTTPError as exc:
-            if exc.code == 403:
-                return {"ok": False, "reason": "Spotify only allows remote control on Premium accounts."}
-            if exc.code == 404:
-                return {"ok": False, "reason": "Spotify has no active device to control."}
-            return {"ok": False, "reason": f"Spotify error {exc.code}"}
+            return {"ok": False, "reason": self._explain(exc),
+                    "retry_in": round(self.cooling_for(), 1)}
         except Exception as exc:
             return {"ok": False, "reason": f"Could not reach Spotify: {str(exc)[:80]}"}
         # Reflect the change straight away, then let the next poll confirm it.
@@ -288,8 +302,34 @@ class SpotifyAccount:
 
     # ------------------------------------------------------------- browsing
 
+    def cooling_for(self):
+        """Seconds left before Spotify will listen to us again, 0 when clear."""
+        return max(0.0, self._backoff_until - time.time())
+
+    def cooling_reason(self):
+        """What to tell someone whose button press we just refused."""
+        return ("Spotify is rate limiting this app — it will not answer for "
+                "another " + self.human_wait(self.cooling_for())
+                + ". Everything that reads from Windows still works.")
+
+    @staticmethod
+    def human_wait(seconds):
+        """"11h 41m" rather than "42080 seconds" - Spotify's waits get long."""
+        seconds = int(max(0, seconds))
+        if seconds >= 3600:
+            return "%dh %dm" % (seconds // 3600, (seconds % 3600) // 60)
+        if seconds >= 60:
+            return "%dm %ds" % (seconds // 60, seconds % 60)
+        return "%ds" % seconds
+
     def _api(self, path, method="GET", body=None):
-        """One authenticated call. Raises HTTPError so callers can explain."""
+        """One authenticated call. Raises HTTPError so callers can explain.
+
+        Refuses to go out at all while we are inside a Retry-After window:
+        asking again during one is what keeps the window open.
+        """
+        if self.cooling_for():
+            raise Cooling()
         token = self._access_token()
         if not token:
             raise RuntimeError("not connected")
@@ -301,8 +341,19 @@ class SpotifyAccount:
             headers["Content-Length"] = "0"
             data = b""
         req = urllib.request.Request(API + path, data=data, method=method, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            raw = r.read()
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                raw = r.read()
+        except urllib.error.HTTPError as exc:
+            # One 429 anywhere silences every call, not just this one.
+            if exc.code == 429:
+                wait = 5
+                try:
+                    wait = int(exc.headers.get("Retry-After", "5") or 5)
+                except (TypeError, ValueError):
+                    pass
+                self._backoff_until = time.time() + max(2, wait)
+            raise
         # The control endpoints answer 204 with an empty or non-JSON body, so a
         # parse failure here means "it worked, there was nothing to say".
         if not raw.strip():
@@ -338,8 +389,12 @@ class SpotifyAccount:
         """
         try:
             data = self._api("/me/player/queue") or {}
+        except Cooling:
+            return {"ok": False, "reason": self.cooling_reason(),
+                    "retry_in": round(self.cooling_for(), 1)}
         except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc)}
+            return {"ok": False, "reason": self._explain(exc),
+                    "retry_in": round(self.cooling_for(), 1)}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:80]}
         return {
@@ -351,6 +406,9 @@ class SpotifyAccount:
     def devices(self):
         try:
             data = self._api("/me/player/devices") or {}
+        except Cooling:
+            return {"ok": False, "reason": self.cooling_reason(),
+                    "retry_in": round(self.cooling_for(), 1), "devices": []}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:80], "devices": []}
         return {"ok": True, "devices": [
@@ -558,7 +616,7 @@ class SpotifyAccount:
         if exc.code == 404:
             return "Spotify has no active device - start playing something first."
         if exc.code == 429:
-            return "Spotify is rate limiting; try again in a moment."
+            return "Spotify is rate limiting; it will pick up again on its own."
         if exc.code == 401:
             return "The Spotify login expired - press Connect again."
         return f"Spotify error {exc.code}"

@@ -1,5 +1,5 @@
 """
-Music Deck - a local-only now-playing rig for streaming.
+Awesome Music Streaming Deck - a local-only now-playing rig for streaming.
 
 Runs a small HTTP server bound to 127.0.0.1 (nothing is reachable from your
 network, let alone the internet) and serves two windows:
@@ -42,7 +42,7 @@ ASSETS = os.path.join(CACHE, "assets")
 CONFIG_PATH = paths.data("config.json")
 LIBRARY_CACHE = os.path.join(CACHE, "library.json")
 
-DECK_TITLE = "Music Deck"
+DECK_TITLE = "Awesome Music Streaming Deck"
 
 DEFAULT_CONFIG = {
     "port": 8713,
@@ -63,11 +63,34 @@ DEFAULT_CONFIG = {
         "font": "Segoe UI",
         "density": "normal",         # compact | normal | roomy
         "glow": False,
-        "wallpaper": "",             # asset id, optional
-        "wallpaper_dim": 0.65,
-        "scene": {                   # generated wallpaper, wins over `wallpaper`
-            "id": "", "c1": "", "c2": "", "c3": "",
-            "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1,
+        # The same shape as nowplaying.bg, so one editor and one painter
+        # serve the app and all three windows. (ui.bg above is the app's flat
+        # background colour, which this sits on top of.)
+        "wallpaper": {
+            "mode": "solid",         # solid | gradient | image | scene
+            "color": "#000000",
+            "color2": "#241a3d",
+            "angle": 135,
+            "image": "",             # asset id
+            "fit": "cover",          # cover | contain | stretch | tile
+            "dim": 0.0,              # veil in the app's own background colour
+            "blur": 0,
+            "pos_x": 50,
+            "pos_y": 50,
+            # Recolour the picture into two colours, the way a duotone print
+            # does: the image keeps its light and shade, you choose the ink.
+            "zoom": 1.0,             # 1 = fit exactly; more crops in
+            "tint": {
+                "on": False,
+                "c1": "",            # blank = the palette's line colour
+                "c2": "",            # blank = the accent
+                "angle": 135,
+                "strength": 1.0,     # 0 leaves the picture alone
+            },
+            "scene": {
+                "id": "", "c1": "", "c2": "", "c3": "",
+                "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1,
+            },
         },
         "decor": {
             "border": "",
@@ -102,10 +125,34 @@ DEFAULT_CONFIG = {
         "follow_theme": True,        # colours, font and background from the pop-out
         "bg": "#0f0f17",
         "interactive": True,         # click a track to play it
+        # Transport buttons drawn inside the window. Off by default, and
+        # hidden until the mouse is over it, so they never land on stream.
+        "controls": {
+            "show": False,
+            "hover_only": True,
+            "prev": True,
+            "play": True,
+            "next": True,
+            "place": "card",         # card | art | corner
+            "align": "right",        # left | center | right
+            "size": 1.0,
+            "opacity": 0.9,
+            "shape": "round",        # round | square | bare
+        },
         "bg_own": {              # used when follow_theme is off
             "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
             "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
             "pos_x": 50, "pos_y": 50,
+            # Recolour the picture into two colours, the way a duotone print
+            # does: the image keeps its light and shade, you choose the ink.
+            "zoom": 1.0,             # 1 = fit exactly; more crops in
+            "tint": {
+                "on": False,
+                "c1": "",            # blank = the palette's line colour
+                "c2": "",            # blank = the accent
+                "angle": 135,
+                "strength": 1.0,     # 0 leaves the picture alone
+            },
             "scene": {"id": "", "c1": "", "c2": "", "c3": "",
                       "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
         },
@@ -125,10 +172,34 @@ DEFAULT_CONFIG = {
         "follow_theme": True,        # colours, font and background from the pop-out
         "bg": "#0f0f17",             # used when not following the theme
         "interactive": True,         # click a line to jump to it
+        # Transport buttons drawn inside the window. Off by default, and
+        # hidden until the mouse is over it, so they never land on stream.
+        "controls": {
+            "show": False,
+            "hover_only": True,
+            "prev": True,
+            "play": True,
+            "next": True,
+            "place": "card",         # card | art | corner
+            "align": "right",        # left | center | right
+            "size": 1.0,
+            "opacity": 0.9,
+            "shape": "round",        # round | square | bare
+        },
         "bg_own": {              # used when follow_theme is off
             "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
             "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
             "pos_x": 50, "pos_y": 50,
+            # Recolour the picture into two colours, the way a duotone print
+            # does: the image keeps its light and shade, you choose the ink.
+            "zoom": 1.0,             # 1 = fit exactly; more crops in
+            "tint": {
+                "on": False,
+                "c1": "",            # blank = the palette's line colour
+                "c2": "",            # blank = the accent
+                "angle": 135,
+                "strength": 1.0,     # 0 leaves the picture alone
+            },
             "scene": {"id": "", "c1": "", "c2": "", "c3": "",
                       "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
         },
@@ -163,6 +234,16 @@ DEFAULT_CONFIG = {
             "blur": 0,
             "pos_x": 50,             # which part of the picture shows, 0-100
             "pos_y": 50,
+            # Recolour the picture into two colours, the way a duotone print
+            # does: the image keeps its light and shade, you choose the ink.
+            "zoom": 1.0,             # 1 = fit exactly; more crops in
+            "tint": {
+                "on": False,
+                "c1": "",            # blank = the palette's line colour
+                "c2": "",            # blank = the accent
+                "angle": 135,
+                "strength": 1.0,     # 0 leaves the picture alone
+            },
             "scene": {               # generated artwork, see web/scenes.js
                 "id": "",            # watercolor | sakura | doodle | moon | embers
                 "c1": "", "c2": "", "c3": "",   # blank = the scene's own colours
@@ -214,6 +295,20 @@ DEFAULT_CONFIG = {
         # Clicking inside the pop-outs drives playback. Off makes them inert,
         # which is safer if you click around your canvas a lot while live.
         "interactive": True,
+        # Transport buttons drawn inside the window. Off by default, and
+        # hidden until the mouse is over it, so they never land on stream.
+        "controls": {
+            "show": False,
+            "hover_only": True,
+            "prev": True,
+            "play": True,
+            "next": True,
+            "place": "card",         # card | art | corner
+            "align": "right",        # left | center | right
+            "size": 1.0,
+            "opacity": 0.9,
+            "shape": "round",        # round | square | bare
+        },
         "label": {"show": True, "text": "NOW PLAYING"},
         "surround": {
             "mode": "solid",         # solid = one colour around the card | theme = the background
@@ -275,12 +370,48 @@ def _merge_into(target, override):
     return target
 
 
+def _migrate(cfg):
+    """Carry older settings forward so nobody's look resets on upgrade.
+
+    The app wallpaper used to be a lone asset id plus a darken slider, with a
+    separate scene block that quietly won over it. It is now the same `bg`
+    block every window uses, so fold the old keys in and drop them.
+    """
+    ui = cfg.get("ui")
+    if not isinstance(ui, dict):
+        return cfg
+    old_scene = ui.pop("scene", None)
+    old_dim = ui.pop("wallpaper_dim", None)
+    # `wallpaper` used to be a bare asset id; it is a whole block now. Because
+    # this runs on the raw file, before defaults are merged in, a string here
+    # can only be the old shape.
+    # Only pop it if it is the old shape: an already-migrated block is a dict
+    # and must be left exactly where it is.
+    old_image = ui.pop("wallpaper") if isinstance(ui.get("wallpaper"), str) else None
+    if old_scene is None and old_image is None and old_dim is None:
+        return cfg
+
+    wall = {}
+    if isinstance(old_scene, dict) and old_scene.get("id"):
+        wall["scene"] = dict(old_scene)
+        wall["mode"] = "scene"                    # the scene used to win
+    elif old_image:
+        wall["image"] = old_image
+        wall["mode"] = "image"
+    if isinstance(old_dim, (int, float)):
+        wall["dim"] = old_dim
+    ui["wallpaper"] = wall              # merged onto the defaults after this
+    return cfg
+
+
 def load_config():
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     if os.path.isfile(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = _deep_merge(cfg, json.load(f))
+                # Migrate first, merge second: the migration only has to
+                # understand shapes people actually wrote, not the defaults.
+                cfg = _deep_merge(cfg, _migrate(json.load(f)))
         except Exception as exc:
             # Don't silently drop someone's folder list - say so and keep the
             # broken file around so it can be rescued by hand.
@@ -434,6 +565,7 @@ class AssetStore:
         os.makedirs(folder, exist_ok=True)
         self.index_path = os.path.join(folder, "index.json")
         self._index = self._load_index()
+        self._builtin_animated = {}      # shipped files never change
 
     def _load_index(self):
         try:
@@ -448,6 +580,45 @@ class AssetStore:
                 json.dump(self._index, f, indent=1)
         except Exception:
             pass
+
+    @staticmethod
+    def _is_animated(raw, ext):
+        """Does this file hold more than one frame?
+
+        Worth knowing because a tinted sticker is drawn through a CSS mask, and
+        a mask only ever uses the first frame - so tinting silently freezes an
+        animation. Better to say so than to let someone wonder why their GIF
+        stopped moving.
+        """
+        try:
+            if ext == ".gif":
+                # Each frame is introduced by a Graphics Control Extension.
+                # Two is all we need to know about, so stop at the second
+                # rather than counting every frame of a long animation.
+                gce = bytes([0x21, 0xF9, 0x04])
+                first = raw.find(gce)
+                return first >= 0 and raw.find(gce, first + 3) >= 0
+            if ext == ".webp":
+                return b"ANMF" in raw[:4096] or b"ANIM" in raw[:4096]
+            if ext == ".png":
+                return b"acTL" in raw[:4096]          # APNG animation control
+        except Exception:
+            pass
+        return False
+
+    def _sniff_file(self, full):
+        """Read just enough of a file on disk to answer _is_animated."""
+        ext = os.path.splitext(full)[1].lower()
+        if ext not in (".gif", ".webp", ".png"):
+            return False
+        try:
+            with open(full, "rb") as f:
+                # A GIF has to be read through to count its frames; the other
+                # two declare themselves in an early chunk.
+                raw = f.read() if ext == ".gif" else f.read(4096)
+        except OSError:
+            return False
+        return self._is_animated(raw, ext)
 
     def save(self, name, data_url):
         """Accept a browser FileReader data: URL and write it to the cache."""
@@ -470,7 +641,8 @@ class AssetStore:
                 f.write(raw)
             self._index[asset_id] = {"name": os.path.basename(name),
                                      "added": round(time.time()),
-                                     "bytes": len(raw)}
+                                     "bytes": len(raw),
+                                     "animated": self._is_animated(raw, ext)}
             self._save_index()
             return {"ok": True, "id": asset_id, "name": os.path.basename(name),
                     "url": f"/asset/{asset_id}", "assets": self.list()}
@@ -498,18 +670,28 @@ class AssetStore:
     def list(self):
         """Newest first, with whatever the file was called when it arrived."""
         out = []
+        dirty = False
         try:
             for name in os.listdir(self.folder):
                 if os.path.splitext(name)[1].lower() not in self.OK_EXT:
                     continue
                 full = os.path.join(self.folder, name)
                 meta = self._index.get(name, {})
+                if "animated" not in meta:
+                    # Added before we started checking, or dropped into the
+                    # folder by hand. Look now and remember the answer.
+                    meta["animated"] = self._sniff_file(full)
+                    self._index[name] = meta
+                    dirty = True
                 out.append({"id": name, "url": f"/asset/{name}",
                             "name": meta.get("name", name),
                             "added": meta.get("added", int(os.path.getmtime(full))),
+                            "animated": bool(meta.get("animated")),
                             "size": os.path.getsize(full)})
         except Exception:
             pass
+        if dirty:
+            self._save_index()          # or every restart re-reads every GIF
         out.sort(key=lambda a: a["added"], reverse=True)
 
         shipped = []
@@ -517,10 +699,15 @@ class AssetStore:
             for name in sorted(os.listdir(self.builtin or "")):
                 if os.path.splitext(name)[1].lower() not in self.OK_EXT:
                     continue
+                if name not in self._builtin_animated:
+                    # Shipped files never change, so one look each per run.
+                    self._builtin_animated[name] = self._sniff_file(
+                        os.path.join(self.builtin, name))
                 shipped.append({
                     "id": "builtin:" + name,
                     "url": "/asset/builtin:" + urllib.parse.quote(name),
                     "name": os.path.splitext(name)[0],
+                    "animated": self._builtin_animated[name],
                     "builtin": True, "added": 0,
                     "size": os.path.getsize(os.path.join(self.builtin, name)),
                 })
@@ -554,9 +741,11 @@ class Hub:
     def __init__(self):
         self.local = {"track_id": None, "playing": False, "position": 0.0,
                       "duration": 0.0, "volume": CONFIG["volume"], "dpr": 1.0}
-        # A seek asked for by a pop-out. The deck owns the <audio> element, so
-        # the request rides the state broadcast and the deck applies it.
+        # A seek or a transport press asked for by a pop-out. The deck owns
+        # the <audio> element, so the request rides the state broadcast and the
+        # deck is what actually applies it.
         self.local_seek = None
+        self.local_cmd = None
         self._subs = []
         self._lock = threading.Lock()
 
@@ -569,6 +758,9 @@ class Hub:
 
     def snapshot(self):
         spotify = BRIDGE.get()
+        # Tell the account poller whether it is even needed right now. Reading
+        # Windows costs nothing; asking Spotify does.
+        SPOTIFY.bridge_has = bool(spotify.get("has"))
         local_track = LIBRARY.get(self.local["track_id"]) if self.local["track_id"] else None
 
         local_view = None
@@ -650,6 +842,7 @@ class Hub:
                 },
             },
             "local_seek": self.local_seek,
+            "local_cmd": self.local_cmd,
             "source_mode": mode,
             "spotify_account": {
                 "shuffle": account.get("shuffle", False),
@@ -731,12 +924,12 @@ font-family:Segoe UI,system-ui,sans-serif"><div style="text-align:center;max-wid
 
 # ================================================================= windows
 
-OVERLAY = overlay_mod.Overlay(CACHE, "np", "Music Deck - Now Playing",
-                              "Music Deck - Now Playing (source)")
-LYRICS_WIN = overlay_mod.Overlay(CACHE, "lyrics", "Music Deck - Lyrics",
-                                 "Music Deck - Lyrics (source)")
-QUEUE_WIN = overlay_mod.Overlay(CACHE, "queue", "Music Deck - Queue",
-                                "Music Deck - Queue (source)")
+OVERLAY = overlay_mod.Overlay(CACHE, "np", "Awesome Music Streaming Deck - Now Playing",
+                              "Awesome Music Streaming Deck - Now Playing (source)")
+LYRICS_WIN = overlay_mod.Overlay(CACHE, "lyrics", "Awesome Music Streaming Deck - Lyrics",
+                                 "Awesome Music Streaming Deck - Lyrics (source)")
+QUEUE_WIN = overlay_mod.Overlay(CACHE, "queue", "Awesome Music Streaming Deck - Queue",
+                                "Awesome Music Streaming Deck - Queue (source)")
 LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
@@ -904,6 +1097,21 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _spotify_command(self, cmd):
+        """Drive Spotify by whichever route is actually live.
+
+        The account can reach a phone or a speaker; the Windows bridge only
+        knows about this PC but needs no login. Both /api/transport and
+        /api/spotify/<cmd> want exactly this decision, so it lives once.
+        """
+        account = SPOTIFY.get()
+        if account.get("has") and CONFIG["spotify"].get("use_account", True):
+            res = SPOTIFY.command(cmd)
+            if res.get("ok"):
+                HUB.broadcast()
+            return res
+        return {"ok": BRIDGE.command(cmd)}
+
     def _serve_static(self, name):
         safe = os.path.basename(name)
         path = os.path.join(WEB, safe)
@@ -1022,7 +1230,7 @@ class Handler(BaseHTTPRequestHandler):
                 HUB.broadcast()
                 return self._send(200, _callback_page(
                     "Spotify connected",
-                    "Music Deck can see your playback now. This window closes itself.",
+                    "Awesome Music Streaming Deck can see your playback now. This window closes itself.",
                     done=True), "text/html")
             return self._send(200, _callback_page("That did not work", reason), "text/html")
 
@@ -1212,6 +1420,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "source": "local"})
             return self._json(SPOTIFY.seek(data.get("seconds", 0)))
 
+        if path == "/api/transport":
+            # Whichever source is on screen; a window does not need to know
+            # where the music is coming from to put a Next button on it.
+            cmd = str(data.get("cmd", ""))
+            if cmd not in ("prev", "next", "playpause"):
+                return self._json({"ok": False, "reason": "unknown command"})
+            if (HUB.snapshot()["now"] or {}).get("source") == "local":
+                # The deck owns the <audio> element, so the press rides the
+                # broadcast and the deck is what actually applies it.
+                HUB.local_cmd = {"cmd": cmd, "id": time.time()}
+                HUB.broadcast()
+                return self._json({"ok": True, "source": "local"})
+            return self._json(self._spotify_command(cmd))
+
         if path == "/api/spotify/seek":
             return self._json(SPOTIFY.seek(data.get("seconds", 0)))
 
@@ -1225,14 +1447,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(SPOTIFY.set_toggle(data.get("what", ""), data.get("value")))
 
         if path.startswith("/api/spotify/"):
-            cmd = path.split("/")[-1]
-            account = SPOTIFY.get()
-            if account.get("has") and CONFIG["spotify"].get("use_account", True):
-                res = SPOTIFY.command(cmd)
-                if res.get("ok"):
-                    HUB.broadcast()
-                return self._json(res)
-            return self._json({"ok": BRIDGE.command(cmd)})
+            return self._json(self._spotify_command(path.split("/")[-1]))
 
         if path == "/api/assets/upload":
             res = ASSET_STORE.save(data.get("name", "image.png"),
@@ -1289,7 +1504,7 @@ def main():
         httpd = QuietServer(("127.0.0.1", port), Handler)
     except OSError:
         # Already running: double-clicking again should just bring the deck up.
-        print(f"\n  Port {port} is busy - Music Deck is already running; opening the deck.\n")
+        print(f"\n  Port {port} is busy - Awesome Music Streaming Deck is already running; opening the deck.\n")
         launch_deck(f"http://127.0.0.1:{port}/deck.html")
         return
 
@@ -1303,7 +1518,7 @@ def main():
                          daemon=True).start()
 
     base = f"http://127.0.0.1:{port}"
-    print("\n  Music Deck")
+    print("\n  Awesome Music Streaming Deck")
     print("  " + "-" * 46)
     print(f"  Deck         {base}/deck.html")
     print(f"  Now Playing  {base}/nowplaying.html")

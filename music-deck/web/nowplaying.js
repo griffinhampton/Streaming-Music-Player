@@ -20,6 +20,7 @@ const el = {
   elapsed: document.getElementById('elapsed'),
   remain: document.getElementById('remain'),
   close: document.getElementById('closeBtn'),
+  transport: document.getElementById('transport'),
   bgImage: document.getElementById('bgImage'),
   bgDim: document.getElementById('bgDim'),
   cardBg: document.getElementById('cardBg'),
@@ -87,6 +88,7 @@ function applyDesign(np) {
   const set = (k, v) => s.style.setProperty(k, v);
 
   set('--accent', accent);
+  set('--on-accent', readableOn(accent));
   set('--card-fill', card.fill
     ? `color-mix(in srgb, ${card.fill} ${Math.round((card.fill_alpha ?? 1) * 100)}%, transparent)`
     : 'transparent');
@@ -142,8 +144,27 @@ function applyDesign(np) {
   renderStickers(np.stickers || []);
   sizeRoot();                                   // decor thickness reads this
   renderDecor(s, document.getElementById('decor'), np.decor, accent);
+  // The buttons follow the design too, so a change shows up straight away
+  // rather than waiting for the next track.
+  renderTransport(el.transport, np.controls, clock.playing, interactive());
+  const wrap = document.getElementById('artWrap');
+  const inArt = (np.controls || {}).place === 'art';
+  if (inArt && el.transport.parentElement !== wrap) wrap.appendChild(el.transport);
+  if (!inArt && el.transport.parentElement === wrap) {
+    document.querySelector('.info').appendChild(el.transport);
+  }
   requestAnimationFrame(measureMarquee);
 }
+
+/* An animated sticker - a GIF, an animated WebP - restarts from its first
+   frame every time its <img> is recreated, and the design is re-applied on
+   every state broadcast. Rebuilt naively, a GIF would reset about once a
+   second and look permanently stuck on frame one.
+
+   So the DOM is only rebuilt when the set of stickers actually changes;
+   position, size, rotation and opacity are written straight onto the existing
+   elements, which leaves the animation running even while you drag one. */
+let stickerKey = '';
 
 function renderStickers(list) {
   const back = [], front = [];
@@ -151,27 +172,63 @@ function renderStickers(list) {
     if (!st || !st.asset) continue;
     ((st.z ?? 5) < 0 ? back : front).push(st);
   }
-  const paint = (node, items) => {
-    node.innerHTML = items.map((st) => {
-      const flip = st.flip ? -1 : 1;
-      const url = `/asset/${encodeURIComponent(st.asset)}`;
-      const box = `left:${+st.x || 0}%; top:${+st.y || 0}%; width:${+st.w || 20}%;
-                   opacity:${st.opacity ?? 1}; z-index:${Math.abs(st.z ?? 5)};
-                   transform: translate(-50%,-50%) rotate(${+st.rot || 0}deg) scaleX(${flip});`;
-      if (st.tint && st.color) {
-        // A dropped-in picture keeps its own colours as an <img>. Painting it
-        // through a mask instead lets it take one colour, like the built-in
-        // motifs - the shape survives, the original colours do not.
-        return `<div class="sticker sticker-tinted" style="${box}
-          background-color:${st.color};
-          -webkit-mask-image:url('${url}'); mask-image:url('${url}');
-          aspect-ratio:${st.ar || 1};"></div>`;
-      }
-      return `<img class="sticker" src="${url}" alt="" style="${box}">`;
-    }).join('');
+
+  const geometryProps = (st) => ({
+    left: (+st.x || 0) + '%',
+    top: (+st.y || 0) + '%',
+    width: (+st.w || 20) + '%',
+    opacity: String(st.opacity ?? 1),
+    zIndex: String(Math.abs(st.z ?? 5)),
+    transform: `translate(-50%,-50%) rotate(${+st.rot || 0}deg) scaleX(${st.flip ? -1 : 1})`,
+  });
+  const geometry = (st) => Object.entries(geometryProps(st))
+    .map(([k, v]) => k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()) + ':' + v)
+    .join(';') + ';';
+
+  // What has to change for the elements themselves to be wrong. Anything not
+  // in here is a style we can just overwrite.
+  const key = JSON.stringify(list.map((st) => st && st.asset
+    ? [st.asset, !!st.tint, st.color || '', st.ar || 1, (st.z ?? 5) < 0]
+    : null));
+
+  if (key !== stickerKey) {
+    stickerKey = key;
+    const build = (node, items) => {
+      node.innerHTML = items.map((st) => {
+        const url = `/asset/${encodeURIComponent(st.asset)}`;
+        if (st.tint && st.color) {
+          // A dropped-in picture keeps its own colours as an <img>. Painting it
+          // through a mask instead lets it take one colour, like the built-in
+          // motifs - the shape survives, the original colours do not. A mask
+          // only ever uses the first frame, so tinting freezes an animation.
+          return `<div class="sticker sticker-tinted" style="${geometry(st)}
+            background-color:${st.color};
+            -webkit-mask-image:url('${url}'); mask-image:url('${url}');
+            aspect-ratio:${st.ar || 1};"></div>`;
+        }
+        return `<img class="sticker" src="${url}" alt="" style="${geometry(st)}">`;
+      }).join('');
+    };
+    build(el.back, back);
+    build(el.front, front);
+    return;
+  }
+
+  // Same stickers as last time: move them, do not remake them. Only the
+  // geometry can have changed - the key above pins the asset, tint, colour and
+  // ratio - so write those properties and leave the rest of the declaration
+  // alone rather than re-serialising it all through cssText.
+  const move = (node, items) => {
+    const nodes = node.children;
+    for (let i = 0; i < items.length && i < nodes.length; i++) {
+      const g = geometry(items[i]);
+      if (nodes[i].dataset.geo === g) continue;      // nothing moved
+      nodes[i].dataset.geo = g;
+      Object.assign(nodes[i].style, geometryProps(items[i]));
+    }
   };
-  paint(el.back, back);
-  paint(el.front, front);
+  move(el.back, back);
+  move(el.front, front);
 }
 
 /* "auto" reads the window's shape: squarish gets the stacked card, wide gets
@@ -267,6 +324,9 @@ function render(now) {
   }
 
   el.stage.dataset.state = now.playing ? 'playing' : 'paused';
+  // Only the play/pause icon depends on this; the rest of the row follows the
+  // design and is drawn in applyDesign.
+  renderTransport(el.transport, (design || {}).controls, now.playing, interactive());
 
   // Only re-seat the clock on a real jump, so normal playback stays smooth.
   const drift = Math.abs(clock.position - now.position);
@@ -380,6 +440,8 @@ function wireSeeking() {
 function interactive() {
   return !PREVIEW && !(design && design.interactive === false);
 }
+
+wireTransport(el.transport, interactive);
 
 /* No title bar means dragging is the only way to move it: forward pointer
    deltas to the server, which calls SetWindowPos on the host window. */

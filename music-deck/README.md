@@ -1,4 +1,4 @@
-# Music Deck
+# Awesome Music Streaming Deck
 
 A local "now playing" rig for streaming. It binds to `127.0.0.1` only, so
 nobody on your network can even see it, and it works fully offline out of the
@@ -8,15 +8,15 @@ turn them on: lyric lookup (a checkbox) and connecting your Spotify account
 
 Three windows:
 
-- **Music Deck** – the control room. Library, playback, Spotify controls, and
+- **Awesome Music Streaming Deck** – the control room. Library, playback, Spotify controls, and
   every design setting with a live preview. Its player card follows whatever is
   actually playing, local or Spotify, and its transport, seek bar and volume
   drive that source.
-- **Music Deck - Now Playing** – the pop-out you add to TikTok Studio. Borderless,
+- **Awesome Music Streaming Deck - Now Playing** – the pop-out you add to TikTok Studio. Borderless,
   any size or shape.
-- **Music Deck - Lyrics** – a pop-out that scrolls the words in time with the
+- **Awesome Music Streaming Deck - Lyrics** – a pop-out that scrolls the words in time with the
   song. Optional.
-- **Music Deck - Queue** – a pop-out listing what Spotify plays next. Optional,
+- **Awesome Music Streaming Deck - Queue** – a pop-out listing what Spotify plays next. Optional,
   and needs the Spotify account connected.
 
 Two sources, picked automatically or by hand:
@@ -45,10 +45,10 @@ player and every design setting on the right.
 
 ## Start it
 
-- **From the .exe** – double-click `Music Deck.exe`. First launch takes a few
+- **From the .exe** – double-click `Awesome Music Streaming Deck.exe`. First launch takes a few
   seconds while it unpacks. The deck window opens on its own. **Quit** in the
   top-right stops everything.
-- **From source** – double-click `Start Music Deck.bat` (needs Python 3.10+).
+- **From source** – double-click `Start Awesome Music Streaming Deck.bat` (needs Python 3.10+).
   Close the black window to stop.
 
 Chrome or Edge has to be installed (Edge always is on Windows 10/11).
@@ -56,10 +56,10 @@ Chrome or Edge has to be installed (Edge always is on Windows 10/11).
 ## Put it on stream (TikTok Studio)
 
 1. In the deck, press **Open** on the **Now Playing** card at the top.
-2. TikTok Studio → **Add source → Window** → pick **Music Deck - Now Playing**.
+2. TikTok Studio → **Add source → Window** → pick **Awesome Music Streaming Deck - Now Playing**.
 3. Size and place it on your canvas like any other source.
 4. Want lyrics or the queue? Press **Open** on those cards too, then add
-   **Music Deck - Lyrics** or **Music Deck - Queue** the same way.
+   **Awesome Music Streaming Deck - Lyrics** or **Awesome Music Streaming Deck - Queue** the same way.
 
 The windows do not need to stay visible on your desktop – window capture reads
 the window itself, even behind a fullscreen game.
@@ -90,15 +90,41 @@ Everything in the **Design** panel changes the pop-out live in the preview.
 - **Theme** – one click restyles the deck *and* the pop-out. Watercolour
   Blossom, Hanami, Cutecore, Bloom, Sakura Night, Red Moon, Embers, Midnight,
   Minimal, Dark, Light, Neon Arcade, Vaporwave, Terminal.
-- **Background → Artwork** – generated scenes: watercolour blossoms, cherry
-  blossoms, cute doodles, red moon, embers. Three colours, motif size, density,
+- **Background** – one editor for all four surfaces. The switch at the top
+  picks what you are dressing: the pop-out, the lyrics window, the queue window
+  or **the app itself**. Each keeps its own settings, and all four get the same
+  controls — the app's wallpaper used to be just "pick an image and darken it",
+  and now has the modes, framing, fit, blur and generated artwork the pop-out
+  always had. Choosing a window at the top of the deck points this editor at it.
+- **Background → Customizable artwork** – drawn from your settings rather than
+  downloaded: stippled stars, pooled goo, watercolour blossoms, cherry blossoms,
+  cute doodles, red moon, embers. Three colours, motif size, density,
   tile size and a shuffle button, so no two setups look alike. Nothing is
   downloaded; the art is drawn on the fly.
+- **Frame it…** – rather than guessing with two sliders, this shows the whole
+  picture with the part that will actually be on screen held bright and
+  draggable, cut to the exact shape of the window it is going into. Drag it
+  where you want it, zoom in to crop tighter, and everything dimmed is what you
+  are throwing away.
+- **Recolour the picture** – print any picture in two colours of your choosing.
+  It keeps its light and shade and takes your ink, so a photograph that clashed
+  with your theme becomes part of it. Primary, secondary, the angle between them
+  and how far to push it.
+- **Theme from this** – read the colours a picture is actually made of and dress
+  the whole deck and every window in them. The **Theme** tab has one of these for
+  every picture you have, so you can try them like swatches. The picture goes
+  behind that window exactly as it is — nothing blurred, darkened or recoloured
+  — with the framing, blur, darken and two-colour controls right underneath.
+  Every generated theme is checked for legibility: body text clears 4.5:1 and
+  secondary text 3:1 against what it sits on. Where a picture would still fight
+  the text, the app works out the darkening that would fix it and offers it as a
+  button rather than applying it behind your back.
 - **Background → Picture** – the artwork that ships with the app, plus anything
   you drop in yourself. **Across** and **Down** choose which part of a picture
-  shows, and **Darken** lays a veil over it so the text stays readable. Each of
-  the three windows keeps its own picture and its own framing, so one wide image
-  can be cropped differently in each — or they can be three different images.
+  shows, **Fit** and **Blur** do the obvious, and **Darken** lays a veil over it
+  so the text stays readable. Each surface keeps its own picture and its own
+  framing, so one wide image can be cropped differently in each — or all four
+  can show something different.
 - **Theme colours** – text, secondary text, and lines/borders in one place.
   Everything else inherits them unless you have given that one thing a colour of
   its own, so changing one swatch carries through the pop-out, the lyrics and
@@ -127,10 +153,17 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   Pick which sides it runs along, how far apart the motifs sit, and how fast
   they drift — set to move, they circulate around the frame rather than sliding
   off the ends. Emoticons next to the label.
-- **Stickers** – drop PNGs onto the preview, then drag them into place. Size,
-  rotation, opacity, flip, layer order, in front of or behind the card, and
-  **Tint it** to redraw one as a single-colour silhouette that follows your
-  theme (the shape survives, its own colours do not).
+- **Stickers** – drop pictures onto the preview, then drag them into place. PNG,
+  JPEG, SVG, WebP and **animated GIF**. Size, rotation, opacity, flip, layer
+  order, in front of or behind the card, and **Tint it** to redraw one as a
+  single-colour silhouette that follows your theme (the shape survives, its own
+  colours do not).
+
+  Animated stickers keep playing: they are not rebuilt when the track changes or
+  while you drag them, so a GIF runs continuously instead of restarting. The
+  picker marks which of your pictures move. One caveat the app tells you about:
+  tinting draws a sticker through a mask, and a mask only ever uses the first
+  frame — so tinting an animation freezes it.
 - **Lyrics** – text size, lines shown, alignment, timing nudge, whether it
   matches the pop-out's look.
 - **Queue** – heading, album art, artist, track length, and whether to include
@@ -138,8 +171,17 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   follows the window's width, so making the window taller adds more of the queue
   rather than enlarging what is already there. The tracks setting is just a
   ceiling.
-- **App look** – restyle the deck itself: colours, font, density, a wallpaper
-  from the same generated artwork or your own image, a frame, an emoticon.
+- **App look** – restyle the deck itself: colours, font, density, a frame, an
+  emoticon. Its wallpaper lives with every other background, under
+  **Background → The app**; set that to **None** and the app's own background
+  colour shows through.
+
+- **Controls** – put transport buttons inside a window: back, play/pause, skip.
+  They drive whatever is playing, Spotify or your own files, and each window has
+  its own set. By default they only appear while your mouse is over the window,
+  so they never land in the capture — they are for you to press, not for the
+  audience to look at. Choose where they sit (with the text, over the artwork, or
+  hanging off the corner), how they line up, round or square or bare, and how big.
 
 ### Clicking the windows themselves
 
@@ -250,17 +292,37 @@ them.
 
 ## Send it to friends
 
-Run `build.bat` once. It produces `..\dist\Music Deck.exe` – a single file.
-Send that. Their side:
+Run `build.bat`. It produces `..\dist\Awesome Music Streaming Deck\` — a folder
+— and, if you have Inno Setup, an installer beside it.
+
+A folder rather than one `.exe` on purpose. A single-file PyInstaller build
+unpacks itself into a temp folder and runs what it just wrote, which is exactly
+what a dropper does, so antivirus engines flag it constantly. A folder build has
+nothing to unpack and is far less likely to be flagged — and it starts faster.
+
+For the installer as well:
+
+```
+winget install JRSoftware.InnoSetup
+```
+
+Then run `build.bat` again. It installs per-user, so there is no administrator
+prompt and nothing goes into Program Files.
+
+Their side:
 
 1. Windows 10 or 11, with Chrome or Edge.
-2. Double-click it. SmartScreen says "Windows protected your PC" because the
-   file is not code-signed: **More info → Run anyway**. That is a one-time
-   prompt.
-3. Their settings and any images they add are saved next to the .exe
-   (`config.json` and a `cache` folder), so put it in its own folder.
+2. Windows will still say *"Windows protected your PC"*, because the build is
+   not code-signed: **More info → Run anyway**. Only a certificate removes
+   that. [ANTIVIRUS.md](ANTIVIRUS.md) sets out the options honestly, including
+   the free one for open-source projects, and what to do if a scanner objects.
+3. Settings and any pictures they add are saved next to the app, so it keeps to
+   its own folder.
 
-Nothing about your setup travels with the file – they start from the defaults.
+Every build writes `dist/SHA256SUMS.txt` so a download can be checked against
+what you actually published.
+
+Nothing about your setup travels with the build — they start from the defaults.
 
 ## Where things live
 

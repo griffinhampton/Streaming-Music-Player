@@ -1,4 +1,4 @@
-# Music Deck - Windows media-session bridge.
+# Awesome Music Streaming Deck - Windows media-session bridge.
 #
 # Reads the "now playing" info that Spotify (and Chrome, VLC, Apple Music,
 # anything else) publishes to Windows itself. Everything stays on this machine:

@@ -8,12 +8,15 @@
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 const API = '/api/lyrics/window';
 
+let lastPlaying = false;
+
 const el = {
   stage: document.getElementById('stage'),
   header: document.getElementById('header'),
   viewport: document.getElementById('viewport'),
   lines: document.getElementById('lines'),
   status: document.getElementById('status'),
+  transport: document.getElementById('transport'),
   bgImage: document.getElementById('bgImage'),
   bgDim: document.getElementById('bgDim'),
   cardBg: document.getElementById('cardBg'),
@@ -56,6 +59,7 @@ function applyDesign(np, cfg) {
   const follow = opts.follow_theme !== false;
 
   set('--accent', accent);
+  set('--on-accent', readableOn(accent));
   set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
   const pal = design.palette || {};
   set('--fg', text.title_color || pal.text || '#f4f4f8');
@@ -88,6 +92,10 @@ function applyDesign(np, cfg) {
 
   s.classList.toggle('align-left', opts.align === 'left');
   s.classList.toggle('interactive', !PREVIEW && opts.interactive !== false);
+  // Same buttons as the pop-out, so a Next button works the same
+  // wherever you decide to put one.
+  renderTransport(el.transport, opts.controls, lastPlaying,
+                  !PREVIEW && opts.interactive !== false);
   s.classList.toggle('keep-past', opts.dim_past === false);
   s.classList.toggle('preview', PREVIEW);
   sizeRoot();
@@ -267,6 +275,7 @@ function connect() {
       const data = JSON.parse(event.data);
       applyDesign(data.nowplaying, data.lyrics_cfg);
       onState(data.now);
+      followPlaying(data.now);
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -309,3 +318,14 @@ fetch('/api/state').then((r) => r.json()).then((d) => {
 wireLineSeek();
 connect();
 requestAnimationFrame(tick);
+
+/* Which way round the play/pause icon goes. Fed from connect()'s stream above
+   rather than a second subscription: that payload already carries `now`. */
+function followPlaying(now) {
+  if (!!(now || {}).playing === lastPlaying) return;
+  lastPlaying = !!(now || {}).playing;
+  renderTransport(el.transport, (opts || {}).controls, lastPlaying,
+                  (opts || {}).interactive !== false);
+}
+
+if (!PREVIEW) wireTransport(el.transport, () => (opts || {}).interactive !== false);

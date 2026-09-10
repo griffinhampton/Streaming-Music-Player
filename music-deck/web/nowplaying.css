@@ -137,7 +137,9 @@ html, body {
    painted in here, so a dim layer out on the stage would never cover it. */
 .card > .card-bg::before {
   content: ""; position: absolute; inset: 0;
-  background: #000;
+  /* The veil is the theme's own ground colour, not black: on a light theme
+     darkening a picture makes mud, where washing it out is what you want. */
+  background: var(--bg, #000);
   opacity: var(--bg-dim, 0);
   pointer-events: none;
 }

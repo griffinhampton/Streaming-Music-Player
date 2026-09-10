@@ -7,6 +7,8 @@
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 const API = '/api/queue/window';
 
+let lastPlaying = false, lastTrackKey = null;
+
 const el = {
   stage: document.getElementById('stage'),
   heading: document.getElementById('heading'),
@@ -14,6 +16,7 @@ const el = {
   viewport: document.getElementById('viewport'),
   rows: document.getElementById('rows'),
   status: document.getElementById('status'),
+  transport: document.getElementById('transport'),
   bgImage: document.getElementById('bgImage'),
   bgDim: document.getElementById('bgDim'),
   cardBg: document.getElementById('cardBg'),
@@ -58,6 +61,7 @@ function applyDesign(np, cfg) {
   const follow = opts.follow_theme !== false;
 
   set('--accent', accent);
+  set('--on-accent', readableOn(accent));
   set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
   const pal = design.palette || {};
   set('--fg', text.title_color || pal.text || '#f4f4f8');
@@ -93,6 +97,10 @@ function applyDesign(np, cfg) {
   s.classList.toggle('hide-times', opts.show_times === false);
   s.classList.toggle('hide-head', opts.show_header === false);
   s.classList.toggle('interactive', !PREVIEW && opts.interactive !== false);
+  // Same buttons as the pop-out, so a Next button works the same
+  // wherever you decide to put one.
+  renderTransport(el.transport, opts.controls, lastPlaying,
+                  !PREVIEW && opts.interactive !== false);
   s.classList.toggle('preview', PREVIEW);
   el.heading.textContent = opts.heading || 'UP NEXT';
 
@@ -135,14 +143,20 @@ function render(data) {
     items.push(t);
   }
 
-  const key = JSON.stringify(items.map((t) => [t.title, t.artist, !!t.now]));
+  // The reason an empty list is empty is part of what is on screen, so it has
+  // to be part of the key - otherwise the status text can never change.
+  const key = JSON.stringify([items.map((t) => [t.title, t.artist, !!t.now]),
+                              data.connected, data.note || '']);
   if (key === lastKey) return;
   lastKey = key;
 
   if (!items.length) {
     el.stage.dataset.state = data.connected === false ? 'idle' : 'empty';
-    el.status.textContent = data.connected === false
-      ? 'Spotify account not connected' : 'Nothing queued';
+    // Say why it is empty. "Nothing queued" during a rate limit reads as a
+    // bug; the real reason is worth the two extra words on stream.
+    el.status.textContent = data.note ? 'Spotify is rate limiting'
+      : data.connected === false ? 'Spotify account not connected'
+      : 'Nothing queued';
     el.rows.innerHTML = '';
     return;
   }
@@ -192,9 +206,20 @@ function wireRowClicks() {
 }
 
 let pollTimer = null;
+/* Spotify rate-limits on total call volume, and this window plus the deck both
+   asking every four seconds is a lot of calls over a long stream. When Spotify
+   says wait, wait - asking again inside its window is what makes a short limit
+   into a long one. */
+let quietUntil = 0;
 function poll() {
   if (PREVIEW) { render({ ...DEMO, connected: true }); return; }
+  if (Date.now() < quietUntil) return;
   fetch('/api/spotify/queue').then((r) => r.json()).then((d) => {
+    if (!d.ok && d.retry_in) {
+      quietUntil = Date.now() + d.retry_in * 1000;
+      render({ queue: [], connected: true, note: d.reason });
+      return;
+    }
     render(d.ok ? { now: d.now, queue: d.queue, connected: true }
                 : { queue: [], connected: d.reason !== 'not connected' });
   }).catch(() => {});
@@ -211,6 +236,7 @@ function connect() {
     try {
       const data = JSON.parse(e.data);
       applyDesign(data.nowplaying, data.queue_cfg);
+      followPlaying(data.now);
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -249,4 +275,25 @@ fetch('/api/state').then((r) => r.json())
 wireRowClicks();
 connect();
 poll();
-pollTimer = setInterval(poll, 4000);
+/* Same as the deck: the state broadcast tells us when the track changed, for
+   free, so the timer is only a safety net for things we cannot see. */
+pollTimer = setInterval(poll, 120000);
+
+/* Which way round the play/pause icon goes, and when the list is stale. Both
+   ride connect()'s stream above rather than a second subscription: that
+   payload already carries `now`. */
+function followPlaying(now) {
+  now = now || {};
+  // A new track means the queue moved on. This is how the list keeps up.
+  const key = [now.title, now.artist].join('|');
+  if (key !== lastTrackKey) {
+    lastTrackKey = key;
+    setTimeout(poll, 700);
+  }
+  if (!!now.playing === lastPlaying) return;
+  lastPlaying = !!now.playing;
+  renderTransport(el.transport, (opts || {}).controls, lastPlaying,
+                  (opts || {}).interactive !== false);
+}
+
+if (!PREVIEW) wireTransport(el.transport, () => (opts || {}).interactive !== false);

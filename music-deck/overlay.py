@@ -18,8 +18,8 @@ from hostwin import HostWindow, chrome_insets
 
 # The host window wears the friendly name, because that is the one people pick
 # out of TikTok Studio's window list.
-HOST_TITLE = "Music Deck - Now Playing"
-PAGE_TITLE = "Music Deck - Now Playing (source)"
+HOST_TITLE = "Awesome Music Streaming Deck - Now Playing"
+PAGE_TITLE = "Awesome Music Streaming Deck - Now Playing (source)"
 
 # Chrome throttles or stops painting windows it believes nobody can see, which
 # is precisely wrong for a capture source.

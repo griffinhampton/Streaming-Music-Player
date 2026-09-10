@@ -46,7 +46,7 @@ html, body {
   display: none;
 }
 .stage.has-bg-image .bg-image { display: block; }
-.bg-dim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+.bg-dim { position: absolute; inset: 0; background: var(--bg, #000); opacity: 0; pointer-events: none; }
 
 .card {
   position: relative;
@@ -69,7 +69,7 @@ html, body {
 .card-bg::after { content: ""; position: absolute; inset: 0; background: var(--card-fill); }
 .card > .card-bg::before {
   content: ""; position: absolute; inset: 0;
-  background: #000; opacity: var(--bg-dim, 0); pointer-events: none;
+  background: var(--bg, #000); opacity: var(--bg-dim, 0); pointer-events: none;
 }
 .stage.surround { background: var(--surround, #000); }
 .stage.surround .card { background: transparent; }

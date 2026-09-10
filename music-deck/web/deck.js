@@ -1,4 +1,4 @@
-/* Music Deck - control room.
+/* Awesome Music Streaming Deck - control room.
 
    Design controls are declarative: any element carrying data-np="a.b.c" or
    data-ui="x" is wired up automatically from its data-kind, so adding a new
@@ -167,17 +167,7 @@ function deepMerge(target, src) {
 
 /* Black or white, whichever stays readable on this colour. A white accent on a
    white-filled button is invisible otherwise. */
-function readableOn(hex) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-  if (!m) return '#ffffff';
-  const n = parseInt(m[1], 16);
-  const lin = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
-  return L > 0.45 ? '#0a0a0c' : '#ffffff';
-}
+let lastWallKey = null;
 
 function applyUi(ui) {
   const r = document.documentElement.style;
@@ -195,33 +185,607 @@ function applyUi(ui) {
 
   renderAppDecor();
 
-  const scene = ui.scene || {};
-  if (scene.id && typeof SCENES !== 'undefined' && SCENES[scene.id]) {
-    const art = renderScene(scene.id, sceneParams(scene));
-    r.setProperty('--wallpaper', art.image);
-    r.setProperty('--wallpaper-size', art.size);
-    r.setProperty('--wallpaper-repeat', art.repeat);
-    r.setProperty('--wallpaper-base', art.base);
-    r.setProperty('--wallpaper-on', '1');
-    r.setProperty('--wallpaper-dim', String(ui.wallpaper_dim ?? 0.65));
-  } else if (ui.wallpaper) {
-    r.setProperty('--wallpaper', `url("/asset/${encodeURIComponent(ui.wallpaper)}")`);
-    r.setProperty('--wallpaper-size', 'cover');
-    r.setProperty('--wallpaper-repeat', 'no-repeat');
-    r.setProperty('--wallpaper-base', 'transparent');
-    r.setProperty('--wallpaper-on', '1');
-    r.setProperty('--wallpaper-dim', String(ui.wallpaper_dim ?? 0.65));
-  } else {
-    r.setProperty('--wallpaper-on', '0');
-    r.setProperty('--wallpaper-dim', '0');
+  // The app's wallpaper is painted by the same function as every window's
+  // background, so it gets the same modes, framing, fit, blur and artwork.
+  // applyUi runs on every input event, and repainting a generated scene means
+  // rebuilding an SVG data URL - so only do it when the wallpaper changed,
+  // not when someone drags the radius slider.
+  const wall = ui.wallpaper || {};
+  const key = JSON.stringify(wall);
+  if (key === lastWallKey) return;
+  lastWallKey = key;
+
+  // "Solid" means no wallpaper here: the app's own background colour shows,
+  // rather than a second colour control fighting with it.
+  const off = (wall.mode || 'solid') === 'solid';
+  $('appWall').hidden = off;
+  if (off) {
+    // Clear it rather than just hiding it, so nothing stale is waiting behind
+    // `hidden` if the wallpaper comes back.
+    $('appWallArt').style.backgroundImage = '';
+    $('appWallBase').style.background = '';
+    $('appWallDim').style.opacity = '0';
+    return;
   }
+  applyBackground($('appWall'), $('appWallArt'), wall,
+                  (k, v) => { if (k === '--bg') $('appWallBase').style.background = v; });
+  $('appWallDim').style.opacity = String(wall.dim ?? 0);
 }
+
+/* ------------------------------------------------------- window controls
+
+   Transport buttons drawn inside a window. One editor per window, generated
+   the same way the background editors are, and shown for whichever window is
+   picked at the top - there are only three, and the windows bar already
+   chooses between them, so this needs no switcher of its own. */
+
+
+function controlEditorHTML(t) {
+  const a = t.attr, o = t.out;
+  const D = (k) => `data-${a}="controls.${k}"`;
+  const O = (k) => `data-${o}out="controls.${k}"`;
+  return `
+    <div class="checks">
+      <label class="check"><input type="checkbox" ${D('show')} data-kind="bool">
+        <span>Show buttons on ${t.what}</span></label>
+      <label class="check"><input type="checkbox" ${D('hover_only')} data-kind="bool">
+        <span>Only while my mouse is over it</span></label>
+    </div>
+
+    <label class="field">
+      <span>Which buttons</span>
+      <div class="checks row-checks">
+        <label class="check"><input type="checkbox" ${D('prev')} data-kind="bool"><span>Back</span></label>
+        <label class="check"><input type="checkbox" ${D('play')} data-kind="bool"><span>Play / pause</span></label>
+        <label class="check"><input type="checkbox" ${D('next')} data-kind="bool"><span>Skip</span></label>
+      </div>
+    </label>
+
+    <label class="field">
+      <span>Where</span>
+      <div class="segmented small" ${D('place')} data-kind="seg">
+        <button data-v="card">With the text</button>
+        <button data-v="art">Over the art</button>
+        <button data-v="corner">Window corner</button>
+      </div>
+    </label>
+
+    <label class="field">
+      <span>Line them up</span>
+      <div class="segmented small" ${D('align')} data-kind="seg">
+        <button data-v="left">Left</button>
+        <button data-v="center">Centre</button>
+        <button data-v="right">Right</button>
+      </div>
+    </label>
+
+    <label class="field">
+      <span>Shape</span>
+      <div class="segmented small" ${D('shape')} data-kind="seg">
+        <button data-v="round">Round</button>
+        <button data-v="square">Square</button>
+        <button data-v="bare">Just the icon</button>
+      </div>
+    </label>
+
+    <label class="field">
+      <span>Size <b class="mono" ${O('size')}>1.00</b></span>
+      <input class="range" type="range" min="50" max="220" data-div="100" data-dp="2"
+             ${D('size')} data-kind="range" ${O('size')}>
+    </label>
+    <label class="field">
+      <span>Opacity <b class="mono" ${O('opacity')}>0.90</b></span>
+      <input class="range" type="range" min="20" max="100" data-div="100" data-dp="2"
+             ${D('opacity')} data-kind="range" ${O('opacity')}>
+    </label>
+
+    <p class="hint">The buttons only work when that window is set to
+      <b>Clickable</b>; otherwise the whole window stays inert.</p>`;
+}
+
+function buildControlEditors() {
+  $('controlEditors').innerHTML = CONTROL_TARGETS.map((t) =>
+    `<div class="control-editor" data-ctl="${t.key}"${t.key === 'np' ? '' : ' hidden'}>` +
+    controlEditorHTML(t) + '</div>').join('');
+}
+
+function selectControlTarget(key) {
+  document.querySelectorAll('.control-editor').forEach((el) => {
+    el.hidden = el.dataset.ctl !== key;
+  });
+}
+
+/* ------------------------------------------------------- backgrounds
+
+   The pop-out, the lyrics window, the queue window and the app all have a
+   background of exactly the same shape. Rather than four editors quietly
+   drifting apart - which is how the app ended up with only "pick an image and
+   darken it" - there is one, generated once per target. Only the data-*
+   attributes differ, and that is all the declarative binding needs.
+
+   Generation happens before bindControls(), so the generated controls are
+   wired and synced by the same machinery as the hand-written ones. */
+
+const BG_TARGETS = [
+  { key: 'np',     attr: 'np', out: '',   prefix: 'bg',        what: 'the pop-out',
+    root: () => CONFIG.nowplaying,   save: (p) => saveNp(p) },
+  { key: 'lyrics', attr: 'ly', out: 'ly', prefix: 'bg_own',    what: 'the lyrics window',
+    root: () => CONFIG.lyrics || {}, save: (p) => saveLy(p) },
+  { key: 'queue',  attr: 'q',  out: 'q',  prefix: 'bg_own',    what: 'the queue window',
+    root: () => CONFIG.queue || {},  save: (p) => saveQ(p) },
+  { key: 'app',    attr: 'ui', out: 'u',  prefix: 'wallpaper', what: 'the app window',
+    root: () => CONFIG.ui,           save: (p) => saveUi(p) },
+];
+const bgTarget = (key) => BG_TARGETS.find((t) => t.key === key) || BG_TARGETS[0];
+
+/* The same windows the backgrounds use, minus the app - which has no transport
+   to drive. Declared here rather than above because it reads BG_TARGETS. */
+const CONTROL_TARGETS = BG_TARGETS.filter((t) => t.key !== 'app');
+let bgTargetKey = 'np';
+
+/** The background block for one target, whatever it is called in that config. */
+function bgOf(t) { return getPath(t.root(), t.prefix) || {}; }
+
+function bgEditorHTML(t) {
+  const a = t.attr, p = t.prefix, o = t.out;
+  const D = (path) => `data-${a}="${p}.${path}"`;         // the control itself
+  const O = (path) => `data-${o}out="${p}.${path}"`;      // its live readout
+  const isApp = t.key === 'app';
+  const window_ = t.key === 'lyrics' || t.key === 'queue';
+
+  // For the app, "solid" means no wallpaper at all - its own background colour
+  // shows through - so there is no second colour control competing with it.
+  const modes = [['solid', isApp ? 'None' : 'Solid'], ['gradient', 'Gradient'],
+                 ['scene', 'Artwork'], ['image', 'Image']];
+
+  return `
+    ${window_ ? `<p class="hint">Used when this window is not matching the pop-out.
+        <label class="check inline"><input type="checkbox" data-${a}="follow_theme" data-kind="bool">
+        <span>Match the pop-out</span></label></p>` : ''}
+    ${isApp ? `<p class="hint">Sits behind the whole control room. Its flat colour
+        comes from <b>App look \u2192 Background</b>; this is what goes on top.</p>` : ''}
+
+    <label class="field">
+      <span>Background</span>
+      <div class="segmented small" ${D('mode')} data-kind="seg">
+        ${modes.map(([v, l]) => `<button data-v="${v}">${l}</button>`).join('')}
+      </div>
+    </label>
+
+    <div class="bg-when" data-when="solid gradient">
+    <div class="field two">
+      <label><span>${isApp ? 'Gradient from' : 'Colour'}</span>
+        <input class="color wide" type="color" ${D('color')} data-kind="color"></label>
+      <label><span>${isApp ? 'Gradient to' : 'Second colour'}</span>
+        <input class="color wide" type="color" ${D('color2')} data-kind="color"></label>
+    </div>
+    <label class="field">
+      <span>Gradient angle <b class="mono" ${O('angle')}>135</b>\u00b0</span>
+      <input class="range" type="range" min="0" max="360" ${D('angle')} data-kind="range" ${O('angle')}>
+    </label>
+    </div>
+
+    <div class="bg-when" data-when="scene">
+    <div class="divider"></div>
+
+    <label class="field">
+      <span>Customizable artwork</span>
+      <div class="scene-picker" data-scenes="${t.key}"></div>
+    </label>
+    <div class="field two">
+      <label><span>Base</span>
+        <input class="color wide" type="color" ${D('scene.c1')} data-kind="color"></label>
+      <label><span>Ink</span>
+        <input class="color wide" type="color" ${D('scene.c2')} data-kind="color"></label>
+    </div>
+    <div class="field two">
+      <label><span>Detail</span>
+        <input class="color wide" type="color" ${D('scene.c3')} data-kind="color"></label>
+      <label><span>&nbsp;</span>
+        <button class="btn btn-ghost btn-sm" data-bgact="sceneReset">Scene's own colours</button></label>
+    </div>
+    <label class="field">
+      <span>Motif size <b class="mono" ${O('scene.scale')}>1.00</b></span>
+      <input class="range" type="range" min="40" max="220" data-div="100" data-dp="2"
+             ${D('scene.scale')} data-kind="range" ${O('scene.scale')}>
+    </label>
+    <label class="field">
+      <span>Density <b class="mono" ${O('scene.density')}>1.00</b></span>
+      <input class="range" type="range" min="30" max="250" data-div="100" data-dp="2"
+             ${D('scene.density')} data-kind="range" ${O('scene.density')}>
+    </label>
+    <label class="field">
+      <span>Tile size <b class="mono" ${O('scene.tile_scale')}>1.00</b></span>
+      <input class="range" type="range" min="35" max="250" data-div="100" data-dp="2"
+             ${D('scene.tile_scale')} data-kind="range" ${O('scene.tile_scale')}>
+    </label>
+    <div class="row gap wrap">
+      <button class="btn btn-ghost btn-sm" data-bgact="sceneShuffle">Shuffle layout</button>
+    </div>
+    </div>
+
+    <div class="bg-when" data-when="image">
+    <div class="divider"></div>
+
+    <label class="field">
+      <span>Picture</span>
+      <div class="asset-picker" data-assets="${t.key}"></div>
+    </label>
+    <div class="row gap wrap">
+      <button class="btn btn-ghost btn-sm" data-bgact="upload">Upload image\u2026</button>
+      <button class="btn btn-ghost btn-sm" data-bgact="frame">Frame it…</button>
+      <button class="btn btn-ghost btn-sm" data-bgact="theme">Theme from this</button>
+      <button class="btn btn-ghost btn-sm" data-bgact="clearImage">Clear image</button>
+    </div>
+
+    <label class="field">
+      <span>Colour beneath the picture</span>
+      <div class="row gap">
+        <input class="color" type="color" ${isApp ? 'data-ui="bg"' : D('color')} data-kind="color">
+        <span class="hint">Shows wherever the picture does not reach, and through
+          anything transparent in it.</span>
+      </div>
+    </label>
+
+    <label class="field">
+      <span>Fit</span>
+      <select class="input" ${D('fit')} data-kind="str">
+        <option value="cover">Cover</option>
+        <option value="contain">Contain</option>
+        <option value="stretch">Stretch</option>
+        <option value="tile">Tile</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>Recolour the picture</span>
+      <label class="check"><input type="checkbox" ${D('tint.on')} data-kind="bool">
+        <span>Print it in two colours</span></label>
+      <span class="hint">The picture keeps its light and shade; you choose the ink.
+        A photograph becomes something that matches your theme instead of fighting it.</span>
+    </label>
+    <div class="field two">
+      <label><span>Primary ink</span>
+        <input class="color wide" type="color" ${D('tint.c1')} data-kind="color"></label>
+      <label><span>Secondary ink</span>
+        <input class="color wide" type="color" ${D('tint.c2')} data-kind="color"></label>
+    </div>
+    <label class="field">
+      <span>Ink angle <b class="mono" ${O('tint.angle')}>135</b>°</span>
+      <input class="range" type="range" min="0" max="360"
+             ${D('tint.angle')} data-kind="range" ${O('tint.angle')}>
+    </label>
+    <label class="field">
+      <span>How strong <b class="mono" ${O('tint.strength')}>1.00</b></span>
+      <input class="range" type="range" min="0" max="100" data-div="100" data-dp="2"
+             ${D('tint.strength')} data-kind="range" ${O('tint.strength')}>
+    </label>
+    </div>
+
+    <div class="bg-when" data-when="scene image">
+
+    <div class="field two">
+      <label><span>Across <b class="mono" ${O('pos_x')}>50</b>%</span>
+        <input class="range" type="range" min="0" max="100" ${D('pos_x')} data-kind="range" ${O('pos_x')}></label>
+      <label><span>Down <b class="mono" ${O('pos_y')}>50</b>%</span>
+        <input class="range" type="range" min="0" max="100" ${D('pos_y')} data-kind="range" ${O('pos_y')}></label>
+    </div>
+    <p class="hint">Which part of the picture shows. Each target keeps its own,
+      so one wide image can be framed differently in each.</p>
+
+    <label class="field">
+      <span>Blur <b class="mono" ${O('blur')}>0</b>px</span>
+      <input class="range" type="range" min="0" max="40" ${D('blur')} data-kind="range" ${O('blur')}>
+    </label>
+    <label class="field">
+      <span>Darken <b class="mono" ${O('dim')}>0.00</b></span>
+      <input class="range" type="range" min="0" max="90" data-div="100" data-dp="2"
+             ${D('dim')} data-kind="range" ${O('dim')}>
+    </label>
+    </div>`;
+}
+
+function buildBackgroundEditors() {
+  $('bgEditors').innerHTML = BG_TARGETS.map((t) =>
+    `<div class="bg-editor" data-bg="${t.key}"${t.key === bgTargetKey ? '' : ' hidden'}>` +
+    bgEditorHTML(t) + '</div>').join('');
+}
+
+/* Drop a target's picture. Also drops it out of image mode - otherwise the
+   surface is left asking for a picture that is not there, which renders as
+   nothing at all. */
+function clearPicture(t) {
+  t.save({ [t.prefix + '.image']: '', [t.prefix + '.mode']: 'solid' });
+  syncControls();
+  renderPickers();
+}
+
+/* Open the framing dialog on one target's picture and write back what it
+   decides. Both the Background tab's button and the theme gallery's want
+   exactly this. */
+function frameTarget(t, noPicture) {
+  const bg = bgOf(t);
+  if (!bg.image) { toast(noPicture); return; }
+  const size = bgTargetSize(t);
+  openFramer({
+    image: bg.image, width: size.w, height: size.h,
+    zoom: bg.zoom, pos_x: bg.pos_x, pos_y: bg.pos_y, fit: bg.fit,
+    title: 'Framing for ' + size.label,
+    onApply: (out) => {
+      t.save({ [t.prefix + '.pos_x']: out.pos_x, [t.prefix + '.pos_y']: out.pos_y,
+               [t.prefix + '.zoom']: out.zoom });
+      syncControls();
+    },
+  });
+}
+
+/* The shape the framing dialog should cut to: the window this background is
+   going into, or the deck's own window for the app's wallpaper. */
+function bgTargetSize(t) {
+  if (t.key === 'app') {
+    return { w: Math.round(window.innerWidth), h: Math.round(window.innerHeight),
+             label: t.what };
+  }
+  const cfg = t.root() || {};
+  return { w: cfg.width || 760, h: cfg.height || 190, label: t.what };
+}
+
+/* Dress the whole app from the colours in one picture, and put the picture
+   itself behind the window you are theming - a theme taken from a photograph
+   you cannot see is just a set of colours from nowhere. */
+function applyPictureTheme(assetId, targetKey) {
+  toast('Reading the colours…');
+  paletteFor(assetId).then((th) => {
+    if (!th) { toast('Could not read that picture'); return; }
+
+    saveUi({ accent: th.accent, bg: th.bg, panel: th.panel, border: th.line,
+             text: th.text, muted: th.muted, preset: '' });
+    saveNp({
+      'accent': th.accent,
+      'palette.text': th.text, 'palette.muted': th.muted, 'palette.line': th.line,
+      // Hand the per-element colours back so the palette actually governs.
+      'text.title_color': '', 'text.artist_color': '', 'text.label_color': '',
+      'card.border_color': '', 'progress.color': '', 'decor.color': '',
+      'surround.color': th.surround,
+      'bg.color': th.bg, 'bg.color2': th.panel,
+      // With the picture left alone, the shadow is what keeps the text off it.
+      'text.shadow': 0.5,
+    });
+
+    // The picture goes behind whichever surface you were pointing at, exactly
+    // as it is: no blur, no darkening, nothing two-coloured. You came here for
+    // that picture, so you get that picture - the tools underneath are there
+    // when you want to change it, and the shadow above keeps the text legible
+    // without touching the image itself.
+    const t = bgTarget(targetKey || bgTargetKey);
+    const P = (k) => t.prefix + '.' + k;
+    t.save({
+      [P('mode')]: 'image', [P('image')]: assetId,
+      [P('dim')]: 0, [P('blur')]: 0, [P('zoom')]: 1,
+      [P('pos_x')]: 50, [P('pos_y')]: 50, [P('tint.on')]: false,
+      // The app's under-picture colour is ui.bg - which saveUi above already
+      // set - so writing wallpaper.color here would only disagree with the
+      // editor, which binds ui.bg for that target.
+      ...(t.key === 'app' ? {} : { [P('color')]: th.bg }),
+    });
+    // What the darkening would have to be for the text to clear 3:1 against
+    // this picture's worst patch. Offered, not imposed.
+    suggestedVeil = th.veil;
+
+    CONFIG.theme = '';
+    syncControls();
+    renderPictureThemes();
+    renderPickers();
+    const c = th.contrast || {};
+    toast(`Theme from the picture · text ${c.text || '?'}:1`);
+  });
+}
+
+/* A theme per picture, worked out from the picture itself.
+
+   Reading a picture's colours means fetching it whole and scanning its
+   pixels, and the shipped set alone is 13 MB. Doing all of that while the deck
+   is still starting makes for a slow start, so the swatches are filled when
+   the browser is idle rather than all at once while the deck is starting. */
+function renderPictureThemes() {
+  const box = $('pictureThemes');
+  if (!box) return;
+  box.innerHTML = ASSETS.map((a) => `
+    <button class="pt" data-id="${esc(a.id)}" title="Theme from ${esc(a.name || a.id)}">
+      <img src="${esc(a.url)}" alt="" loading="lazy">
+      <span class="pt-swatches"></span>
+    </button>`).join('');
+
+  // Read them while the browser has nothing better to do, a couple at a time.
+  // Doing all twenty up front is what made startup slow; doing them on scroll
+  // would be tidier still, but IntersectionObserver does not fire reliably in
+  // the embedded Chrome these windows run in, and a swatch that never appears
+  // is worse than one that appears a moment late.
+  const pending = [...box.querySelectorAll('.pt')];
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 60));
+  const step = (deadline) => {
+    while (pending.length && (deadline.timeRemaining() > 4 || deadline.didTimeout)) {
+      fillPictureTheme(pending.shift());
+    }
+    if (pending.length) idle(step, { timeout: 500 });
+  };
+  idle(step, { timeout: 500 });
+}
+
+/** Read one picture's colours and show them on its swatch strip. */
+function fillPictureTheme(btn) {
+  paletteFor(btn.dataset.id).then((th) => {
+    if (!th) { btn.classList.add('pt-bad'); return; }
+    btn.querySelector('.pt-swatches').innerHTML =
+      th.swatches.slice(0, 5).map((c) => `<i style="background:${esc(c)}"></i>`).join('');
+    btn.style.setProperty('--pt-accent', th.accent);
+  });
+}
+
+$('pictureThemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.pt');
+  if (btn) applyPictureTheme(btn.dataset.id);
+});
+
+/* Having just put a picture behind a window, the next thing you want is to
+   frame it and settle how far back it sits - so those controls live here
+   rather than a tab away. They act on whichever surface the theme went to. */
+function ptTarget() { return bgTarget(bgTargetKey); }
+
+/* The darkening that would guarantee readable text over the current picture.
+   Worked out when the theme is applied, then offered as a button. */
+let suggestedVeil = 0;
+
+function syncPictureTools() {
+  const tools = $('ptTools');
+  if (!tools || !CONFIG) return;
+  const t = ptTarget(), bg = bgOf(t);
+  const on = !!bg.image;
+  tools.hidden = !on;
+  if (!on) return;
+  $('ptWhere').textContent = bgTargetSize(t).label;
+  $('ptBlur').value = String(bg.blur ?? 0);
+  $('ptDim').value = String(Math.round((bg.dim ?? 0) * 100));
+  $('ptBlurOut').textContent = String(bg.blur ?? 0);
+  $('ptDimOut').textContent = (bg.dim ?? 0).toFixed(2);
+  $('ptTint').checked = !!(bg.tint || {}).on;
+
+  // Only worth offering while the picture is still light enough to fight the
+  // text, and only if it would actually change anything.
+  const gap = suggestedVeil - (bg.dim ?? 0);
+  $('ptSafe').hidden = !(suggestedVeil > 0 && gap > 0.04);
+  $('ptSafeVal').textContent = suggestedVeil.toFixed(2);
+}
+
+$('ptFrame').addEventListener('click', () =>
+  frameTarget(ptTarget(), 'Pick a picture theme first'));
+$('ptBlur').addEventListener('input', () => {
+  const t = ptTarget();
+  $('ptBlurOut').textContent = $('ptBlur').value;
+  t.save({ [t.prefix + '.blur']: +$('ptBlur').value });
+});
+$('ptDim').addEventListener('input', () => {
+  const v = +$('ptDim').value / 100;
+  $('ptDimOut').textContent = v.toFixed(2);
+  ptTarget().save({ [ptTarget().prefix + '.dim']: v });
+});
+$('ptTint').addEventListener('change', () => {
+  const t = ptTarget();
+  t.save({ [t.prefix + '.tint.on']: $('ptTint').checked });
+  syncControls();
+});
+$('ptSafe').addEventListener('click', () => {
+  const t = ptTarget();
+  $('ptDim').value = String(Math.round(suggestedVeil * 100));
+  $('ptDimOut').textContent = suggestedVeil.toFixed(2);
+  t.save({ [t.prefix + '.dim']: suggestedVeil });
+  syncControls();
+});
+
+$('ptClear').addEventListener('click', () => clearPicture(ptTarget()));
+
+/* Show only the controls that do something for the mode you are in.
+   Leaving the artwork sliders sitting there after you have chosen a picture
+   makes them look broken, and leaving the old scene highlighted makes it look
+   like it is still in use. */
+function syncBgSections() {
+  if (!CONFIG) return;
+  for (const t of BG_TARGETS) {
+    const editor = document.querySelector(`.bg-editor[data-bg="${t.key}"]`);
+    if (!editor) continue;
+    const bg = bgOf(t);
+    const mode = bg.mode || 'solid';
+    editor.dataset.mode = mode;
+    editor.querySelectorAll('.bg-when').forEach((sec) => {
+      sec.hidden = !sec.dataset.when.split(' ').includes(mode);
+    });
+    // A highlight means "this is what you are looking at". Only one of these
+    // can be true at a time.
+    editor.querySelectorAll('[data-scenes] .scene-thumb').forEach((n) =>
+      n.classList.toggle('on', mode === 'scene' && n.dataset.id === (bg.scene || {}).id));
+    editor.querySelectorAll('[data-assets] .asset').forEach((n) =>
+      n.classList.toggle('on', mode === 'image' && n.dataset.id === bg.image));
+  }
+  // And in the gallery, mark the picture actually in use.
+  const cur = bgOf(bgTarget(bgTargetKey));
+  document.querySelectorAll('#pictureThemes .pt').forEach((n) =>
+    n.classList.toggle('on', cur.mode === 'image' && n.dataset.id === cur.image));
+}
+
+function selectBgTarget(key) {
+  bgTargetKey = bgTarget(key).key;
+  document.querySelectorAll('#bgTargets button').forEach((b) =>
+    b.classList.toggle('on', b.dataset.t === bgTargetKey));
+  document.querySelectorAll('.bg-editor').forEach((el) =>
+    { el.hidden = el.dataset.bg !== bgTargetKey; });
+}
+
+$('bgTargets').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-t]');
+  if (b) selectBgTarget(b.dataset.t);
+});
+
+/* One set of handlers for all four editors: the target is whichever editor the
+   click happened inside. */
+$('bgEditors').addEventListener('click', (e) => {
+  const editor = e.target.closest('.bg-editor');
+  if (!editor) return;
+  const t = bgTarget(editor.dataset.bg);
+  const P = (k) => t.prefix + '.' + k;
+
+  const thumb = e.target.closest('.scene-thumb');
+  if (thumb) {
+    t.save({ [P('mode')]: 'scene', [P('scene.id')]: thumb.dataset.id });
+    syncControls();
+    renderScenePickers();
+    return;
+  }
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    post('/api/assets/delete', { id: del.dataset.del }).then((d) => {
+      ASSETS = d.assets || [];
+      renderPickers();
+    });
+    return;
+  }
+  const cellEl = e.target.closest('.asset');
+  if (cellEl) {
+    t.save({ [P('mode')]: 'image', [P('image')]: cellEl.dataset.id });
+    syncControls();
+    renderPickers();
+    return;
+  }
+  const act = e.target.closest('[data-bgact]');
+  if (!act) return;
+  if (act.dataset.bgact === 'sceneReset') {
+    t.save({ [P('scene.c1')]: '', [P('scene.c2')]: '', [P('scene.c3')]: '' });
+    syncSceneColors();
+  } else if (act.dataset.bgact === 'sceneShuffle') {
+    t.save({ [P('scene.seed')]: Math.floor(Math.random() * 9999) + 1 });
+    // A reshuffle changes the whole picture, so nudge the live windows rather
+    // than waiting for them to notice.
+    setTimeout(() => { pushPreview(); healWindows(); }, 250);
+  } else if (act.dataset.bgact === 'upload') {
+    openPicker('bg:' + t.key);
+  } else if (act.dataset.bgact === 'clearImage') {
+    clearPicture(t);
+  } else if (act.dataset.bgact === 'frame') {
+    frameTarget(t, 'Pick a picture first');
+  } else if (act.dataset.bgact === 'theme') {
+    const bg = bgOf(t);
+    if (!bg.image) { toast('Pick a picture first'); return; }
+    applyPictureTheme(bg.image, t.key);
+  }
+});
 
 /* ------------------------------------------------------------- scene pickers */
 
 function renderScenePickers() {
   if (!CONFIG) return;
-  const build = (container, current) => {
+  for (const t of BG_TARGETS) {
+    const container = document.querySelector(`[data-scenes="${t.key}"]`);
+    if (!container) continue;
+    const current = (bgOf(t).scene || {}).id;
     container.innerHTML = Object.entries(SCENES).map(([id, sc]) => `
       <div class="scene-thumb ${current === id ? 'on' : ''}" data-id="${id}" title="${esc(sc.label)}">
         <div class="scene-thumb-img"></div><span>${esc(sc.label)}</span>
@@ -232,54 +796,21 @@ function renderScenePickers() {
       paintScene(img, id, {});
       if (!SCENES[id].cover) img.style.backgroundSize = '150px 150px';
     });
-  };
-  build($('scenePicker'), (CONFIG.nowplaying.bg.scene || {}).id);
-  build($('wallScenePicker'), (CONFIG.ui.scene || {}).id);
+  }
   syncSceneColors();
 }
 
 /* Blank scene colours mean "use the scene's own", so show those in the pickers. */
 function syncSceneColors() {
-  const fill = (attr, prefix, cfg) => {
-    const def = (SCENES[(cfg || {}).id] || SCENES.watercolor).defaults;
+  for (const t of BG_TARGETS) {
+    const cfg = bgOf(t).scene || {};
+    const def = (SCENES[cfg.id] || SCENES.watercolor).defaults;
     for (const k of ['c1', 'c2', 'c3']) {
-      const node = document.querySelector(`[data-${attr}="${prefix}.${k}"]`);
-      if (node) node.value = (cfg && cfg[k]) || def[k];
+      const node = document.querySelector(`[data-${t.attr}="${t.prefix}.scene.${k}"]`);
+      if (node) node.value = cfg[k] || def[k];
     }
-  };
-  fill('np', 'bg.scene', CONFIG.nowplaying.bg.scene);
-  fill('ui', 'scene', CONFIG.ui.scene);
+  }
 }
-
-$('scenePicker').addEventListener('click', (e) => {
-  const t = e.target.closest('.scene-thumb');
-  if (!t) return;
-  saveNp({ 'bg.mode': 'scene', 'bg.scene.id': t.dataset.id });
-  syncControls();
-  renderScenePickers();
-});
-$('wallScenePicker').addEventListener('click', (e) => {
-  const t = e.target.closest('.scene-thumb');
-  if (!t) return;
-  saveUi({ 'scene.id': t.dataset.id });
-  renderScenePickers();
-});
-$('sceneReset').addEventListener('click', () => {
-  saveNp({ 'bg.scene.c1': '', 'bg.scene.c2': '', 'bg.scene.c3': '' });
-  syncSceneColors();
-});
-$('wallSceneReset').addEventListener('click', () => {
-  saveUi({ 'scene.c1': '', 'scene.c2': '', 'scene.c3': '' });
-  syncSceneColors();
-});
-$('sceneShuffle').addEventListener('click', () => {
-  saveNp({ 'bg.scene.seed': Math.floor(Math.random() * 9999) + 1 });
-  // The live windows redraw from the same config, but a reshuffle changes the
-  // whole picture, so nudge them rather than waiting for the next tick.
-  setTimeout(() => { pushPreview(); healWindows(); }, 250);
-});
-$('wallSceneShuffle').addEventListener('click', () =>
-  saveUi({ 'scene.seed': Math.floor(Math.random() * 9999) + 1 }));
 
 const UI_PRESETS = {
   black:    { bg: '#000000', panel: '#0a0a0c', border: '#1b1b22', text: '#f0f0f4', muted: '#7e7e8c', glow: false, radius: 12 },
@@ -490,8 +1021,9 @@ const THEMES = {
     ui: { accent: '#ff2a3a', bg: '#0a0304', panel: '#150607', border: '#3b0f13',
           text: '#ffe9e9', muted: '#a86b70', radius: 10, font: 'Segoe UI',
           glow: true, 'decor.sides': 'none', 'decor.kaomoji': '',
-          'scene.id': 'embers', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
-          wallpaper: '', wallpaper_dim: 0.35 },
+          'wallpaper.mode': 'scene', 'wallpaper.dim': 0.35,
+          'wallpaper.image': '', 'wallpaper.scene.id': 'embers',
+          'wallpaper.scene.c1': '', 'wallpaper.scene.c2': '', 'wallpaper.scene.c3': '' },
     np: { accent: '#ff2a3a',
           'palette.text': '#fff1f1', 'palette.muted': '#e0a3a8',
           'bg.mode': 'scene', 'bg.scene.id': 'embers',
@@ -510,8 +1042,9 @@ const THEMES = {
     ui: { accent: '#e28aa0', bg: '#f6dfe1', panel: '#fff4f5', border: '#efcbd2',
           text: '#4d2433', muted: '#9a6e7a', radius: 18, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '',
-          'scene.id': 'watercolor', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
-          wallpaper: '', wallpaper_dim: 0 },
+          'wallpaper.mode': 'scene', 'wallpaper.dim': 0,
+          'wallpaper.image': '', 'wallpaper.scene.id': 'watercolor',
+          'wallpaper.scene.c1': '', 'wallpaper.scene.c2': '', 'wallpaper.scene.c3': '' },
     np: { accent: '#e28aa0',
           'palette.text': '#4d2433', 'palette.muted': '#9a6e7a',
           'bg.mode': 'scene', 'bg.scene.id': 'watercolor', 'bg.scene.tile_scale': 0.6,
@@ -530,8 +1063,9 @@ const THEMES = {
     ui: { accent: '#e88fb0', bg: '#fbeff1', panel: '#fffafb', border: '#f3d3dc',
           text: '#5a2f42', muted: '#a3788a', radius: 16, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '',
-          'scene.id': 'sakura', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
-          wallpaper: '', wallpaper_dim: 0 },
+          'wallpaper.mode': 'scene', 'wallpaper.dim': 0,
+          'wallpaper.image': '', 'wallpaper.scene.id': 'sakura',
+          'wallpaper.scene.c1': '', 'wallpaper.scene.c2': '', 'wallpaper.scene.c3': '' },
     np: { accent: '#e88fb0',
           'palette.text': '#5a2f42', 'palette.muted': '#a3788a', 'palette.line': '#f3d3dc',
           'bg.mode': 'scene', 'bg.scene.id': 'sakura', 'bg.scene.tile_scale': 0.65,
@@ -550,8 +1084,9 @@ const THEMES = {
     ui: { accent: '#f25f9f', bg: '#f7b8d0', panel: '#ffdbe8', border: '#f39fc0',
           text: '#6d2549', muted: '#a85b7f', radius: 20, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': KAOMOJI[1],
-          'scene.id': 'doodle', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
-          wallpaper: '', wallpaper_dim: 0 },
+          'wallpaper.mode': 'scene', 'wallpaper.dim': 0,
+          'wallpaper.image': '', 'wallpaper.scene.id': 'doodle',
+          'wallpaper.scene.c1': '', 'wallpaper.scene.c2': '', 'wallpaper.scene.c3': '' },
     np: { accent: '#f25f9f',
           'palette.text': '#6d2549', 'palette.muted': '#a85b7f', 'palette.line': '#ffffff',
           'bg.mode': 'scene', 'bg.scene.id': 'doodle', 'bg.scene.tile_scale': 0.7,
@@ -571,8 +1106,9 @@ const THEMES = {
     ui: { accent: '#e8203e', bg: '#120716', panel: '#1b0b21', border: '#331a3c',
           text: '#f3e7f5', muted: '#9d80a7', radius: 10, font: 'Segoe UI',
           glow: false, 'decor.sides': 'none', 'decor.kaomoji': '',
-          'scene.id': 'moon', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
-          wallpaper: '', wallpaper_dim: 0.25 },
+          'wallpaper.mode': 'scene', 'wallpaper.dim': 0.25,
+          'wallpaper.image': '', 'wallpaper.scene.id': 'moon',
+          'wallpaper.scene.c1': '', 'wallpaper.scene.c2': '', 'wallpaper.scene.c3': '' },
     np: { accent: '#e8203e',
           'palette.text': '#f7edf8', 'palette.muted': '#c9a9cf',
           'bg.mode': 'scene', 'bg.scene.id': 'moon',
@@ -620,9 +1156,13 @@ const THEMED_UI = {
   'preset': '',
   'accent': '#8b5cf6', 'bg': '#000000', 'panel': '#0a0a0c', 'border': '#1b1b22',
   'text': '#f0f0f4', 'muted': '#7e7e8c', 'radius': 12, 'font': 'Segoe UI',
-  'glow': false, 'wallpaper': '', 'wallpaper_dim': 0.65,
-  'scene.id': '', 'scene.c1': '', 'scene.c2': '', 'scene.c3': '',
-  'scene.scale': 1, 'scene.density': 1, 'scene.tile_scale': 1,
+  'glow': false,
+  'wallpaper.mode': 'solid', 'wallpaper.image': '', 'wallpaper.dim': 0,
+  'wallpaper.color': '#000000', 'wallpaper.color2': '#241a3d', 'wallpaper.angle': 135,
+  'wallpaper.fit': 'cover', 'wallpaper.blur': 0, 'wallpaper.pos_x': 50, 'wallpaper.pos_y': 50,
+  'wallpaper.scene.id': '', 'wallpaper.scene.c1': '', 'wallpaper.scene.c2': '',
+  'wallpaper.scene.c3': '', 'wallpaper.scene.scale': 1, 'wallpaper.scene.density': 1,
+  'wallpaper.scene.tile_scale': 1,
   'decor.border': '', 'decor.custom': '', 'decor.sides': 'none', 'decor.size': 0.7,
   'decor.opacity': 0.5, 'decor.color': '', 'decor.gap': 0.6, 'decor.kaomoji': '',
   'decor.animate': false,
@@ -735,6 +1275,8 @@ function bindControls() {
           node.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
           btn.classList.add('on');
           save({ [path]: kind === 'segbool' ? btn.dataset.v === '1' : btn.dataset.v });
+          // Changing a background mode changes which controls apply.
+          if (path.endsWith('.mode')) syncBgSections();
         });
       });
       return;
@@ -749,9 +1291,6 @@ function bindControls() {
 
   document.querySelectorAll('[data-clear]').forEach((btn) => {
     btn.addEventListener('click', () => saveNp({ [btn.dataset.clear]: '' }));
-  });
-  document.querySelectorAll('[data-uclear]').forEach((btn) => {
-    btn.addEventListener('click', () => saveUi({ [btn.dataset.uclear]: '' }));
   });
 }
 
@@ -776,6 +1315,8 @@ function syncControls() {
   $('preset').value = CONFIG.nowplaying.preset || '';
   $('uiPreset').value = CONFIG.ui.preset || '';
 
+  syncPictureTools();
+  syncBgSections();
   paintCornerPick();
   const ly = CONFIG.lyrics || {};
   if (ly.width) $('lyWidth').value = ly.width;
@@ -880,10 +1421,17 @@ function renderStickerList() {
   $('stickerDown').disabled = selSticker < 0 || selSticker >= list.length - 1;
   if (st) {
     $('stickerTint').checked = !!st.tint;
+    // Tinting draws the sticker through a CSS mask, and a mask only ever uses
+    // the first frame - so say so rather than letting a GIF quietly freeze.
+    const asset = ASSETS.find((a) => a.id === st.asset) || {};
+    $('stickerTintNote').hidden = !asset.animated;
     $('stickerColor').value = /^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#ffffff';
     $('stickerPicker').innerHTML = ASSETS.map((a) => `
       <div class="asset ${a.id === st.asset ? 'on' : ''}" data-id="${esc(a.id)}"
-           title="${esc(a.name || a.id)}"><img src="${esc(a.url)}" alt="" loading="lazy"></div>`).join('');
+           title="${esc(a.name || a.id)}${a.animated ? ' · animated' : ''}">
+        <img src="${esc(a.url)}" alt="" loading="lazy">
+        ${a.animated ? '<span class="anim">GIF</span>' : ''}
+      </div>`).join('');
   }
   if (st) {
     document.querySelectorAll('[data-st]').forEach((node) => {
@@ -1076,40 +1624,21 @@ function loadAssets() {
 }
 
 function renderPickers() {
-  const cell = (a, selected) => `
-    <div class="asset ${selected ? 'on' : ''} ${a.builtin ? 'builtin' : ''}" data-id="${esc(a.id)}"
-         title="${esc(a.name || a.id)}${a.builtin ? ' (built in)' : ' · ' + Math.round((a.size || 0) / 1024) + ' KB'}">
+  const cell = (a) => `
+    <div class="asset ${a.builtin ? 'builtin' : ''}" data-id="${esc(a.id)}"
+         title="${esc(a.name || a.id)}${a.animated ? ' · animated' : ''}${a.builtin ? ' (built in)' : ' · ' + Math.round((a.size || 0) / 1024) + ' KB'}">
       <img src="${esc(a.url)}" alt="" loading="lazy">
+      ${a.animated ? '<span class="anim">GIF</span>' : ''}
       ${a.builtin ? '' : `<button class="del" data-del="${esc(a.id)}" title="Delete">×</button>`}
     </div>`;
-  $('bgPicker').innerHTML =
-    ASSETS.map((a) => cell(a, CONFIG.nowplaying.bg.image === a.id)).join('');
-  $('wallPicker').innerHTML =
-    ASSETS.map((a) => cell(a, CONFIG.ui.wallpaper === a.id)).join('');
-  const lyImg = ((CONFIG.lyrics || {}).bg_own || {}).image;
-  const qImg = ((CONFIG.queue || {}).bg_own || {}).image;
-  $('lyBgPicker').innerHTML = ASSETS.map((a) => cell(a, lyImg === a.id)).join('');
-  $('qBgPicker').innerHTML = ASSETS.map((a) => cell(a, qImg === a.id)).join('');
+  for (const t of BG_TARGETS) {
+    const container = document.querySelector(`[data-assets="${t.key}"]`);
+    if (container) container.innerHTML = ASSETS.map((a) => cell(a)).join('');
+  }
+  renderPictureThemes();
+  syncBgSections();          // the one owner of which cell reads as selected
 }
 
-function pickerHandler(container, apply) {
-  $(container).addEventListener('click', (e) => {
-    const del = e.target.closest('[data-del]');
-    if (del) {
-      post('/api/assets/delete', { id: del.dataset.del }).then((d) => {
-        ASSETS = d.assets || [];
-        renderPickers();
-      });
-      return;
-    }
-    const cellEl = e.target.closest('.asset');
-    if (cellEl) apply(cellEl.dataset.id);
-  });
-}
-pickerHandler('bgPicker', (id) => { saveNp({ 'bg.image': id, 'bg.mode': 'image' }); syncControls(); renderPickers(); });
-pickerHandler('lyBgPicker', (id) => { saveLy({ 'bg_own.image': id, 'bg_own.mode': 'image' }); syncControls(); renderPickers(); });
-pickerHandler('qBgPicker', (id) => { saveQ({ 'bg_own.image': id, 'bg_own.mode': 'image' }); syncControls(); renderPickers(); });
-pickerHandler('wallPicker', (id) => { saveUi({ wallpaper: id }); renderPickers(); });
 
 /** Read a File, upload it, hand back the asset id. */
 function uploadFile(file) {
@@ -1141,14 +1670,17 @@ $('filePicker').addEventListener('change', async (e) => {
   if (!file) return;
   const id = await uploadFile(file);
   if (!id) return;
-  if (pickerTarget === 'bg') { saveNp({ 'bg.image': id, 'bg.mode': 'image' }); syncControls(); }
-  else if (pickerTarget === 'wall') saveUi({ wallpaper: id });
-  else addSticker(id);
+  // "bg:<target>" comes from one of the generated background editors.
+  if (String(pickerTarget).startsWith('bg:')) {
+    const t = bgTarget(pickerTarget.slice(3));
+    t.save({ [t.prefix + '.image']: id, [t.prefix + '.mode']: 'image' });
+    syncControls();
+  } else {
+    addSticker(id);
+  }
   renderPickers();
 });
 const openPicker = (target) => { pickerTarget = target; $('filePicker').click(); };
-$('bgUpload').addEventListener('click', () => openPicker('bg'));
-$('wallUpload').addEventListener('click', () => openPicker('wall'));
 $('stickerAdd').addEventListener('click', () => openPicker('sticker'));
 
 /* drop images straight onto the preview */
@@ -1175,11 +1707,12 @@ $('stickerAdd').addEventListener('click', () => openPicker('sticker'));
     if (selectedWin !== 'np') {
       const id = await uploadFile(files[0]);
       if (!id) return;
-      const save = selectedWin === 'lyrics' ? saveLy : saveQ;
-      save({ 'bg_own.image': id, 'bg_own.mode': 'image', follow_theme: false });
+      const t = bgTarget(selectedWin);
+      t.save({ [t.prefix + '.image']: id, [t.prefix + '.mode']: 'image',
+               follow_theme: false });
       syncControls();
       renderPickers();
-      toast('Background set for this window');
+      toast('Background set for ' + t.what);
       return;
     }
     for (const file of files) {
@@ -1456,7 +1989,7 @@ setInterval(() => { if (!audio.paused) report(); }, 700);
 /* The card mirrors whatever is on screen. For local files that is our own
    <audio>; for Spotify it is the account or the Windows bridge, and the
    transport talks to Spotify instead. */
-let lastSeekId = null;
+let lastSeekId = null, lastCmdId = null;
 let cardSource = 'local';
 let cardClock = { position: 0, duration: 0, playing: false, at: performance.now() };
 let cardKey = '';
@@ -1634,11 +2167,16 @@ function selectWindow(id) {
     if (first) first.click();
   }
 
+  // The Background tab follows the window you picked, so the two never
+  // disagree about what you are editing. "The app" stays where you left it.
+  if (bgTargetKey !== 'app') selectBgTarget(id);
+  selectControlTarget(id);
+
   $('previewTitle').textContent = WINDOWS[id].title;
   // Stickers only exist on the pop-out, so their drag handles go with it.
   $('previewEdit').hidden = id !== 'np';
   $('dropHintWhat').textContent = id === 'np'
-    ? 'to add it as a sticker — or as the background'
+    ? 'PNG, JPEG, GIF or WebP — as a sticker, or as the background'
     : "to use it as this window's background";
 
   if (changed) previewEl.src = WINDOWS[id].page + '?preview=1&t=' + Date.now();
@@ -1747,12 +2285,12 @@ $('previewReload').addEventListener('click', () => {
 });
 
 $('quitBtn').addEventListener('click', () => {
-  if (!confirm('Stop Music Deck? The on-screen window closes too.')) return;
+  if (!confirm('Stop Awesome Music Streaming Deck? The on-screen window closes too.')) return;
   post('/api/window/close')
     .then(() => post('/api/quit'))
     .then(() => {
       document.body.innerHTML =
-        '<div class="empty" style="padding:90px 20px"><b>Music Deck has stopped.</b><br>' +
+        '<div class="empty" style="padding:90px 20px"><b>Awesome Music Streaming Deck has stopped.</b><br>' +
         'You can close this window.</div>';
     });
 });
@@ -1921,6 +2459,17 @@ function paintSpotify(state) {
     lastSeekId = sk.id;
     if (cardSource === 'local' && audio.duration) audio.currentTime = sk.to;
   }
+  // A transport button was pressed inside one of the pop-outs. Spotify handles
+  // its own; a local file is playing in this page's <audio>, so it lands here.
+  const cmd = state.local_cmd;
+  if (cmd && cmd.id !== lastCmdId) {
+    lastCmdId = cmd.id;
+    if (cardSource === 'local') {
+      if (cmd.cmd === 'next') $('next').click();
+      else if (cmd.cmd === 'prev') $('prev').click();
+      else if (cmd.cmd === 'playpause') $('playpause').click();
+    }
+  }
   paintSpotifyAccount(acc, state.spotify_account || null);
   paintSourcePanels(state);
   paintCard(state.now);
@@ -1958,8 +2507,8 @@ $('spConnect').addEventListener('click', () => {
     // A blocked pop-up or a missing browser still leaves a way through.
     $('spManualLink').href = res.url;
     $('spManual').hidden = !!res.windowed;
-    toast(res.windowed ? 'Approve Music Deck in the window that just opened'
-                       : 'Approve Music Deck in your browser');
+    toast(res.windowed ? 'Approve Awesome Music Streaming Deck in the window that just opened'
+                       : 'Approve Awesome Music Streaming Deck in your browser');
     setTimeout(() => {   // stop waiting if they walk away from it
       if (spWaiting) { spWaiting = false; $('spPending').hidden = true; }
     }, 180000);
@@ -2034,9 +2583,14 @@ function spRow(t, i, opts = {}) {
 }
 
 function refreshSpotifyPanel() {
+  if (spHolding()) return;
   fetch('/api/spotify/queue').then((r) => r.json()).then((d) => {
     $('spQueueErr').textContent = d.ok ? '' : (d.reason || '');
-    if (!d.ok) return;
+    if (!d.ok) {
+      if (d.retry_in) spHold(d.retry_in);
+      return;
+    }
+    spQuietUntil = 0;
     const rows = [];
     if (d.now) rows.push(spRow(d.now, 0, { now: true }));
     (d.queue || []).forEach((t, i) => rows.push(spRow(t, i, {
@@ -2048,8 +2602,20 @@ function refreshSpotifyPanel() {
       ? `Up next · ${d.queue.length}` : 'Up next';
   }).catch(() => {});
 
+  refreshDevices();
+}
+
+/* The device list changes when you pick up your phone, not every four seconds. */
+let devicesAt = 0;
+function refreshDevices(force) {
+  if (spHolding()) return;
+  if (!force && Date.now() - devicesAt < 120000) return;
+  devicesAt = Date.now();
   fetch('/api/spotify/devices').then((r) => r.json()).then((d) => {
-    if (!d.ok) return;
+    if (!d.ok) {
+      if (d.retry_in) spHold(d.retry_in);
+      return;
+    }
     const sel = $('spDevice');
     const active = (d.devices.find((x) => x.active) || {}).id || '';
     sel.innerHTML = d.devices.length
@@ -2161,18 +2727,48 @@ $('spConnect2').addEventListener('click', () => {
     $('spPending2').hidden = false;
     $('spManualLink2').href = res.url;
     $('spManual2').hidden = !!res.windowed;
-    toast(res.windowed ? 'Approve Music Deck in the window that just opened'
-                       : 'Approve Music Deck in your browser');
+    toast(res.windowed ? 'Approve Awesome Music Streaming Deck in the window that just opened'
+                       : 'Approve Awesome Music Streaming Deck in your browser');
   });
 });
 
 /* Keep the queue fresh whenever the panel is on screen - including in Auto
-   mode, where Spotify's queue is showing because Spotify is what is playing. */
+   mode, where Spotify's queue is showing because Spotify is what is playing.
+
+   When Spotify asks us to wait, we wait. Carrying on knocking during a
+   Retry-After window is what makes a brief rate limit last all afternoon. */
+let spQuietUntil = 0;
+function spHold(seconds) {
+  spQuietUntil = Math.max(spQuietUntil, Date.now() + (seconds || 5) * 1000);
+}
+const spHolding = () => Date.now() < spQuietUntil;
+
+/* The queue only changes when the track changes or someone adds something,
+   and we learn about track changes for free from the Windows bridge. So this
+   is a safety net for what we cannot see, not the main way it stays fresh -
+   queueFollowsTrack() below does that, at no cost to the rate limit. */
 setInterval(() => {
   if (!CONFIG || !spConnected) return;
-  if ($('spotifyMain').hidden) return;
+  if ($('spotifyMain').hidden || spHolding()) return;
   refreshSpotifyPanel();
-}, 4000);
+}, 120000);
+
+/* Count the wait down where the error message goes, so it is obvious the app
+   is deliberately holding off rather than broken. */
+function humanWait(seconds) {
+  seconds = Math.max(0, Math.round(seconds));
+  if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+setInterval(() => {
+  if (!spHolding()) return;
+  const left = (spQuietUntil - Date.now()) / 1000;
+  $('spQueueErr').textContent =
+    `Spotify is rate limiting this app — retrying in ${humanWait(left)}`;
+  if (left <= 1) setTimeout(() => { if (!spHolding()) refreshSpotifyPanel(); }, 1200);
+}, 1000);
 
 /* A track change means the queue moved on; refresh without waiting for the timer. */
 let lastQueueTrack = '';
@@ -2181,7 +2777,9 @@ function queueFollowsTrack(state) {
   const key = [now.source, now.title, now.artist].join('|');
   if (key === lastQueueTrack) return;
   lastQueueTrack = key;
-  if (spConnected && !$('spotifyMain').hidden) setTimeout(refreshSpotifyPanel, 600);
+  if (spConnected && !$('spotifyMain').hidden && !spHolding()) {
+    setTimeout(refreshSpotifyPanel, 600);
+  }
 }
 
 /* ------------------------------------------------------------- boot */
@@ -2201,6 +2799,10 @@ $('fullTheme').addEventListener('change', () => {
 
 fillFonts();
 fillDecorPickers();
+// The background editors are generated markup, so they have to exist before
+// bindControls() scans the page for data-* controls.
+buildBackgroundEditors();
+buildControlEditors();
 bindControls();
 
 fetch('/api/config').then((r) => r.json()).then((cfg) => {

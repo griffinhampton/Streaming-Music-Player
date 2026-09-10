@@ -12,8 +12,11 @@ Everything here is ctypes against user32 - no packages.
 """
 
 import ctypes
+import os
 import threading
 from ctypes import wintypes
+
+import paths
 
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
@@ -72,11 +75,50 @@ user32.CreateWindowExW.argtypes = [
 user32.SetParent.restype = wintypes.HWND
 user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
 
+# Handles are pointer-sized. Without these, ctypes assumes a C int return and
+# lops the top half off every handle on 64-bit Windows.
+user32.LoadImageW.restype = wintypes.HANDLE
+user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+                              ctypes.c_int, ctypes.c_int, wintypes.UINT]
+user32.SendMessageW.restype = ctypes.c_ssize_t
+user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                wintypes.WPARAM, wintypes.LPARAM]
+user32.GetSystemMetrics.restype = ctypes.c_int
+user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+
 _set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
 _set_long.restype = ctypes.c_ssize_t
 _set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
 
 CLASS_NAME = "MusicDeckOverlayHost"
+
+WM_SETICON = 0x0080
+ICON_SMALL, ICON_BIG = 0, 1
+_ICON_CACHE = None
+
+
+def _load_icons():
+    """The app icon as (big, small) HICONs, loaded once.
+
+    LoadImage picks the frame nearest the size asked for, which is why the .ico
+    ships several: a 16px title-bar icon scaled down from 256 looks like mud.
+    Returns (None, None) if the file is missing, which just leaves the default.
+    """
+    global _ICON_CACHE
+    if _ICON_CACHE is not None:
+        return _ICON_CACHE
+    path = paths.resource("music-deck.ico")
+    big = small = None
+    try:
+        if os.path.isfile(path):
+            cx = user32.GetSystemMetrics(11), user32.GetSystemMetrics(12)   # SM_CXICON/CYICON
+            sm = user32.GetSystemMetrics(49), user32.GetSystemMetrics(50)   # SM_CXSMICON/CYSMICON
+            big = user32.LoadImageW(None, path, 1, cx[0], cx[1], 0x00000010)   # IMAGE_ICON, LR_LOADFROMFILE
+            small = user32.LoadImageW(None, path, 1, sm[0], sm[1], 0x00000010)
+    except Exception:
+        pass
+    _ICON_CACHE = (big, small)
+    return _ICON_CACHE
 
 _ENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
@@ -167,6 +209,12 @@ class HostWindow:
         wc.hCursor = user32.LoadCursorW(None, 32512)   # IDC_ARROW
         wc.hbrBackground = gdi32.CreateSolidBrush(0x000000)
         wc.lpszClassName = CLASS_NAME
+        # The host window is a bare popup with no frame, but Windows still uses
+        # its icon in the taskbar and in Alt-Tab, and TikTok Studio shows it in
+        # the window picker - so it is worth setting properly.
+        icon_big, icon_small = _load_icons()
+        wc.hIcon = icon_big
+        wc.hIconSm = icon_small
         user32.RegisterClassExW(ctypes.byref(wc))      # harmless if already there
 
         self.hwnd = user32.CreateWindowExW(
@@ -174,6 +222,12 @@ class HostWindow:
             WS_POPUP | WS_VISIBLE | WS_CLIPCHILDREN,
             int(x), int(y), int(w), int(h),
             None, None, hinst, None)
+        if self.hwnd and (icon_big or icon_small):
+            # RegisterClassExW is a no-op if the class already exists from an
+            # earlier window, and it would keep that first icon. WM_SETICON is
+            # per-window, so it works however many times we have been here.
+            user32.SendMessageW(self.hwnd, WM_SETICON, ICON_BIG, icon_big or icon_small)
+            user32.SendMessageW(self.hwnd, WM_SETICON, ICON_SMALL, icon_small or icon_big)
         self._ready.set()
         if not self.hwnd:
             return

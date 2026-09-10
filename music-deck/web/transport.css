@@ -1,0 +1,70 @@
+/* Awesome Music Streaming Deck - transport buttons inside a pop-out.
+
+   Shared by all three windows, next to the transport.js they all load.
+   It used to be pasted into each of the three stylesheets, which meant it
+   quietly leaned on --title-color and --art-radius - variables only the
+   Now Playing window defines - so the same rules drew different buttons in
+   the lyrics and queue windows.
+
+   Buttons the streamer presses on their own screen. Hidden until the pointer
+   is over the window by default, so they never appear in the capture. */
+
+.transport-row {
+  display: flex;
+  gap: calc(0.28em * var(--t-size, 1));
+  align-items: center;
+  pointer-events: auto;              /* the rest of the window drags */
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.stage:hover .transport-row,
+.transport-row.always { opacity: var(--t-opacity, .9); }
+
+.transport-row.align-left   { justify-content: flex-start; }
+.transport-row.align-center { justify-content: center; }
+.transport-row.align-right  { justify-content: flex-end; }
+
+/* Where the row sits. In the card it follows the text; over the art it floats
+   on the cover; in the corner it hangs off the window itself. */
+.transport-row.place-card { margin-top: .35em; }
+.transport-row.place-art {
+  position: absolute; inset: auto 0 0 0;
+  justify-content: center;
+  padding: .3em;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .55));
+  border-radius: 0 0 var(--art-radius, 10px) var(--art-radius, 10px);
+}
+.transport-row.place-corner {
+  position: absolute; right: .5em; bottom: .5em; z-index: 8;
+}
+
+.tbtn {
+  width: calc(2.1em * var(--t-size, 1));
+  height: calc(2.1em * var(--t-size, 1));
+  display: grid; place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--title-color, var(--fg, #fff)) 26%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, #000 42%, transparent);
+  color: var(--title-color, var(--fg, #f4f4f8));
+  cursor: pointer;
+  transition: background 120ms ease, transform 80ms ease;
+}
+.tbtn svg { width: 55%; height: 55%; fill: currentColor; }
+.tbtn:hover { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.tbtn:active, .tbtn.busy { transform: scale(.9); }
+
+.transport-row.shape-square .tbtn { border-radius: calc(var(--card-radius, 12px) * .35); }
+.transport-row.shape-bare .tbtn {
+  border-color: transparent; background: transparent;
+  width: calc(1.7em * var(--t-size, 1)); height: calc(1.7em * var(--t-size, 1));
+}
+.transport-row.shape-bare .tbtn:hover { color: var(--accent); background: transparent; }
+
+/* The play button is the one you reach for, so give it the accent. */
+.transport-row .tbtn-play {
+  background: color-mix(in srgb, var(--accent) 82%, transparent);
+  border-color: transparent;
+  color: var(--on-accent, #fff);
+}
+.transport-row .tbtn-play:hover { background: var(--accent); }

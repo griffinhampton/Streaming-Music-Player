@@ -2,10 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Music Deck</title>
+<title>Awesome Music Streaming Deck</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="256x256" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <link rel="stylesheet" href="deck.css">
 </head>
 <body>
+
+<!-- The app's wallpaper, painted by the same code as the windows'
+     backgrounds so it gets the same modes, framing, blur and artwork. -->
+<div class="app-wall" id="appWall" aria-hidden="true">
+  <div class="app-wall-base" id="appWallBase"></div>
+  <div class="app-wall-art" id="appWallArt"></div>
+  <div class="app-wall-dim" id="appWallDim"></div>
+</div>
 
 <div id="appDecor" class="app-decor" aria-hidden="true">
   <div class="decor-strip decor-top"><span></span></div>
@@ -17,7 +28,7 @@
 <header class="topbar">
   <div class="brand">
     <span class="dot"></span>
-    <h1>Music Deck</h1>
+    <h1>Awesome Music Streaming Deck</h1>
     <span id="brandKao" class="kaomoji"></span>
     <span class="tag">local first</span>
   </div>
@@ -30,7 +41,7 @@
   </div>
 
   <div class="topbar-right">
-    <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Music Deck completely">Quit</button>
+    <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Awesome Music Streaming Deck completely">Quit</button>
   </div>
 </header>
 
@@ -98,7 +109,7 @@
           <div class="preview-edit" id="previewEdit"></div>
         </div>
         <div class="drop-hint" id="dropHint">
-          <b>Drop a PNG here</b>
+          <b>Drop a picture here</b>
           <span id="dropHintWhat">to add it as a sticker &mdash; or as the background</span>
         </div>
       </div>
@@ -121,7 +132,7 @@
 
       <!-- shown until the account is connected -->
       <div id="spSetup" class="sp-setup">
-        <p class="hint">Music Deck already reads the title and artist of whatever Spotify is
+        <p class="hint">Awesome Music Streaming Deck already reads the title and artist of whatever Spotify is
           playing on <b>this</b> PC — that needs no login at all. Connecting your account adds
           the things Windows cannot tell us: the <b>queue</b>, the <b>album art</b> at full size,
           and control of Spotify wherever it is playing — your phone, the web player, a speaker.</p>
@@ -134,7 +145,7 @@
             Go to <b>developer.spotify.com/dashboard</b> and log in with your normal Spotify
             account. Press <b>Create app</b>.</li>
           <li><b>Fill the form.</b>
-            <i>App name</i> and <i>description</i> can be anything — "Music Deck" is fine; nobody
+            <i>App name</i> and <i>description</i> can be anything — "Awesome Music Streaming Deck" is fine; nobody
             else sees them. Leave the website blank.</li>
           <li><b>Add the redirect URI.</b>
             In <i>Redirect URIs</i> paste this exactly, then press <b>Add</b>:
@@ -146,7 +157,7 @@
             Agree to the terms and press <b>Save</b>.</li>
           <li><b>Copy the Client ID.</b>
             On the app's page open <b>Settings</b>. Copy the <b>Client ID</b> — the long string of
-            letters and numbers. You do <i>not</i> need the client secret; Music Deck uses the
+            letters and numbers. You do <i>not</i> need the client secret; Awesome Music Streaming Deck uses the
             flow that does not take one, so there is no secret to leak.</li>
           <li><b>Paste it below and press Connect.</b>
             A window opens asking you to approve. Say yes and it closes itself.</li>
@@ -189,7 +200,7 @@
               queue and what is playing works on a free account; skip, pause and seek do not.</dd>
 
             <dt>You changed the port</dt>
-            <dd>The redirect URI has to match the port Music Deck is running on. If you started
+            <dd>The redirect URI has to match the port Awesome Music Streaming Deck is running on. If you started
               it on a different port, add that address in the dashboard too.</dd>
           </dl>
         </details>
@@ -199,7 +210,7 @@
           <p class="hint">A Spotify app starts in <i>development mode</i>, which only lets accounts
             you have listed use it — up to 25, added by email under <b>Settings → User Management</b>.
             So either add your friends there, or have each of them make their own app and paste
-            their own Client ID. Everything else in Music Deck works for them with no setup at all.</p>
+            their own Client ID. Everything else in Awesome Music Streaming Deck works for them with no setup at all.</p>
         </details>
 
         <p class="hint">None of this sends your listening anywhere. The token lives in
@@ -304,7 +315,7 @@
           <button id="spAccToggle" class="btn btn-ghost btn-sm">Connect account…</button>
         </div>
         <div id="spAccSetup" hidden>
-          <p class="hint">Optional. Lets Music Deck see and control Spotify wherever it is playing —
+          <p class="hint">Optional. Lets Awesome Music Streaming Deck see and control Spotify wherever it is playing —
             phone, web player, speakers. One-time setup:</p>
           <ol class="hint steps">
             <li>Open <b>developer.spotify.com/dashboard</b> → <b>Create app</b>.</li>
@@ -355,7 +366,8 @@
       <div class="tabs" id="designTabs">
         <button data-tab="layout" data-for="np" class="on">Theme</button>
         <button data-tab="window" data-for="np">Size</button>
-        <button data-tab="bg" data-for="np">Background</button>
+        <button data-tab="bg" data-for="all">Background</button>
+        <button data-tab="controls" data-for="all">Controls</button>
         <button data-tab="text" data-for="np">Text</button>
         <button data-tab="bits" data-for="np">Art &amp; bar</button>
         <button data-tab="decor" data-for="np">Decor</button>
@@ -417,6 +429,39 @@
 
         <div class="row gap wrap">
           <button class="btn btn-ghost btn-sm" id="resetColours">Reset all colours to theme</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Themes from your pictures</span>
+          <span class="hint">Every picture in the app, read for the colours it is
+            actually made of. Click one to dress the whole deck and every window
+            in it.</span>
+          <div class="picture-themes" id="pictureThemes"></div>
+        </label>
+
+        <!-- The picture a theme just put behind a window, and the handful of
+             things you immediately want to do to it. -->
+        <div class="pt-tools" id="ptTools" hidden>
+          <div class="row gap between">
+            <span class="hint">The picture is behind <b id="ptWhere">the pop-out</b>.</span>
+            <button class="btn btn-ghost btn-sm" id="ptClear">Remove it</button>
+          </div>
+          <div class="row gap wrap">
+            <button class="btn btn-ghost btn-sm" id="ptFrame">Frame it…</button>
+            <label class="check"><input type="checkbox" id="ptTint"><span>Two-colour it</span></label>
+            <button class="btn btn-ghost btn-sm" id="ptSafe" hidden>Darken to
+              <b class="mono" id="ptSafeVal">0.00</b> for readable text</button>
+          </div>
+          <label class="field">
+            <span>Blur <b class="mono" id="ptBlurOut">0</b>px</span>
+            <input class="range" type="range" min="0" max="40" id="ptBlur">
+          </label>
+          <label class="field">
+            <span>Darken <b class="mono" id="ptDimOut">0.00</b></span>
+            <input class="range" type="range" min="0" max="90" id="ptDim">
+          </label>
         </div>
 
         <label class="field">
@@ -491,122 +536,30 @@
       </div>
 
       <!-- background -->
+      <!-- Backgrounds for all four surfaces. The editors are generated per
+           target in deck.js so there is exactly one set of controls to maintain,
+           and every target gets all of them. -->
       <div class="tabpane" data-pane="bg">
         <label class="field">
-          <span>Background</span>
-          <div class="segmented small" data-np="bg.mode" data-kind="seg">
-            <button data-v="solid">Solid</button>
-            <button data-v="gradient">Gradient</button>
-            <button data-v="scene">Artwork</button>
-            <button data-v="image">Image</button>
+          <span>Background for</span>
+          <div class="segmented small" id="bgTargets" role="group">
+            <button data-t="np" class="on">Pop-out</button>
+            <button data-t="lyrics">Lyrics</button>
+            <button data-t="queue">Queue</button>
+            <button data-t="app">The app</button>
           </div>
         </label>
+        <div id="bgEditors"></div>
+      </div>
 
-        <div class="field two">
-          <label><span>Colour</span>
-            <input class="color wide" type="color" data-np="bg.color" data-kind="color"></label>
-          <label><span>Second colour</span>
-            <input class="color wide" type="color" data-np="bg.color2" data-kind="color"></label>
-        </div>
-
-        <label class="field">
-          <span>Gradient angle <b class="mono" data-out="bg.angle">135</b>°</span>
-          <input class="range" type="range" min="0" max="360"
-                 data-np="bg.angle" data-kind="range" data-out="bg.angle">
-        </label>
-
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>Generated artwork</span>
-          <div class="scene-picker" id="scenePicker"></div>
-        </label>
-        <div class="field two">
-          <label><span>Base</span>
-            <input class="color wide" type="color" data-np="bg.scene.c1" data-kind="color"></label>
-          <label><span>Ink</span>
-            <input class="color wide" type="color" data-np="bg.scene.c2" data-kind="color"></label>
-        </div>
-        <div class="field two">
-          <label><span>Detail</span>
-            <input class="color wide" type="color" data-np="bg.scene.c3" data-kind="color"></label>
-          <label><span>&nbsp;</span>
-            <button class="btn btn-ghost btn-sm" id="sceneReset">Scene's own colours</button></label>
-        </div>
-        <label class="field">
-          <span>Motif size <b class="mono" data-out="bg.scene.scale">1.00</b></span>
-          <input class="range" type="range" min="40" max="220"
-                 data-np="bg.scene.scale" data-kind="range" data-div="100"
-                 data-out="bg.scene.scale" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Density <b class="mono" data-out="bg.scene.density">1.00</b></span>
-          <input class="range" type="range" min="30" max="250"
-                 data-np="bg.scene.density" data-kind="range" data-div="100"
-                 data-out="bg.scene.density" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Tile size <b class="mono" data-out="bg.scene.tile_scale">1.00</b></span>
-          <input class="range" type="range" min="35" max="250"
-                 data-np="bg.scene.tile_scale" data-kind="range" data-div="100"
-                 data-out="bg.scene.tile_scale" data-dp="2">
-        </label>
-        <div class="row gap">
-          <button class="btn btn-ghost btn-sm" id="sceneShuffle">Shuffle layout</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>Background image</span>
-          <div class="asset-picker" id="bgPicker"></div>
-        </label>
-        <div class="row gap">
-          <button class="btn btn-ghost btn-sm" id="bgUpload">Upload image…</button>
-          <button class="btn btn-ghost btn-sm" data-clear="bg.image">Clear image</button>
-        </div>
-
-        <label class="field">
-          <span>Colour beneath the image</span>
-          <div class="row gap">
-            <input class="color" type="color" data-np="bg.color" data-kind="color">
-            <span class="hint">Shows wherever the image does not reach, and through
-              anything transparent in it.</span>
-          </div>
-        </label>
-
-        <label class="field">
-          <span>Fit</span>
-          <select class="input" data-np="bg.fit" data-kind="str">
-            <option value="cover">Cover</option>
-            <option value="contain">Contain</option>
-            <option value="stretch">Stretch</option>
-            <option value="tile">Tile</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Blur <b class="mono" data-out="bg.blur">0</b>px</span>
-          <input class="range" type="range" min="0" max="40"
-                 data-np="bg.blur" data-kind="range" data-out="bg.blur">
-        </label>
-
-        <div class="field two">
-          <label><span>Across <b class="mono" data-out="bg.pos_x">50</b>%</span>
-            <input class="range" type="range" min="0" max="100"
-                   data-np="bg.pos_x" data-kind="range" data-out="bg.pos_x"></label>
-          <label><span>Down <b class="mono" data-out="bg.pos_y">50</b>%</span>
-            <input class="range" type="range" min="0" max="100"
-                   data-np="bg.pos_y" data-kind="range" data-out="bg.pos_y"></label>
-        </div>
-        <p class="hint">Which part of the picture shows. Each window has its own,
-          so one wide image can be framed differently in each.</p>
-
-        <label class="field">
-          <span>Darken <b class="mono" data-out="bg.dim">0.00</b></span>
-          <input class="range" type="range" min="0" max="90"
-                 data-np="bg.dim" data-kind="range" data-div="100" data-out="bg.dim" data-dp="2">
-        </label>
+      <!-- Buttons drawn inside whichever window is selected above. Generated
+           per window in deck.js, same as the background editors. -->
+      <div class="tabpane" data-pane="controls">
+        <p class="hint">Put transport buttons inside the window itself, so you can
+          skip or pause without coming back to the deck. They drive whatever is
+          playing — Spotify or your own files — and are hidden until your mouse is
+          over the window, so they stay out of the capture.</p>
+        <div id="controlEditors"></div>
       </div>
 
       <!-- text -->
@@ -854,7 +807,7 @@
       <!-- lyrics -->
       <div class="tabpane" data-pane="lyrics">
         <p class="hint">A second pop-out that scrolls the words in time with the song.
-          Add it in TikTok Studio as <b>Music Deck - Lyrics</b> and drag it wherever you like.
+          Add it in TikTok Studio as <b>Awesome Music Streaming Deck - Lyrics</b> and drag it wherever you like.
           Local tracks use a <b>.lrc</b> file next to the song when there is one.</p>
         <div id="lyInfo" class="hint"></div>
 
@@ -896,46 +849,7 @@
                  data-ly="offset" data-kind="range" data-div="10" data-lyout="offset" data-dp="1">
         </label>
 
-        <div class="divider"></div>
-        <div class="own-bg" id="lyricsOwnBg">
-          <p class="hint">This window's own background, used when it is not matching
-            the pop-out. Each window can show a different picture, or a different
-            part of the same one.</p>
-          <label class="field">
-            <span>Background</span>
-            <div class="segmented small" data-ly="bg_own.mode" data-kind="seg">
-              <button data-v="solid">Solid</button>
-              <button data-v="gradient">Gradient</button>
-              <button data-v="image">Image</button>
-            </div>
-          </label>
-          <div class="field two">
-            <label><span>Colour</span>
-              <input class="color wide" type="color" data-ly="bg_own.color" data-kind="color"></label>
-            <label><span>Second colour</span>
-              <input class="color wide" type="color" data-ly="bg_own.color2" data-kind="color"></label>
-          </div>
-          <label class="field">
-            <span>Picture</span>
-            <div class="asset-picker" id="lyBgPicker"></div>
-          </label>
-          <div class="field two">
-            <label><span>Across <b class="mono" data-lyout="bg_own.pos_x">50</b>%</span>
-              <input class="range" type="range" min="0" max="100"
-                     data-ly="bg_own.pos_x" data-kind="range"
-                     data-lyout="bg_own.pos_x"></label>
-            <label><span>Down <b class="mono" data-lyout="bg_own.pos_y">50</b>%</span>
-              <input class="range" type="range" min="0" max="100"
-                     data-ly="bg_own.pos_y" data-kind="range"
-                     data-lyout="bg_own.pos_y"></label>
-          </div>
-          <label class="field">
-            <span>Darken <b class="mono" data-lyout="bg_own.dim">0.00</b></span>
-            <input class="range" type="range" min="0" max="90"
-                   data-ly="bg_own.dim" data-kind="range" data-div="100"
-                   data-lyout="bg_own.dim" data-dp="2">
-          </label>
-        </div>
+        
 
 
         <div class="field two">
@@ -959,7 +873,7 @@
       <!-- queue window -->
       <div class="tabpane" data-pane="queue">
         <p class="hint">A pop-out showing what Spotify plays next. Add it in TikTok Studio
-          as <b>Music Deck - Queue</b>. Needs the Spotify account connected.</p>
+          as <b>Awesome Music Streaming Deck - Queue</b>. Needs the Spotify account connected.</p>
 
         <label class="field">
           <span>Heading</span>
@@ -990,46 +904,7 @@
         </div>
 
 
-        <div class="divider"></div>
-        <div class="own-bg" id="queueOwnBg">
-          <p class="hint">This window's own background, used when it is not matching
-            the pop-out. Each window can show a different picture, or a different
-            part of the same one.</p>
-          <label class="field">
-            <span>Background</span>
-            <div class="segmented small" data-q="bg_own.mode" data-kind="seg">
-              <button data-v="solid">Solid</button>
-              <button data-v="gradient">Gradient</button>
-              <button data-v="image">Image</button>
-            </div>
-          </label>
-          <div class="field two">
-            <label><span>Colour</span>
-              <input class="color wide" type="color" data-q="bg_own.color" data-kind="color"></label>
-            <label><span>Second colour</span>
-              <input class="color wide" type="color" data-q="bg_own.color2" data-kind="color"></label>
-          </div>
-          <label class="field">
-            <span>Picture</span>
-            <div class="asset-picker" id="qBgPicker"></div>
-          </label>
-          <div class="field two">
-            <label><span>Across <b class="mono" data-qout="bg_own.pos_x">50</b>%</span>
-              <input class="range" type="range" min="0" max="100"
-                     data-q="bg_own.pos_x" data-kind="range"
-                     data-qout="bg_own.pos_x"></label>
-            <label><span>Down <b class="mono" data-qout="bg_own.pos_y">50</b>%</span>
-              <input class="range" type="range" min="0" max="100"
-                     data-q="bg_own.pos_y" data-kind="range"
-                     data-qout="bg_own.pos_y"></label>
-          </div>
-          <label class="field">
-            <span>Darken <b class="mono" data-qout="bg_own.dim">0.00</b></span>
-            <input class="range" type="range" min="0" max="90"
-                   data-q="bg_own.dim" data-kind="range" data-div="100"
-                   data-qout="bg_own.dim" data-dp="2">
-          </label>
-        </div>
+        
 
 
         <div class="field two">
@@ -1055,7 +930,9 @@
           <button class="btn btn-primary btn-sm" id="stickerAdd">+ Add sticker…</button>
           <button class="btn btn-ghost btn-sm" id="stickerDelete" disabled>Remove</button>
         </div>
-        <p class="hint">Drop PNGs straight onto the preview, then drag them into place.</p>
+        <p class="hint">Drop pictures straight onto the preview, then drag them into
+          place. <b>Animated GIFs and WebPs play</b> — they keep running while you move
+          them, and carry on across track changes.</p>
 
         <div class="sticker-list" id="stickerList"></div>
 
@@ -1093,6 +970,8 @@
             </div>
             <span class="hint">A dropped-in picture keeps its own colours. Tinting redraws it
               as a single-colour silhouette, the way the built-in patterns work.</span>
+            <span class="hint warn" id="stickerTintNote" hidden>This one is animated —
+              tinting uses its first frame only, so it will stop moving.</span>
           </label>
 
           <label class="field">
@@ -1140,7 +1019,7 @@
 
         <p class="hint">
           In TikTok Studio: <b>Add source → Window</b>, then pick
-          <b>Music Deck - Now Playing</b>. Resizing here changes the real window,
+          <b>Awesome Music Streaming Deck - Now Playing</b>. Resizing here changes the real window,
           so what you capture always matches the preview.
         </p>
       </div>
@@ -1198,63 +1077,8 @@
           </div>
         </label>
 
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>App wallpaper</span>
-          <div class="asset-picker" id="wallPicker"></div>
-        </label>
-        <div class="row gap">
-          <button class="btn btn-ghost btn-sm" id="wallUpload">Upload image…</button>
-          <button class="btn btn-ghost btn-sm" data-uclear="wallpaper">Clear</button>
-        </div>
-        <label class="field">
-          <span>Wallpaper darken <b class="mono" data-uout="wallpaper_dim">0.65</b></span>
-          <input class="range" type="range" min="0" max="100"
-                 data-ui="wallpaper_dim" data-kind="range" data-div="100"
-                 data-uout="wallpaper_dim" data-dp="2">
-        </label>
-
-
-        <div class="divider"></div>
-        <label class="field">
-          <span>Generated wallpaper</span>
-          <div class="scene-picker" id="wallScenePicker"></div>
-        </label>
-        <div class="field two">
-          <label><span>Base</span>
-            <input class="color wide" type="color" data-ui="scene.c1" data-kind="color"></label>
-          <label><span>Ink</span>
-            <input class="color wide" type="color" data-ui="scene.c2" data-kind="color"></label>
-        </div>
-        <div class="field two">
-          <label><span>Detail</span>
-            <input class="color wide" type="color" data-ui="scene.c3" data-kind="color"></label>
-          <label><span>&nbsp;</span>
-            <button class="btn btn-ghost btn-sm" id="wallSceneReset">Scene's own colours</button></label>
-        </div>
-        <label class="field">
-          <span>Motif size <b class="mono" data-uout="scene.scale">1.00</b></span>
-          <input class="range" type="range" min="40" max="220"
-                 data-ui="scene.scale" data-kind="range" data-div="100"
-                 data-uout="scene.scale" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Density <b class="mono" data-uout="scene.density">1.00</b></span>
-          <input class="range" type="range" min="30" max="250"
-                 data-ui="scene.density" data-kind="range" data-div="100"
-                 data-uout="scene.density" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Tile size <b class="mono" data-uout="scene.tile_scale">1.00</b></span>
-          <input class="range" type="range" min="35" max="250"
-                 data-ui="scene.tile_scale" data-kind="range" data-div="100"
-                 data-uout="scene.tile_scale" data-dp="2">
-        </label>
-        <div class="row gap">
-          <button class="btn btn-ghost btn-sm" id="wallSceneShuffle">Shuffle layout</button>
-          <button class="btn btn-ghost btn-sm" data-uclear="scene.id">No artwork</button>
-        </div>
+        <p class="hint">The app's wallpaper lives with every other background,
+          under <b>Background</b> → <b>The app</b>.</p>
 
         <div class="checks">
           <label class="check"><input type="checkbox" data-ui="glow" data-kind="bool"><span>Accent glow</span></label>
@@ -1292,11 +1116,47 @@
 </main>
 
 <audio id="audio" preload="metadata"></audio>
-<input type="file" id="filePicker" accept="image/*" hidden>
+<!-- Framing a picture: the whole image, with the part that survives held
+     bright and draggable at the exact shape of the window it is going into. -->
+<div id="framer" class="modal" hidden>
+  <div class="modal-box framer-box">
+    <div class="modal-head">
+      <h2 id="framerTitle">Frame the picture</h2>
+      <span id="framerSize" class="muted small mono"></span>
+      <button id="framerCancel" class="btn btn-ghost btn-sm">Close</button>
+    </div>
+
+    <div class="framer-stage-wrap">
+      <div id="framerStage" class="framer-stage">
+        <div id="framerShade" class="framer-shade"></div>
+        <div id="framerHole" class="framer-hole" title="Drag to choose what shows">
+          <span class="framer-grip"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <label class="field framer-zoom">
+        <span>Zoom in</span>
+        <input id="framerZoom" class="range" type="range" min="100" max="400" value="100">
+      </label>
+      <span id="framerReadout" class="muted small mono"></span>
+      <span id="framerCrop" class="hint">The dimmed part is cropped away.</span>
+      <div class="row gap">
+        <button id="framerCentre" class="btn btn-ghost btn-sm">Reset</button>
+        <button id="framerApply" class="btn btn-primary btn-sm">Use this framing</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="filePicker" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
 <div id="toast" class="toast"></div>
 
 <script src="scenes.js"></script>
 <script src="decor.js"></script>
+<script src="palette.js"></script>
+<script src="framer.js"></script>
 <script src="deck.js"></script>
 </body>
 </html>

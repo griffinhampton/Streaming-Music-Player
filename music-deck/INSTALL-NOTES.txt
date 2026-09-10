@@ -1,0 +1,41 @@
+Awesome Music Streaming Deck
+============================
+
+What it does
+------------
+Puts what you are listening to on screen as borderless windows you can add to
+TikTok Studio, OBS or anything else that captures a window. Three of them: the
+track with its artwork, the lyrics, and what Spotify plays next.
+
+What it does to your machine
+----------------------------
+- Installs into your own user folder. No administrator prompt, nothing in
+  Program Files, nothing in the registry beyond the uninstall entry.
+- Runs a small web server on 127.0.0.1 only - your own machine. It is not
+  reachable from your network, and there is no account, telemetry or analytics.
+- Opens Chrome or Edge in app mode to draw the windows. That is the whole
+  rendering engine; nothing else is bundled.
+- Reads what is playing from Windows' own media session - the same thing that
+  powers the volume pop-up. That needs no login.
+
+What talks to the internet, and only if you ask
+-----------------------------------------------
+- Lyrics lookup (lrclib.net) - a checkbox, off unless you tick it.
+- Your Spotify account - optional, and only for the queue and remote control.
+  Nothing is sent anywhere else, ever.
+
+About the security warning
+--------------------------
+Windows may warn you when you run this. It is not signed with a code signing
+certificate, which costs money and is the only thing that removes that warning.
+The source is public - read it, or build it yourself:
+
+  https://github.com/griffinhampton/Streaming-Music-Player
+
+If your antivirus objects, that is a false positive against the Python
+packaging tool this is built with, not against anything in the app. ANTIVIRUS.md
+in the repository explains it in full, including how to verify the download.
+
+Licence
+-------
+MIT. Do what you like with it.
