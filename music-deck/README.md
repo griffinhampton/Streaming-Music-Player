@@ -2,11 +2,12 @@
 
 A local overlay deck for streaming: now playing, lyrics, the Spotify queue,
 and live captions of what you say. It binds to `127.0.0.1` only, so nobody on
-your network can even see it, and it works fully offline out of the box. Two
-things can reach the internet, both optional and both off unless you turn
-them on: lyric lookup (a checkbox) and connecting your Spotify account (a
-setup you have to go through on purpose). Captions never do - they are
-recognized on this PC by Windows' own speech engine.
+your network can even see it, and it works fully offline out of the box.
+Three things can reach the internet, all optional and all off unless you ask:
+lyric lookup (a checkbox), connecting your Spotify account (a setup you have
+to go through on purpose), and the one-time download of the Whisper captions
+model (a button). Your voice never leaves the PC - captions are recognized
+right here.
 
 Five windows:
 
@@ -25,17 +26,39 @@ Five windows:
 
 ## Live captions
 
-Press **Start** on the Captions card and the deck listens to your default
-microphone with Windows' built-in, on-device speech recognizer (English). The
-phrase being spoken shows as it forms, settles into a finished line when you
-pause, and finished lines fade out after a few seconds so the box empties
-between things said. Nothing is sent anywhere: no cloud speech service, no
-account, no key - which is also why the accuracy is Windows-dictation grade
-rather than perfect. A clear microphone and normal speaking pace help a lot.
+Press **Start** on the Captions tab and the deck listens to your microphone
+and writes what you say, live: the phrase being spoken shows as it forms,
+settles into a finished line when you pause, and finished lines fade out
+after a few seconds so the box empties between things said. English only.
 
-It needs the English (United States) speech pack, which Windows includes by
-default; if it is missing the card says so and where to add it. Captions stay
-off until you start them, and the deck remembers the choice across restarts.
+Two engines, both entirely on this PC - no audio is ever sent anywhere:
+
+- **Whisper** (the default) - OpenAI's Whisper speech model, run on your CPU
+  through [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Far
+  more accurate: on a noisy test recording it got 98% of words right where
+  Windows' engine got 71%. It needs its model once - press **Download** (Base,
+  about 150 MB, from Hugging Face; checked against the published hashes) and
+  it works offline from then on. To stay fast it reads each phrase in a
+  window sized to the phrase, not Whisper's usual 30 seconds.
+- **Windows** - Windows' built-in dictation engine. Nothing to download and
+  very light, but it guesses a lot.
+
+**Names and words to expect** takes your username, the game, regulars in chat
+- Whisper leans toward those spellings, which is most of the difference on
+names. Pick a specific **Microphone** if the Windows default isn't the one you
+stream with; the level meter next to the status shows it's hearing you.
+Captions stay off until you start them, and the deck remembers the choice
+across restarts.
+
+## Your own fonts
+
+Every **Font** menu has an **Add font…** button, and font files dropped
+anywhere on the deck are added too: `.ttf`, `.otf`, `.woff` or `.woff2`, such
+as a download from Google Fonts. An added font is listed under *Your fonts* in
+every Font menu - Now Playing, lyrics, the queue, captions and the app itself
+- and every window updates without reopening. A Regular and a Bold of the
+same family become one family with both weights, as installed fonts do. Added
+fonts live in `cache/fonts`; the chip under a Font menu removes one.
 
 Two sources, picked automatically or by hand:
 
@@ -195,6 +218,9 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   colour shows through.
 
 - **Controls** – put transport buttons inside a window: back, play/pause, skip.
+  On Now Playing they can line up with the whole window, the progress bar or
+  the album art - centered under the bar usually looks best - and the nudge
+  sliders fine-tune from there.
   They drive whatever is playing, Spotify or your own files, and each window has
   its own set. By default they only appear while your mouse is over the window,
   so they never land in the capture — they are for you to press, not for the

@@ -201,7 +201,7 @@ function applyDesign(np) {
   renderDecor(s, document.getElementById('decor'), np.decor, accent);
   // The buttons follow the design too, so a change shows up straight away
   // rather than waiting for the next track.
-  renderTransport(el.transport, np.controls, clock.playing, interactive());
+  renderTransport(el.transport, np.controls, clock.playing, buttonsVisible(), TRANSPORT_REFS);
   const wrap = document.getElementById('artWrap');
   const inArt = (np.controls || {}).place === 'art';
   if (inArt && el.transport.parentElement !== wrap) wrap.appendChild(el.transport);
@@ -384,7 +384,7 @@ function render(now) {
   el.stage.dataset.state = now.playing ? 'playing' : 'paused';
   // Only the play/pause icon depends on this; the rest of the row follows the
   // design and is drawn in applyDesign.
-  renderTransport(el.transport, (design || {}).controls, now.playing, interactive());
+  renderTransport(el.transport, (design || {}).controls, now.playing, buttonsVisible(), TRANSPORT_REFS);
 
   // Only re-seat the clock on a real jump, so normal playback stays smooth.
   const drift = Math.abs(clock.position - now.position);
@@ -431,6 +431,7 @@ function connect() {
   source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      syncUserFonts(data.fonts_v);
       applyDesign(data.nowplaying);
       render(data.now);
     } catch (_) { /* a torn frame just means we wait for the next one */ }
@@ -487,7 +488,31 @@ function interactive() {
   return !PREVIEW && !(design && design.interactive === false);
 }
 
+/* Whether the buttons show at all. On an inert window they would only
+   mislead; in the deck's preview they show, so a placement can be judged
+   without opening the window - but never press (that is interactive()). */
+function buttonsVisible() {
+  return !(design && design.interactive === false);
+}
+
 wireTransport(el.transport, interactive);
+
+/* What the buttons can line up with instead of the whole card - the progress
+   bar, or the cover - and a watch on both, so buttons lined up with one follow
+   it through every resize and layout change rather than only on the next
+   state broadcast. */
+const TRANSPORT_REFS = {
+  progress: { box: document.getElementById('progressWrap'),
+              line: document.querySelector('#progressWrap .progress-track') },
+  art: document.getElementById('artWrap'),
+};
+if (window.ResizeObserver) {
+  const follow = new ResizeObserver(() => {
+    const c = (design || {}).controls;
+    if (c && c.show && c.anchor) placeRelative(el.transport, c, TRANSPORT_REFS);
+  });
+  [el.stage, TRANSPORT_REFS.art, TRANSPORT_REFS.progress.box].forEach((n) => n && follow.observe(n));
+}
 
 /* No title bar means dragging is the only way to move it: windowctl.js
    forwards pointer deltas to the server, which drives the host window. */

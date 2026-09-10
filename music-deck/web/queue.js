@@ -66,7 +66,7 @@ function applyDesign(np, cfg) {
 
   set('--accent', uAcc);
   set('--on-accent', readableOn(uAcc));
-  set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
+  set('--font', `"${(opts.font || text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
   const pal = design.palette || {};
   set('--fg', own.text || text.title_color || pal.text || '#f4f4f8');
   set('--dim', own.muted || text.artist_color || pal.muted || '#9a9aa8');
@@ -104,7 +104,7 @@ function applyDesign(np, cfg) {
   // Same buttons as the pop-out, so a Next button works the same
   // wherever you decide to put one.
   renderTransport(el.transport, opts.controls, lastPlaying,
-                  !PREVIEW && opts.interactive !== false);
+                  opts.interactive !== false);
   s.classList.toggle('preview', PREVIEW);
   el.heading.textContent = opts.heading || 'UP NEXT';
 
@@ -222,6 +222,7 @@ function connect() {
   source.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
+      syncUserFonts(data.fonts_v);
       applyDesign(data.nowplaying, data.queue_cfg);
       followPlaying(data.now);
       followQueue(data.spotify_queue, data.now);

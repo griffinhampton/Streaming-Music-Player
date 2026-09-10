@@ -1,10 +1,15 @@
 """
-Python side of the live-captions bridge.
+The live-captions bridge: one state, two engines.
 
-Runs one PowerShell helper on demand - never at boot unless captions were left
-on - reads the partial and final phrases it emits, and hands the server a small
-rolling window of what was just said. Windows' own on-device recognizer does
-the listening; nothing leaves this machine.
+  whisper  OpenAI's Whisper on the CPU (captions_whisper.py) - accurate, the
+           default once its model is downloaded.
+  windows  Windows' own dictation engine in a PowerShell helper
+           (captions.ps1) - nothing to download, but it guesses a lot.
+
+Either way nothing leaves this machine, the microphone opens only when
+someone presses Start, and the server gets the same small rolling window of
+what was just said. Both engines speak one message protocol (ready / partial
+/ final / audio / level), folded into that state by _apply.
 """
 
 import collections
@@ -27,18 +32,39 @@ class CaptionBridge:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._proc = None
+        self._proc = None                 # the Windows helper, when that engine runs
+        self._stop_evt = None             # tells a Whisper session to wind down
+        self._listener = None             # the running Whisper session, if any
+        self._settings = {"engine": "windows"}
         self._on = False
         self._gen = 0                     # bumps per start(), so a stale reader can tell
         self._available = None            # None = starting, True = listening, False = error
         self._error = ""
         self._audio = ""
+        self._level = 0.0
         self._partial = ""
         self._lines = collections.deque(maxlen=self.KEEP)
         self._version = 0                 # bumps on every visible change
         self._recognizer = ""
 
     # ------------------------------------------------------------- lifecycle
+
+    def configure(self, settings):
+        """Engine, model folder, microphone, expected words. A running
+        session restarts if anything it depends on changed."""
+        with self._lock:
+            old, self._settings = self._settings, dict(settings)
+            running, listener = self._on, self._listener
+        if settings == old or not running:
+            return
+        rest = lambda s: {k: v for k, v in s.items() if k != "words"}
+        if listener is not None and rest(settings) == rest(old):
+            # New words to expect: a running Whisper takes them on its next
+            # read, without the second or two a restart would cost.
+            listener.set_words(settings.get("words", ""))
+            return
+        self.stop()
+        self.start()
 
     def start(self):
         with self._lock:
@@ -52,7 +78,9 @@ class CaptionBridge:
             self._partial = ""
             self._audio = ""
             self._version += 1
-        threading.Thread(target=self._supervise, args=(gen,), daemon=True).start()
+            engine = self._settings.get("engine")
+        target = self._supervise_whisper if engine == "whisper" else self._supervise_windows
+        threading.Thread(target=target, args=(gen,), daemon=True).start()
 
     def stop(self):
         with self._lock:
@@ -60,13 +88,64 @@ class CaptionBridge:
             self._available = None
             self._partial = ""
             self._audio = ""
+            self._level = 0.0
             self._version += 1
             proc, self._proc = self._proc, None
+            evt, self._stop_evt = self._stop_evt, None
+            self._listener = None
+        if evt:
+            evt.set()
         if proc:
             try:
                 proc.kill()
             except Exception:
                 pass
+
+    def _current(self, gen):
+        with self._lock:
+            return self._on and self._gen == gen
+
+    # ------------------------------------------------------------- Whisper
+
+    def _supervise_whisper(self, gen):
+        """Run Whisper sessions while captions are on. One that cannot start
+        - no microphone, a model that will not load - is retried slowly, and
+        the deck shows why in the meantime."""
+        backoff = 5
+        while True:
+            with self._lock:
+                if not self._on or self._gen != gen:
+                    return
+                s = dict(self._settings)
+                stop = threading.Event()
+                self._stop_evt = stop
+            if not s.get("model_dir"):
+                self._apply({"ok": False, "error": "Whisper's model isn't downloaded yet - "
+                                                   "press Download on the Captions tab."})
+                return        # finishing the download reconfigures, which restarts this
+
+            def emit(msg, gen=gen):
+                if self._current(gen):
+                    self._apply(msg)
+            try:
+                from captions_whisper import WhisperListener
+                listener = WhisperListener(s["model_dir"], emit, mic=s.get("mic", ""),
+                                           words=s.get("words", ""),
+                                           label=s.get("label", "Whisper"))
+                with self._lock:
+                    if self._gen == gen:
+                        self._listener = listener
+                ok = listener.run(stop)
+            except Exception as exc:
+                emit({"ok": False, "error": f"Whisper stopped: {exc}"})
+                ok = False
+            if not self._current(gen):
+                return
+            time.sleep(2 if ok else backoff)
+            if not ok:
+                backoff = min(backoff * 2, 60)
+
+    # ------------------------------------------------------------- Windows
 
     def _spawn(self):
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -78,8 +157,8 @@ class CaptionBridge:
             bufsize=1, creationflags=flags,
         )
 
-    def _supervise(self, gen):
-        """Keep the helper alive while captions are on.
+    def _supervise_windows(self, gen):
+        """Keep the PowerShell helper alive while captions are on.
 
         A helper that reports a problem - no microphone, no recognizer - is
         retried slowly, since a microphone may get plugged in, and the deck
@@ -131,9 +210,11 @@ class CaptionBridge:
             time.sleep(backoff if failed else 2)
             backoff = min(backoff * 2, 60)
 
+    # ------------------------------------------------------------- state
+
     def _apply(self, msg):
-        """Fold one helper message into the state. True means the helper
-        reported something fatal and is about to exit."""
+        """Fold one engine message into the state. True means the engine
+        reported something fatal and is about to stop."""
         with self._lock:
             if msg.get("ok") is False:
                 self._available = False
@@ -148,7 +229,11 @@ class CaptionBridge:
                 self._version += 1
                 return False
             t = msg.get("t")
-            if t == "partial":
+            if t == "level":
+                # The meter moves constantly; it is not a visible change of
+                # the captions themselves, so it leaves the version alone.
+                self._level = float(msg.get("value") or 0)
+            elif t == "partial":
                 self._partial = (msg.get("text") or "").strip()
                 self._version += 1
             elif t == "final":
@@ -167,8 +252,6 @@ class CaptionBridge:
                 self._version += 1
             return False
 
-    # ------------------------------------------------------------- readout
-
     def get(self):
         """State for the broadcast: what is showing and why."""
         with self._lock:
@@ -183,7 +266,9 @@ class CaptionBridge:
             return {
                 "on": self._on,
                 "state": state,
+                "engine": self._settings.get("engine", "windows"),
                 "audio": self._audio,
+                "level": self._level,
                 "error": self._error,
                 "recognizer": self._recognizer,
                 "partial": self._partial,

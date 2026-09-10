@@ -56,7 +56,7 @@ function applyDesign(np, cfg) {
   const pal = design.palette || {};
 
   set('--accent', own.accent || accent);
-  set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
+  set('--font', `"${(opts.font || text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
   set('--fg', own.text || text.title_color || pal.text || '#f4f4f8');
   set('--dim', own.muted || text.artist_color || pal.muted || '#9a9aa8');
   set('--card-radius', (card.radius ?? 18) + 'px');
@@ -167,6 +167,7 @@ function connect() {
   source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      syncUserFonts(data.fonts_v);
       applyDesign(data.nowplaying, data.captions_cfg);
       if (!PREVIEW) render(data.captions, data.server_time);
     } catch (_) { /* wait for the next frame */ }

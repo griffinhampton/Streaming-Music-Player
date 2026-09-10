@@ -160,6 +160,14 @@ def close_window(hwnd):
     return True
 
 
+def is_minimized(hwnd):
+    """Minimized windows report where Windows parks them (-32000, -32000),
+    not their real place and size, so callers need to know."""
+    if not _HAVE_WIN32 or not hwnd:
+        return False
+    return bool(user32.IsIconic(wintypes.HWND(hwnd)))
+
+
 def minimize(hwnd):
     """Minimize without activating, so focus never leaves the deck mid-stream."""
     if not _HAVE_WIN32 or not hwnd:

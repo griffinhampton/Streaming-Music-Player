@@ -8,6 +8,7 @@
 <link rel="icon" type="image/png" sizes="256x256" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="stylesheet" href="deck.css">
+<script src="fonts.js"></script>
 </head>
 <body>
 
@@ -53,7 +54,7 @@
      preview below shows and which settings appear; the button on each card
      opens or closes that window. -->
 <div class="band-head">
-  <h2 class="band"><span class="band-no">①</span> Pick a window to put on stream</h2>
+  <h2 class="band"><span class="band-no">1</span> Pick a window to put on stream</h2>
   <button id="helpBtn" class="btn btn-ghost btn-sm" title="Show the welcome help again" aria-label="Show help">?</button>
 </div>
 <nav class="windows" id="windowsBar" aria-label="Stream windows">
@@ -117,7 +118,7 @@
 
     <section class="panel preview-panel">
       <div class="panel-head">
-        <span class="band-no" title="Step 2">②</span>
+        <span class="band-no" title="Step 2">2</span>
         <h2 id="previewTitle">This is what the window looks like</h2>
         <div class="row gap">
           <span id="previewSize" class="muted small mono">760 × 190</span>
@@ -144,7 +145,7 @@
 
     <section class="panel appearance">
       <div class="band-head band-head-inset">
-        <h2 class="band"><span class="band-no">③</span> Customize <span id="designingName">Now Playing</span></h2>
+        <h2 class="band"><span class="band-no">3</span> Customize <span id="designingName">Now Playing</span></h2>
       </div>
       <div class="theme-bar">
         <span>Theme</span>
@@ -392,10 +393,14 @@
 
       <!-- text -->
       <div class="tabpane" data-pane="text">
-        <label class="field">
+        <div class="field">
           <span>Font</span>
-          <select class="input" id="fontPick" data-np="text.font" data-kind="str"></select>
-        </label>
+          <div class="font-row">
+            <select class="input font-select" id="fontPick" data-np="text.font" data-kind="str" aria-label="Font"></select>
+            <button class="btn btn-ghost btn-sm font-add" type="button">Add font…</button>
+          </div>
+          <div class="font-chips" hidden></div>
+        </div>
 
         <label class="field">
           <span>Alignment</span>
@@ -639,6 +644,14 @@
 
       <!-- lyrics: text -->
       <div class="tabpane" data-pane="lyrics-text">
+        <div class="field">
+          <span>Font</span>
+          <div class="font-row">
+            <select class="input font-select" data-inherit="1" data-ly="font" data-kind="str" aria-label="Lyrics font"></select>
+            <button class="btn btn-ghost btn-sm font-add" type="button">Add font…</button>
+          </div>
+          <div class="font-chips" hidden></div>
+        </div>
         <label class="field">
           <span>Text size <b class="mono" data-lyout="scale">1.00</b></span>
           <input class="range" type="range" min="50" max="220"
@@ -731,6 +744,14 @@
 
       <!-- queue: text -->
       <div class="tabpane" data-pane="queue-text">
+        <div class="field">
+          <span>Font</span>
+          <div class="font-row">
+            <select class="input font-select" data-inherit="1" data-q="font" data-kind="str" aria-label="Queue font"></select>
+            <button class="btn btn-ghost btn-sm font-add" type="button">Add font…</button>
+          </div>
+          <div class="font-chips" hidden></div>
+        </div>
         <label class="field">
           <span>Text size <b class="mono" data-qout="scale">1.00</b></span>
           <input class="range" type="range" min="50" max="220"
@@ -785,11 +806,40 @@
         <div class="row gap wrap cap-mic">
           <button class="btn btn-primary" id="capMic">Start listening</button>
           <span class="cap-state" id="capState" data-tone="off">Off</span>
+          <span class="cap-meter" id="capMeter" hidden title="Microphone level"><i></i></span>
         </div>
         <div id="capLast" class="cap-last" aria-live="polite"></div>
-        <p class="hint">Recognized on this PC by Windows' built-in speech recognition. Nothing is sent
-          anywhere. English only, and about as accurate as Windows dictation: a clear microphone and a
-          normal speaking pace make a big difference.</p>
+
+        <label class="field">
+          <span>Engine</span>
+          <div class="segmented small" data-cap="engine" data-kind="seg">
+            <button data-v="whisper">Whisper &mdash; accurate</button>
+            <button data-v="windows">Windows &mdash; built in</button>
+          </div>
+        </label>
+        <div class="field" id="capModelField">
+          <span>Whisper model</span>
+          <div class="font-row">
+            <select class="input" id="capModel" data-cap="model" data-kind="str" aria-label="Whisper model"></select>
+            <button class="btn btn-ghost btn-sm" id="capModelBtn" type="button">Download</button>
+          </div>
+          <div class="cap-progress" id="capProgress" hidden><i></i></div>
+          <span class="hint" id="capModelHint"></span>
+        </div>
+        <label class="field">
+          <span>Microphone</span>
+          <select class="input" id="capMicPick" data-cap="mic" data-kind="str">
+            <option value="">Windows default microphone</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Names and words to expect</span>
+          <input class="input" type="text" maxlength="300" data-cap="words" data-kind="str" data-commit="change"
+                 placeholder="e.g. your username, the game, regulars in chat">
+          <span class="hint">Whisper leans toward these spellings &mdash; the biggest help with names.</span>
+        </label>
+        <p class="hint">Everything is recognized on this PC; no audio is ever sent anywhere. Whisper's
+          model downloads once from Hugging Face, then works offline. English only.</p>
 
         <div class="checks">
           <label class="check"><input type="checkbox" data-cap="follow_theme" data-kind="bool"><span>Use the same background as Now Playing</span></label>
@@ -810,6 +860,14 @@
 
       <!-- captions: text -->
       <div class="tabpane" data-pane="captions-text">
+        <div class="field">
+          <span>Font</span>
+          <div class="font-row">
+            <select class="input font-select" data-inherit="1" data-cap="font" data-kind="str" aria-label="Captions font"></select>
+            <button class="btn btn-ghost btn-sm font-add" type="button">Add font…</button>
+          </div>
+          <div class="font-chips" hidden></div>
+        </div>
         <label class="field">
           <span>Text size <b class="mono" data-capout="scale">1.00</b></span>
           <input class="range" type="range" min="50" max="220"
@@ -1216,10 +1274,14 @@
             <input class="color wide" type="color" data-ui="muted" data-kind="color"></label>
         </div>
 
-        <label class="field">
+        <div class="field">
           <span>Font</span>
-          <select class="input" id="uiFontPick" data-ui="font" data-kind="str"></select>
-        </label>
+          <div class="font-row">
+            <select class="input font-select" id="uiFontPick" data-ui="font" data-kind="str" aria-label="App font"></select>
+            <button class="btn btn-ghost btn-sm font-add" type="button">Add font…</button>
+          </div>
+          <div class="font-chips" hidden></div>
+        </div>
 
         <label class="field">
           <span>Corner radius <b class="mono" data-uout="radius">12</b>px</span>
@@ -1310,6 +1372,7 @@
 </div>
 
 <input type="file" id="filePicker" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
+<input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2" multiple hidden>
 <div id="toast" class="toast"></div>
 
 <script src="scenes.js"></script>

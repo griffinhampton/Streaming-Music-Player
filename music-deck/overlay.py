@@ -90,18 +90,39 @@ class Overlay:
         return bool(winwin.find_window(self.page_title))
 
     def status(self):
+        # A minimized window has no rect worth reporting: Windows parks it at
+        # -32000, -32000 at a stub size, and passing that on made the deck show
+        # a 221 x 1 window. None tells every caller to keep what it had.
         if self.host and self.host.alive():
             from hostwin import viewport_rect
-            vp = viewport_rect(self.host.child) if self.host.child else None
-            return {"open": True, "hosted": True, "rect": self.host.rect(),
-                    "minimized": self.host.minimized(),
+            minimized = self.host.minimized()
+            vp = viewport_rect(self.host.child) if self.host.child and not minimized else None
+            return {"open": True, "hosted": True, "minimized": minimized,
+                    "rect": None if minimized else self.host.rect(),
                     "viewport": [self.metrics.get("inner_w"), self.metrics.get("inner_h")],
                     "viewport_rect": vp}
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
-            return {"open": True, "hosted": False, "minimized": False,
-                    "rect": winwin.get_rect(hwnd)}
+            minimized = winwin.is_minimized(hwnd)
+            return {"open": True, "hosted": False, "minimized": minimized,
+                    "rect": None if minimized else self._plain_rect(hwnd),
+                    "outer": None if minimized else winwin.get_rect(hwnd)}
         return {"open": False, "hosted": False, "minimized": False, "rect": None}
+
+    def _plain_rect(self, hwnd):
+        """An un-hosted window as everything else sees windows: its outer
+        position, with the size Chrome's frame leaves for the page.
+
+        The config, the deck and the edge drag all work in page sizes, and
+        _set_bounds adds the frame back on. Handing them the outer size
+        instead made every drag tick grow the window by the frame - dragging
+        a bottom corner up to shrink it made it taller."""
+        r = winwin.get_rect(hwnd)
+        if not r:
+            return None
+        hx, hy = self.insets or (16, 80)
+        return {"x": r["x"], "y": r["y"],
+                "w": max(1, r["w"] - hx), "h": max(1, r["h"] - hy)}
 
     # ------------------------------------------------------------- open/close
 
@@ -302,7 +323,7 @@ class Overlay:
         if width and height:
             hx, hy = self.insets or (16, 80)
             winwin.move_resize(hwnd, None, None, width + hx, height + hy)
-        return winwin.get_rect(hwnd)
+        return self._plain_rect(hwnd)
 
     def resize_by(self, dw, dh, min_w=160, min_h=60, max_w=3840, max_h=2160):
         """Grow or shrink from the bottom-right corner, as the grip drags."""
@@ -353,7 +374,7 @@ class Overlay:
         if hwnd:
             hx, hy = self.insets or (16, 80)
             winwin.move_resize(hwnd, int(x), int(y), int(w) + hx, int(h) + hy)
-            return winwin.get_rect(hwnd)
+            return self._plain_rect(hwnd)
         return None
 
     def minimize(self):
@@ -382,7 +403,7 @@ class Overlay:
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             winwin.nudge(hwnd, dx, dy)
-            return winwin.get_rect(hwnd)
+            return self._plain_rect(hwnd)
         return None
 
     def move(self, x, y):
@@ -392,5 +413,5 @@ class Overlay:
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             winwin.move_resize(hwnd, x, y)
-            return winwin.get_rect(hwnd)
+            return self._plain_rect(hwnd)
         return None

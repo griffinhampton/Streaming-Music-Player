@@ -1,0 +1,7 @@
+# Needed only for the Whisper captions engine - the rest of the app is the
+# Python standard library. build.bat and CI install these before packaging.
+# Running from source works without them; pick the Windows captions engine.
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+onnxruntime==1.30.0
+sounddevice==0.5.6

@@ -25,6 +25,8 @@ if not exist "%ENV%\Scripts\pyinstaller.exe" (
   python -m venv "%ENV%" || goto :fail
   "%ENV%\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check pyinstaller || goto :fail
 )
+rem The Whisper captions engine's libraries. Quick when already installed.
+"%ENV%\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r "%~dp0requirements.txt" || goto :fail
 
 rem The shipped artwork is optional - a fresh clone will not have it, and the
 rem app works fine without any, since people add their own.
@@ -44,6 +46,8 @@ echo Building "%APP%" ...
   --add-data "%~dp0music-deck.ico;." ^
   !THEMES! ^
   --hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox ^
+  --collect-binaries ctranslate2 --collect-data faster_whisper ^
+  --exclude-module av --exclude-module hf_xet ^
   --distpath "%~dp0..\dist" --workpath "%ENV%\work" --specpath "%ENV%" ^
   server.py || goto :fail
 

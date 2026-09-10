@@ -241,12 +241,15 @@ let SAVED_THEMES = [];
 
 function captureLook() {
   const ly = CONFIG.lyrics || {}, q = CONFIG.queue || {}, cp = CONFIG.captions || {};
+  // A look is how the window looks, not where it sits or how it behaves:
+  // applying one must never move the window or bring back its title bar.
+  const { x, y, borderless, topmost, ...npLook } = CONFIG.nowplaying;
   return {
-    nowplaying: CONFIG.nowplaying,
+    nowplaying: npLook,
     ui: CONFIG.ui,
-    lyrics:   { colors: ly.colors, bg_own: ly.bg_own, bg: ly.bg, follow_theme: ly.follow_theme },
-    queue:    { colors: q.colors,  bg_own: q.bg_own,  bg: q.bg,  follow_theme: q.follow_theme },
-    captions: { colors: cp.colors, bg_own: cp.bg_own, bg: cp.bg, follow_theme: cp.follow_theme },
+    lyrics:   { colors: ly.colors, bg_own: ly.bg_own, bg: ly.bg, follow_theme: ly.follow_theme, font: ly.font },
+    queue:    { colors: q.colors,  bg_own: q.bg_own,  bg: q.bg,  follow_theme: q.follow_theme,  font: q.font },
+    captions: { colors: cp.colors, bg_own: cp.bg_own, bg: cp.bg, follow_theme: cp.follow_theme, font: cp.font },
   };
 }
 
@@ -389,6 +392,29 @@ function applyUi(ui) {
    chooses between them, so this needs no switcher of its own. */
 
 
+/* The anchor grid, drawn rather than typed: arrow glyphs measured a pixel or
+   so low in their buttons, while one arrow turned about its own center is
+   centered in every direction. `deg` turns the right-pointing arrow; null is
+   the center dot. */
+const ANCHORS = [
+  ['tl', 'Top left', 225], ['tc', 'Top center', 270], ['tr', 'Top right', 315],
+  ['ml', 'Middle left', 180], ['mc', 'Center', null], ['mr', 'Middle right', 0],
+  ['bl', 'Bottom left', 135], ['bc', 'Bottom center', 90], ['br', 'Bottom right', 45],
+];
+const anchorIcon = (deg) => deg === null
+  ? '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6" fill="currentColor"/></svg>'
+  : `<svg viewBox="0 0 16 16" aria-hidden="true" style="transform:rotate(${deg}deg)"><path d="M4 8h8M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+/* Lining the buttons up with the bar or the cover means nothing until they
+   have a place on the grid, so that first choice also puts them centered
+   just below - where they look most at home. */
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-np="controls.relative_to"] button');
+  if (!b || b.dataset.v === 'window') return;
+  const c = ((CONFIG || {}).nowplaying || {}).controls || {};
+  if (!c.anchor) { saveNp({ 'controls.anchor': 'bc' }); syncControls(); }
+});
+
 function controlEditorHTML(t) {
   const a = t.attr, o = t.out;
   const D = (k) => `data-${a}="controls.${k}"`;
@@ -410,22 +436,36 @@ function controlEditorHTML(t) {
       </div>
     </label>
 
+    ${t.key === 'np' ? `
+    <label class="field">
+      <span>Line the buttons up with</span>
+      <div class="segmented small" ${D('relative_to')} data-kind="seg">
+        <button type="button" data-v="window">The whole window</button>
+        <button type="button" data-v="progress">The progress bar</button>
+        <button type="button" data-v="art">The album art</button>
+      </div>
+      <span class="hint">Centered buttons usually look best lined up with the progress bar or
+        the cover rather than the whole card. With the bar, top and bottom mean just above and
+        just below it; with the cover, every position is inside it.</span>
+    </label>` : ''}
+
     <label class="field">
       <span>Where the buttons sit</span>
-      <div class="segmented small anchor-grid" ${D('anchor')} data-kind="seg"
-           style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;width:max-content">
-        <button type="button" data-v="tl" title="Top left">&#8598;</button>
-        <button type="button" data-v="tc" title="Top center">&#8593;</button>
-        <button type="button" data-v="tr" title="Top right">&#8599;</button>
-        <button type="button" data-v="ml" title="Middle left">&#8592;</button>
-        <button type="button" data-v="mc" title="Center">&#9679;</button>
-        <button type="button" data-v="mr" title="Middle right">&#8594;</button>
-        <button type="button" data-v="bl" title="Bottom left">&#8601;</button>
-        <span class="anchor-gap" aria-hidden="true"></span>
-        <button type="button" data-v="br" title="Bottom right">&#8600;</button>
+      <div class="segmented small anchor-grid" ${D('anchor')} data-kind="seg">
+        ${ANCHORS.map(([v, title, deg]) =>
+          `<button type="button" data-v="${v}" title="${title}" aria-label="${title}">${anchorIcon(deg)}</button>`).join('')}
       </div>
-      <span class="hint">Pick a corner or edge for the transport buttons. Leave it untouched
-        to keep the classic placement. Drag the buttons on the window to nudge them from there.</span>
+      <span class="hint">Pick a corner or an edge for the transport buttons, or leave it
+        untouched to keep the classic placement.</span>
+    </label>
+
+    <label class="field">
+      <span>Nudge sideways <b class="mono" ${O('offset.x')}>0</b> px</span>
+      <input class="range" type="range" min="-150" max="150" ${D('offset.x')} data-kind="range" ${O('offset.x')}>
+    </label>
+    <label class="field">
+      <span>Nudge up or down <b class="mono" ${O('offset.y')}>0</b> px</span>
+      <input class="range" type="range" min="-150" max="150" ${D('offset.y')} data-kind="range" ${O('offset.y')}>
     </label>
 
     <div class="row gap wrap">
@@ -1423,10 +1463,115 @@ const FONTS = ['Segoe UI', 'Segoe UI Variable Display', 'Arial', 'Arial Black',
   'Palatino Linotype', 'Rockwell', 'Sitka Display', 'Tahoma', 'Times New Roman',
   'Trebuchet MS', 'Verdana'];
 
+/* Fonts people add themselves: families from the broadcast, files from
+   /api/fonts. Every font menu offers them first, and the windows that can
+   inherit Now Playing's font offer that as their first choice. */
+let USER_FONTS = [];
+let FONT_FILES = [];
+const FONT_EXT = /\.(ttf|otf|woff2?)$/i;
+const byName = (a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0);
+const familiesOf = (files) => [...new Set(files.map((f) => f.family))].sort(byName);
+
+function fontOptions(inherit) {
+  const opt = (f) => `<option value="${esc(f)}" style="font-family:'${esc(f)}'">${esc(f)}</option>`;
+  let html = inherit ? '<option value="">Same as Now Playing</option>' : '';
+  if (USER_FONTS.length) html += `<optgroup label="Your fonts">${USER_FONTS.map(opt).join('')}</optgroup>`;
+  return html + `<optgroup label="Windows fonts">${FONTS.map(opt).join('')}</optgroup>`;
+}
+
 function fillFonts() {
-  const html = FONTS.map((f) => `<option value="${esc(f)}" style="font-family:'${esc(f)}'">${esc(f)}</option>`).join('');
-  $('fontPick').innerHTML = html;
-  $('uiFontPick').innerHTML = html;
+  document.querySelectorAll('select.font-select').forEach((sel) => {
+    const keep = sel.value;
+    sel.innerHTML = fontOptions(sel.dataset.inherit === '1');
+    writeControl(sel, 'str', keep);
+  });
+  // One chip per added family, under every font menu, each able to remove it.
+  const html = USER_FONTS.map((fam) =>
+    `<span class="font-chip" style="font-family:'${esc(fam)}', var(--font)">${esc(fam)}` +
+    `<button type="button" class="font-chip-x" data-font-del="${esc(fam)}" title="Remove ${esc(fam)}" aria-label="Remove ${esc(fam)}"></button></span>`).join('');
+  document.querySelectorAll('.font-chips').forEach((el) => { el.innerHTML = html; el.hidden = !html; });
+}
+
+function readDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* Add font files; the menu the button sat next to switches to the new one. */
+async function addFonts(files, target) {
+  let added = null;
+  for (const file of files.filter((f) => FONT_EXT.test(f.name))) {
+    let data;
+    try { data = await readDataURL(file); } catch (_) { toast('Could not read ' + file.name); continue; }
+    const res = await post('/api/fonts/upload', { name: file.name, data });
+    if (!res || !res.ok) { toast((res && res.reason) || 'Could not add that font'); continue; }
+    FONT_FILES = res.fonts || FONT_FILES;
+    added = res.family;
+  }
+  if (!added) return false;
+  USER_FONTS = familiesOf(FONT_FILES);
+  fillFonts();
+  if (target) {
+    target.value = added;
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  toast(`Added “${added}” — it's in every Font menu now`);
+  return true;
+}
+
+async function removeFontFamily(fam) {
+  const files = FONT_FILES.filter((f) => f.family === fam);
+  if (!files.length) return;
+  if (!confirm(`Remove the font “${fam}”? Anything using it goes back to the default font.`)) return;
+  let res = null;
+  for (const f of files) res = await post('/api/fonts/delete', { id: f.id });
+  FONT_FILES = (res && res.fonts) || FONT_FILES.filter((f) => f.family !== fam);
+  USER_FONTS = familiesOf(FONT_FILES);
+  fillFonts();
+}
+
+let fontAddTarget = null;
+document.addEventListener('click', (e) => {
+  const add = e.target.closest('.font-add');
+  if (add) {
+    fontAddTarget = add.closest('.field').querySelector('select.font-select');
+    $('fontFile').click();
+    return;
+  }
+  const del = e.target.closest('[data-font-del]');
+  if (del) removeFontFamily(del.dataset.fontDel);
+});
+$('fontFile').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  await addFonts(files, fontAddTarget);
+  fontAddTarget = null;
+});
+
+/* Font files dropped anywhere on the deck are added; anything else dropped
+   outside the preview is swallowed rather than opening the file in place of
+   the app. */
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const files = [...(e.dataTransfer?.files || [])].filter((f) => FONT_EXT.test(f.name));
+  if (files.length) addFonts(files, null);
+});
+
+/* The broadcast carries the families and a version: reload the sheet, and
+   refresh the menus when the set itself changed (another window added one). */
+function syncFontsState(state) {
+  syncUserFonts(state.fonts_v);
+  const fams = state.fonts || [];
+  if (fams.join('\n') === USER_FONTS.join('\n')) return;
+  USER_FONTS = fams.slice();
+  fetch('/api/fonts').then((r) => r.json())
+    .then((d) => { FONT_FILES = d.fonts || []; fillFonts(); })
+    .catch(() => fillFonts());
 }
 
 function readControl(node, kind) {
@@ -1443,7 +1588,14 @@ function writeControl(node, kind, value) {
   if (kind === 'bool') node.checked = !!value;
   else if (kind === 'range') node.value = String(Math.round((value ?? 0) * div));
   else if (kind === 'color') node.value = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#000000';
-  else node.value = value ?? '';
+  else {
+    // A menu whose saved choice is not on offer any more (a removed font, an
+    // unplugged microphone) says so, instead of silently showing another one.
+    if (node.tagName === 'SELECT' && value && ![...node.options].some((o) => o.value === value)) {
+      node.add(new Option(`${value} (not available)`, value));
+    }
+    node.value = value ?? '';
+  }
 }
 
 function showOut(scope, key, node) {
@@ -1487,7 +1639,10 @@ function bindControls() {
       return;
     }
 
-    const event = (kind === 'range' || node.type === 'color' || node.type === 'text') ? 'input' : 'change';
+    // data-commit="change" saves a text field once, when you are done with it,
+    // for settings where every keystroke would restart something.
+    const event = node.dataset.commit ||
+      ((kind === 'range' || node.type === 'color' || node.type === 'text') ? 'input' : 'change');
     node.addEventListener(event, () => {
       if (kind === 'range') showOut(scope.out, path, node);
       save({ [path]: readControl(node, kind) });
@@ -1916,7 +2071,11 @@ $('stickerAdd').addEventListener('click', () => openPicker('sticker'));
     stage.classList.remove('dragover');
   }));
   stage.addEventListener('drop', async (e) => {
-    const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith('image/'));
+    const dropped = [...(e.dataTransfer?.files || [])];
+    // A font dropped here is added like anywhere else on the deck.
+    const fontFiles = dropped.filter((f) => FONT_EXT.test(f.name));
+    if (fontFiles.length) { addFonts(fontFiles, null); return; }
+    const files = dropped.filter((f) => f.type.startsWith('image/'));
     if (!files.length) return;
     const rect = previewFrame.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 100;
@@ -2484,7 +2643,8 @@ function syncWindows(state) {
     if (!s) return;
     setOpen(!!s.open);
     // Someone stretched the real window: keep the deck and preview honest.
-    if (s.open && s.rect && cfg && (s.rect.w !== cfg.width || s.rect.h !== cfg.height)) {
+    // A minimized window reports where Windows parks it, not its size.
+    if (s.open && !s.minimized && s.rect && cfg && (s.rect.w !== cfg.width || s.rect.h !== cfg.height)) {
       cfg.width = s.rect.w;
       cfg.height = s.rect.h;
       if (document.activeElement !== $(wId)) $(wId).value = s.rect.w;
@@ -2648,27 +2808,96 @@ $('capSnap').addEventListener('click', (e) => {
 
 /* The microphone itself: one Start/Stop button, and a status line that says
    what the listener is doing, so "nothing is showing up" always has a reason
-   next to it - starting, no audio arriving, no speech pack installed. */
+   next to it - loading, no audio arriving, the model still to download. */
 let capState = null;
+let capModels = null;
 let capBusy = false;
+
+const capCfg = () => (CONFIG && CONFIG.captions) || {};
+const capEngine = () => (capCfg().engine === 'windows' ? 'windows' : 'whisper');
+const capModelName = () => capCfg().model || 'base.en';
+const megabytes = (bytes) => Math.round(bytes / 1e6);
+
+/* Whisper needs its model first. Until it is on disk the main button offers
+   the download, rather than a Start that could only fail. */
+function capNeedsModel() {
+  const m = capModels && capModels[capModelName()];
+  return capEngine() === 'whisper' && !!m && !m.ready;
+}
+
+function paintCaptionModels(models) {
+  if (!models) return;
+  capModels = models;
+  const sel = $('capModel');
+  const want = capModelName();
+  const opts = Object.entries(models).map(([name, m]) =>
+    `<option value="${esc(name)}">${esc(m.label)} — ${esc(m.note)} (${m.approx_mb} MB)${m.ready ? ' ✓' : ''}</option>`).join('');
+  if (sel.dataset.sig !== opts) {
+    sel.dataset.sig = opts;
+    sel.innerHTML = opts;
+    writeControl(sel, 'str', want);
+  }
+  $('capModelField').hidden = capEngine() !== 'whisper';
+
+  const m = models[want] || {};
+  const btn = $('capModelBtn'), bar = $('capProgress'), hint = $('capModelHint');
+  bar.hidden = !m.downloading;
+  if (m.downloading) {
+    const pct = m.total ? Math.floor((100 * m.done) / m.total) : 0;
+    bar.firstElementChild.style.width = pct + '%';
+    btn.textContent = 'Cancel';
+    btn.dataset.act = 'cancel';
+    hint.textContent = m.total ? `Downloading… ${megabytes(m.done)} of ${megabytes(m.total)} MB` : 'Starting the download…';
+  } else if (m.ready) {
+    btn.textContent = 'Remove';
+    btn.dataset.act = 'remove';
+    hint.textContent = 'Downloaded — runs offline on this PC.';
+  } else {
+    btn.textContent = `Download (${m.approx_mb || '?'} MB)`;
+    btn.dataset.act = 'download';
+    hint.textContent = m.error || 'A one-time download from Hugging Face; after that it works offline.';
+  }
+  hint.classList.toggle('warn', !!m.error && !m.downloading);
+}
+
+function capModelAction(act) {
+  if (act === 'remove' && !confirm('Remove this Whisper model? You can download it again any time.')) return;
+  post('/api/captions/model/' + act, { name: capModelName() }).then((r) => {
+    if (r && r.models) paintCaptionModels(r.models);
+    if (r && r.ok === false && r.reason) toast(r.reason);
+  });
+}
+$('capModelBtn').addEventListener('click', () => capModelAction($('capModelBtn').dataset.act || 'download'));
 
 function paintCaptions(c) {
   if (!c) return;
   capState = c;
   const btn = $('capMic'), pill = $('capState');
   const on = !!c.on;
-  if (!capBusy) btn.textContent = on ? 'Stop listening' : 'Start listening';
+  const need = !on && capNeedsModel();
+  const m = need ? capModels[capModelName()] : null;
+  if (!capBusy) {
+    btn.textContent = on ? 'Stop listening'
+      : need ? (m.downloading ? 'Downloading Whisper…' : `Download Whisper (${m.approx_mb} MB)`)
+      : 'Start listening';
+    btn.disabled = !!(need && m.downloading);
+  }
   btn.classList.toggle('btn-primary', !on);
   btn.classList.toggle('btn-ghost', on);
 
   let text = 'Off', tone = 'off';
-  if (on && c.state === 'starting') { text = 'Starting…'; tone = 'wait'; }
+  if (on && c.state === 'starting') { text = c.engine === 'whisper' ? 'Loading Whisper…' : 'Starting…'; tone = 'wait'; }
   else if (on && c.state === 'unavailable') { text = c.error || 'Not available'; tone = 'bad'; }
   else if (on && c.audio === 'speech') { text = 'Hearing you'; tone = 'good'; }
   else if (on && c.audio === 'stopped') { text = 'Listening, but no sound is arriving from the microphone'; tone = 'warn'; }
   else if (on) { text = 'Listening'; tone = 'good'; }
   pill.textContent = text;
   pill.dataset.tone = tone;
+
+  // The level meter: proof the right microphone is live. Whisper reports it.
+  const meter = $('capMeter');
+  meter.hidden = !(on && c.state === 'listening' && c.engine === 'whisper');
+  meter.firstElementChild.style.width = Math.round((c.level || 0) * 100) + '%';
 
   // The latest thing heard, so you can check the microphone without opening
   // the window - and see when it mishears you.
@@ -2678,6 +2907,7 @@ function paintCaptions(c) {
 
 $('capMic').addEventListener('click', () => {
   const on = !!(capState && capState.on);
+  if (!on && capNeedsModel()) { capModelAction('download'); return; }
   capBusy = true;
   $('capMic').disabled = true;
   $('capMic').textContent = on ? 'Stopping…' : 'Starting…';
@@ -2688,6 +2918,22 @@ $('capMic').addEventListener('click', () => {
     else toast('Could not reach the deck');
   });
 });
+
+/* Microphones: listed at load and again whenever the deck regains focus, so
+   one plugged in meanwhile shows up. */
+function loadMics() {
+  fetch('/api/captions/mics').then((r) => r.json()).then((d) => {
+    const sel = $('capMicPick');
+    const opts = '<option value="">Windows default microphone</option>' +
+      (d.mics || []).map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    if (sel.dataset.sig === opts) return;
+    sel.dataset.sig = opts;
+    sel.innerHTML = opts;
+    writeControl(sel, 'str', capCfg().mic || '');
+  }).catch(() => {});
+}
+loadMics();
+window.addEventListener('focus', loadMics);
 
 /* ------------------------------------------------------------- queue window */
 
@@ -2798,7 +3044,9 @@ function paintSpotify(state) {
   paintSpotifyDevices(state.spotify_devices);
   syncWindows(state);
   paintLyricsInfo(state);
+  paintCaptionModels(state.captions_models);
   paintCaptions(state.captions);
+  syncFontsState(state);
   if (acc.connected && spWaiting) {
     spWaiting = false;
     $('spPending2').hidden = true;
@@ -3075,7 +3323,7 @@ $('controlEditors').addEventListener('click', (e) => {
   if (!btn) return;
   const ed = btn.closest('.control-editor');
   const t = ed && CONTROL_TARGETS.find((x) => x.key === ed.dataset.ctl);
-  if (t) { t.save({ 'controls.offset': { x: 0, y: 0 } }); toast('Buttons recenterd'); }
+  if (t) { t.save({ 'controls.offset': { x: 0, y: 0 } }); syncControls(); toast('Buttons recentered'); }
 });
 
 fillFonts();

@@ -34,6 +34,9 @@ import tags
 import winwin
 from smtc import MediaBridge
 from captions import CaptionBridge
+from captions_whisper import list_microphones
+import fonts
+import models
 
 import paths
 
@@ -112,6 +115,7 @@ DEFAULT_CONFIG = {
         "use_account": True,         # prefer the account over the Windows bridge when both know a track
     },
     "queue": {
+        "font": "",                  # "" = the Now Playing font
         "width": 420, "height": 320, "x": 60, "y": 300,
         "borderless": True,
         "topmost": True,
@@ -163,6 +167,11 @@ DEFAULT_CONFIG = {
     },
     "captions": {
         "enabled": False,            # listen on launch; off until you press Start
+        "engine": "whisper",         # whisper (accurate) | windows (built-in, no download)
+        "model": "base.en",          # which Whisper model, once downloaded
+        "mic": "",                   # "" = the Windows default microphone
+        "words": "",                 # names and terms to expect, comma separated
+        "font": "",                  # "" = the Now Playing font
         "width": 900, "height": 200, "x": 120, "y": 780,
         "borderless": True,
         "topmost": True,
@@ -184,6 +193,7 @@ DEFAULT_CONFIG = {
         },
     },
     "lyrics": {
+        "font": "",                  # "" = the Now Playing font
         "online": True,              # ask lrclib.net when no .lrc file exists
         "width": 560, "height": 320, "x": 120, "y": 420,
         "borderless": True,
@@ -339,6 +349,7 @@ DEFAULT_CONFIG = {
             "shape": "round",        # round | square | bare
             "anchor": "",            # tl tc tr ml mc mr bl br; "" = legacy place/align
             "offset": {"x": 0, "y": 0},   # px fine-tune from the anchor
+            "relative_to": "window",     # window | progress | art: what the anchor grid is measured from
         },
         "label": {"show": True, "text": "NOW PLAYING"},
         "surround": {
@@ -612,6 +623,23 @@ class Library:
 LIBRARY = Library()
 BRIDGE = MediaBridge()
 CAPTIONS = CaptionBridge()
+MODEL_STORE = models.ModelStore(os.path.join(CACHE, "models"))
+FONT_STORE = fonts.FontStore(os.path.join(CACHE, "fonts"))
+
+
+def captions_settings():
+    """What the caption engine needs from the config, resolved: which engine,
+    the model folder if it is on disk, the microphone, the expected words."""
+    c = CONFIG.get("captions", {})
+    engine = c.get("engine") if c.get("engine") in ("whisper", "windows") else "whisper"
+    name = c.get("model") if c.get("model") in models.MODELS else models.DEFAULT
+    return {"engine": engine, "model": name, "model_dir": MODEL_STORE.path(name),
+            "mic": c.get("mic") or "", "words": c.get("words") or "",
+            "label": f"Whisper {name}" if engine == "whisper" else "Windows speech"}
+
+
+# A model arriving (or going) changes what a running session can use.
+MODEL_STORE.on_change = lambda _name: CAPTIONS.configure(captions_settings())
 
 
 # ================================================================= assets
@@ -975,6 +1003,11 @@ class Hub:
             # What the microphone is hearing, for the captions window and the
             # deck's status line. A cached read; the helper does the listening.
             "captions": CAPTIONS.get(),
+            "captions_models": MODEL_STORE.status(),
+            # Fonts people added: the families for the pickers, and a version
+            # every page watches to reload /fonts.css when the set changes.
+            "fonts": FONT_STORE.families(),
+            "fonts_v": FONT_STORE.version,
             "nowplaying": CONFIG["nowplaying"],
             "lyrics_cfg": CONFIG.get("lyrics", {}),
             "queue_cfg": CONFIG.get("queue", {}),
@@ -1111,7 +1144,8 @@ def window_action(ov, cfg, page, action, data):
         status = ov.status()
         if not status["open"]:
             return {"ok": False, "reason": "window not open"}
-        rect = status["rect"] or {"w": cfg["width"], "h": cfg["height"]}
+        # Snap by the window's real footprint, frame included when it has one.
+        rect = status.get("outer") or status["rect"] or {"w": cfg["width"], "h": cfg["height"]}
         sw, sh = winwin.screen_size()
         margin, corner = 32, data.get("corner", "tl")
         x = margin if corner in ("tl", "bl") else sw - rect["w"] - margin
@@ -1233,6 +1267,24 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj), "application/json")
 
+    def _trusted(self):
+        """Only this machine's own pages may use the server.
+
+        It listens on 127.0.0.1 alone, but any web page open in any browser
+        can still send requests to 127.0.0.1 - and a DNS name pointed at
+        127.0.0.1 makes them same-origin. So the Host must be this server by
+        its own name (which defeats DNS rebinding), and an Origin, when a
+        browser sends one, must be ours (which stops another site's page
+        from posting here - opening the microphone, say, or quitting).
+        Requests from tools that send no Origin, like curl, still work.
+        """
+        port = CONFIG.get("port", 8713)
+        ours = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        if (self.headers.get("Host") or "").strip().lower() not in ours:
+            return False
+        origin = self.headers.get("Origin")
+        return not origin or origin.strip().lower() in {f"http://{h}" for h in ours}
+
     def _body(self):
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -1324,6 +1376,8 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
+        if not self._trusted():
+            return self.send_error(403, "Forbidden")
         url = urlparse(self.path)
         path = url.path
         query = parse_qs(url.query)
@@ -1439,6 +1493,39 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/captions/window/status":
             return self._json(CAPTIONS_WIN.status())
 
+        if path == "/api/captions/mics":
+            return self._json({"mics": list_microphones()})
+
+        if path == "/api/fonts":
+            return self._json({"fonts": FONT_STORE.list()})
+
+        if path == "/fonts.css":
+            # Every page links this; it changes whenever a font is added or
+            # removed, so it is never cached.
+            body = FONT_STORE.css().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if path.startswith("/font/"):
+            full = FONT_STORE.path(path[len("/font/"):])
+            if not full:
+                return self._send(404, "no such font")
+            with open(full, "rb") as f:
+                body = f.read()
+            # Named by its own hash, so a given address never changes content.
+            self.send_response(200)
+            self.send_header("Content-Type", FONT_STORE.mime(full))
+            self.send_header("Cache-Control", "max-age=31536000, immutable")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path == "/api/lyrics":
             now = HUB.snapshot()["now"]
             if not now:
@@ -1492,6 +1579,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- POST --------------------------------------------------------------
 
     def do_POST(self):
+        if not self._trusted():
+            return self.send_error(403, "Forbidden")
         path = urlparse(self.path).path
         data = self._body()
 
@@ -1505,6 +1594,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             _merge_into(CONFIG, data)
             save_config(CONFIG)
+            # A new engine, model, microphone or word list restarts a running
+            # caption session; anything else leaves it alone.
+            CAPTIONS.configure(captions_settings())
             SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
             sur = CONFIG["nowplaying"].get("surround") or {}
             backdrop = sur.get("color", "#000000") if sur.get("mode") == "solid" else "#000000"
@@ -1635,6 +1727,24 @@ class Handler(BaseHTTPRequestHandler):
                              key=lambda t: t.get("updated", 0), reverse=True)
             return self._json({"ok": removed, "themes": ordered})
 
+        if path in ("/api/captions/model/download", "/api/captions/model/cancel",
+                    "/api/captions/model/remove"):
+            # Only ever on a press in the deck: the one download captions need.
+            name = data.get("name") or models.DEFAULT
+            what = path.rsplit("/", 1)[1]
+            res = (MODEL_STORE.download(name) if what == "download" else
+                   MODEL_STORE.cancel(name) if what == "cancel" else
+                   MODEL_STORE.remove(name))
+            HUB.broadcast()
+            return self._json(dict(res, models=MODEL_STORE.status()))
+
+        if path in ("/api/fonts/upload", "/api/fonts/delete"):
+            res = (FONT_STORE.save(data.get("name", "font.ttf"), data.get("data", ""))
+                   if path.endswith("upload") else
+                   {"ok": FONT_STORE.delete(data.get("id", ""))})
+            HUB.broadcast()
+            return self._json(dict(res, fonts=FONT_STORE.list()))
+
         if path in ("/api/captions/start", "/api/captions/stop", "/api/captions/clear"):
             # The microphone is only ever opened on purpose, from here. Start
             # and stop are remembered, so a deck left listening comes back
@@ -1711,6 +1821,7 @@ def main():
     BRIDGE.start()
     SPOTIFY.start()
     # The microphone is opened only if captions were left on last time.
+    CAPTIONS.configure(captions_settings())
     if CONFIG.get("captions", {}).get("enabled"):
         CAPTIONS.start()
     threading.Thread(target=_pump, daemon=True).start()

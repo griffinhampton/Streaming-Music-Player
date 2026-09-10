@@ -1,0 +1,19 @@
+/* The pop-outs' window buttons draw their symbols instead of typing them.
+
+   A "−" or "×" glyph sits wherever its font puts it - measured at 2 to 8 px
+   off center in these buttons - while bars crossing at the exact middle are
+   centered at any size, in any font. The glyph stays in the markup, so the
+   buttons still read as "minus" and "times" to a screen reader. Loaded after
+   each window's own stylesheet, next to the windowctl.js they all share. */
+
+.winbtn { color: transparent !important; overflow: hidden; }
+.winbtn::before, .winbtn::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 46%; height: 2px; border-radius: 1px;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.winbtn.close::before { transform: translate(-50%, -50%) rotate(45deg); }
+.winbtn.close::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+.winbtn.min::after { display: none; }

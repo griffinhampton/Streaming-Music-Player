@@ -34,8 +34,12 @@ jobs:
           # 3.13 works locally but 3.12 is the safer floor for PyInstaller, and
           # the app itself needs nothing newer - it is standard library only.
 
-      - name: Install PyInstaller
-        run: python -m pip install --disable-pip-version-check pyinstaller==6.22.2
+      - name: Install PyInstaller and the captions engine
+        # requirements.txt is only the Whisper captions stack; the rest of the
+        # app is standard library.
+        run: |
+          python -m pip install --disable-pip-version-check pyinstaller==6.22.2
+          python -m pip install --disable-pip-version-check -r music-deck/requirements.txt
 
       - name: Check it at least parses
         # No test suite yet, so this is the honest minimum: every module
@@ -69,6 +73,8 @@ jobs:
             --add-data "$PWD\music-deck.ico;." `
             --hidden-import tkinter --hidden-import tkinter.filedialog `
             --hidden-import tkinter.messagebox `
+            --collect-binaries ctranslate2 --collect-data faster_whisper `
+            --exclude-module av --exclude-module hf_xet `
             --distpath ../dist --workpath ../build --specpath ../build `
             server.py
 
