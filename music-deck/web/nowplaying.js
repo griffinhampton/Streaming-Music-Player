@@ -53,7 +53,7 @@ const ART_KEYS = new Set(['--accent', '--on-accent', '--title-color', '--artist-
 let artPaintedFor = '';     // the art url the card background currently shows
 
 /* Use the album art as the card's own background, and pull readable text and
-   accent colours out of it. Runs when the mode is switched on and again on
+   accent colors out of it. Runs when the mode is switched on and again on
    every track change, since the art - and therefore the whole look - changes
    with the song. */
 function paintArtBackground() {
@@ -73,7 +73,7 @@ function paintArtBackground() {
   paletteForUrl(lastArtUrl, url).then((th) => {
     if (!th || !artMode) return;
     const set = (k, v) => el.stage.style.setProperty(k, v);
-    // The colours palette.js derives are guaranteed readable on th.bg. So make
+    // The colors palette.js derives are guaranteed readable on th.bg. So make
     // the veil BE th.bg, darkened by exactly the amount it worked out the
     // worst patch of this cover needs - then the same text stays legible over
     // any album, bright or dark, without a per-cover fiddle.
@@ -122,12 +122,12 @@ function applyDesign(np) {
 
   const accent = np.accent || '#8b5cf6';
   const pal = np.palette || {};
-  // Blank means "inherit from the palette", which is what makes one colour
+  // Blank means "inherit from the palette", which is what makes one color
   // change ripple through the whole design.
   const TEXT = pal.text || '#f4f4f8';
   const MUTED = pal.muted || '#9a9aa8';
   const LINE = pal.line || '#2a2a3a';
-  // In album-art mode the cover supplies accent and text colours (paintArt
+  // In album-art mode the cover supplies accent and text colors (paintArt
   // Background sets them per track); everything else still comes from here.
   const artOwns = (np.bg || {}).mode === 'art';
   const set = (k, v) => { if (!(artOwns && ART_KEYS.has(k))) s.style.setProperty(k, v); };
@@ -162,7 +162,7 @@ function applyDesign(np) {
 
   // Background: solid, gradient, a dropped-in image, generated artwork, or the
   // album art itself - on the whole window, or inside the card with a flat
-  // colour around it.
+  // color around it.
   const sur = np.surround || {};
   const surround = sur.mode === 'solid';
   s.classList.toggle('surround', surround);
@@ -252,9 +252,9 @@ function renderStickers(list) {
       node.innerHTML = items.map((st) => {
         const url = `/asset/${encodeURIComponent(st.asset)}`;
         if (st.tint && st.color) {
-          // A dropped-in picture keeps its own colours as an <img>. Painting it
-          // through a mask instead lets it take one colour, like the built-in
-          // motifs - the shape survives, the original colours do not. A mask
+          // A dropped-in picture keeps its own colors as an <img>. Painting it
+          // through a mask instead lets it take one color, like the built-in
+          // motifs - the shape survives, the original colors do not. A mask
           // only ever uses the first frame, so tinting freezes an animation.
           return `<div class="sticker sticker-tinted" style="${geometry(st)}
             background-color:${st.color};
@@ -270,7 +270,7 @@ function renderStickers(list) {
   }
 
   // Same stickers as last time: move them, do not remake them. Only the
-  // geometry can have changed - the key above pins the asset, tint, colour and
+  // geometry can have changed - the key above pins the asset, tint, color and
   // ratio - so write those properties and leave the rest of the declaration
   // alone rather than re-serialising it all through cssText.
   const move = (node, items) => {
@@ -450,18 +450,6 @@ window.addEventListener('message', (e) => {
 
 /* ------------------------------------------------------------- window */
 
-function reportMetrics() {
-  if (PREVIEW) return;
-  fetch('/api/window/metrics', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      inner_w: window.innerWidth,
-      inner_h: window.innerHeight,
-      dpr: window.devicePixelRatio,
-    }),
-  }).catch(() => {});
-}
-
 /* Clicking the bar seeks. It sits above the drag handler and swallows its own
    pointer events, so the rest of the window still drags normally. */
 function wireSeeking() {
@@ -501,91 +489,19 @@ function interactive() {
 
 wireTransport(el.transport, interactive);
 
-/* No title bar means dragging is the only way to move it: forward pointer
-   deltas to the server, which calls SetWindowPos on the host window. */
+/* No title bar means dragging is the only way to move it: windowctl.js
+   forwards pointer deltas to the server, which drives the host window. */
 if (!PREVIEW) {
   wireSeeking();
-  let dragging = false, pending = { dx: 0, dy: 0 }, last = null, flushTimer = null;
-
-  const flush = () => {
-    if (!pending.dx && !pending.dy) return;
-    const body = JSON.stringify(pending);
-    pending = { dx: 0, dy: 0 };
-    fetch('/api/window/nudge', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-    }).catch(() => {});
-  };
-
-  el.stage.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.close') || e.button !== 0) return;
-    dragging = true;
-    last = { x: e.screenX, y: e.screenY };
-    el.stage.setPointerCapture(e.pointerId);
-    flushTimer = setInterval(flush, 40);
-  });
-  el.stage.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    pending.dx += e.screenX - last.x;
-    pending.dy += e.screenY - last.y;
-    last = { x: e.screenX, y: e.screenY };
-  });
-  const endDrag = (e) => {
-    if (!dragging) return;
-    dragging = false;
-    clearInterval(flushTimer);
-    flush();
-    try { el.stage.releasePointerCapture(e.pointerId); } catch (_) {}
-  };
-  el.stage.addEventListener('pointerup', endDrag);
-  el.stage.addEventListener('pointercancel', endDrag);
-
-  el.close.addEventListener('click', () => {
-    fetch('/api/window/close', { method: 'POST' }).catch(() => {});
-    setTimeout(() => window.close(), 200);
-  });
-
-  /* Resize grip: same idea as dragging, but the deltas go to the resize
-     endpoint, which grows the host window and the Chrome child together. */
-  const grip = document.getElementById('grip');
-  let sizing = false, sizePending = { dw: 0, dh: 0 }, sizeLast = null, sizeTimer = null;
-  const flushSize = () => {
-    if (!sizePending.dw && !sizePending.dh) return;
-    const body = JSON.stringify(sizePending);
-    sizePending = { dw: 0, dh: 0 };
-    fetch('/api/window/resize', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-    }).catch(() => {});
-  };
-  grip.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    sizing = true;
-    sizeLast = { x: e.screenX, y: e.screenY };
-    grip.setPointerCapture(e.pointerId);
-    sizeTimer = setInterval(flushSize, 40);
-  });
-  grip.addEventListener('pointermove', (e) => {
-    if (!sizing) return;
-    sizePending.dw += e.screenX - sizeLast.x;
-    sizePending.dh += e.screenY - sizeLast.y;
-    sizeLast = { x: e.screenX, y: e.screenY };
-  });
-  const endSize = (e) => {
-    if (!sizing) return;
-    sizing = false;
-    clearInterval(sizeTimer);
-    flushSize();
-    try { grip.releasePointerCapture(e.pointerId); } catch (_) {}
-  };
-  grip.addEventListener('pointerup', endSize);
-  grip.addEventListener('pointercancel', endSize);
+  attachWindowControls({ stage: el.stage, close: el.close, api: '/api/window' });
+  reportWindowMetrics('/api/window');
 }
 
 /* ------------------------------------------------------------- boot */
 
 window.addEventListener('resize', () => {
   refreshLayout();
-  reportMetrics();
+  if (!PREVIEW) reportWindowMetrics('/api/window');
 });
 
 fetch('/api/state')
@@ -594,6 +510,6 @@ fetch('/api/state')
   .catch(() => {});
 
 connect();
-reportMetrics();
+if (!PREVIEW) reportWindowMetrics('/api/window');
 requestAnimationFrame(tick);
 setInterval(measureMarquee, 4000);

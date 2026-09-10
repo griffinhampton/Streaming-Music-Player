@@ -2,7 +2,7 @@
 
    Two sliders called "Across" and "Down" are a poor way to decide what part of
    a photograph ends up on stream: you are aiming blind and checking the result
-   somewhere else. This shows the whole picture, greys out everything that will
+   somewhere else. This shows the whole picture, grays out everything that will
    be cropped away, and lets you drag the bright part to where you want it -
    at the exact shape of the window it is going into. */
 
@@ -155,7 +155,7 @@ function applyFramer() {
     framerState.zoom = Math.max(1, +e.target.value / 100);
     layoutFramer();
   });
-  document.getElementById('framerCentre').addEventListener('click', () => {
+  document.getElementById('framerCenter').addEventListener('click', () => {
     if (!framerState) return;
     framerState.x = 50; framerState.y = 50; framerState.zoom = 1;
     document.getElementById('framerZoom').value = '100';

@@ -45,7 +45,8 @@ function renderTransport(host, controls, playing, enabled) {
   const shape = c.shape || 'round';
   const key = [want.join(','), playing ? 1 : 0, shape, c.place || 'card',
                c.align || 'right', c.size ?? 1, c.opacity ?? 0.9,
-               c.hover_only === false ? 1 : 0].join('|');
+               c.hover_only === false ? 1 : 0,
+               c.anchor || '', c.offset?.x || 0, c.offset?.y || 0].join('|');
   if (host.dataset.key === key) return;
   const rebuild = host.dataset.buttons !== want.join(',') + '|' + (playing ? 1 : 0) + '|' + shape;
   host.dataset.key = key;
@@ -61,10 +62,21 @@ function renderTransport(host, controls, playing, enabled) {
     }).join('');
   }
 
-  host.className = 'transport-row place-' + (c.place || 'card') +
-                   ' align-' + (c.align || 'right') +
-                   ' shape-' + (c.shape || 'round') +
-                   (c.hover_only === false ? ' always' : '');
+  // Anchored placement pins the row to a window edge (fixed), independent of
+  // where it sits in the DOM. Legacy place/align stay untouched when unset.
+  const anchor = c.anchor || '';
+  if (anchor) {
+    host.className = 'transport-row anchored shape-' + shape +
+                     ' ay-' + anchor[0] + ' ax-' + anchor[1] +
+                     (c.hover_only === false ? ' always' : '');
+    host.style.setProperty('--t-dx', String((c.offset && c.offset.x) || 0));
+    host.style.setProperty('--t-dy', String((c.offset && c.offset.y) || 0));
+  } else {
+    host.className = 'transport-row place-' + (c.place || 'card') +
+                     ' align-' + (c.align || 'right') +
+                     ' shape-' + shape +
+                     (c.hover_only === false ? ' always' : '');
+  }
   host.style.setProperty('--t-size', String(c.size ?? 1));
   host.style.setProperty('--t-opacity', String(c.opacity ?? 0.9));
 }

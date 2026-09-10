@@ -59,13 +59,17 @@ function applyDesign(np, cfg) {
   const bg = design.bg || {};
   const accent = design.accent || '#8b5cf6';
   const follow = opts.follow_theme !== false;
+  // The window can carry its own colors (blank = inherit Now Playing). These
+  // win regardless of follow_theme, which now only governs the background.
+  const own = opts.colors || {};
+  const uAcc = own.accent || accent;
 
-  set('--accent', accent);
-  set('--on-accent', readableOn(accent));
+  set('--accent', uAcc);
+  set('--on-accent', readableOn(uAcc));
   set('--font', `"${(text.font || 'Segoe UI').replace(/"/g, '')}", "Segoe UI", system-ui, sans-serif`);
   const pal = design.palette || {};
-  set('--fg', text.title_color || pal.text || '#f4f4f8');
-  set('--dim', text.artist_color || pal.muted || '#9a9aa8');
+  set('--fg', own.text || text.title_color || pal.text || '#f4f4f8');
+  set('--dim', own.muted || text.artist_color || pal.muted || '#9a9aa8');
   set('--card-radius', (card.radius ?? 18) + 'px');
   set('--card-fill', follow ? (card.fill || 'transparent') : 'transparent');
   set('--card-border', follow ? (card.border ?? 0) + 'px' : '0px');
@@ -85,7 +89,7 @@ function applyDesign(np, cfg) {
     else applyBackground(s, el.bgImage, bg, set);
     el.bgDim.style.opacity = String(bg.dim ?? 0);
   } else {
-    // This window has a look of its own: a full background, not just a colour.
+    // This window has a look of its own: a full background, not just a color.
     const own = opts.bg_own || { mode: 'solid', color: opts.bg || '#0f0f17' };
     if (surround) applyBackgroundInside(s, el.cardBg, own);
     else applyBackground(s, el.bgImage, own, set);

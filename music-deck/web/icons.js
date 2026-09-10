@@ -3,8 +3,8 @@
    Emoji render differently on every machine and font, and look by turns
    childish and broken; a streamer's overlay should not depend on which emoji
    set Windows shipped that year. These are plain paths on a 24x24 grid,
-   centred, taking `currentColor` so they follow whatever the button's text
-   colour is.
+   centerd, taking `currentColor` so they follow whatever the button's text
+   color is.
 
    Loaded before deck.js and before each window's own script, so `ICONS` and
    `svgIcon()` are available everywhere. */

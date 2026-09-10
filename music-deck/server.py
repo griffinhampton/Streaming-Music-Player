@@ -52,7 +52,7 @@ DEFAULT_CONFIG = {
     "volume": 0.7,
     "ui": {
         "preset": "",                # last app preset applied
-        "follow_np": True,           # take accent and text colours from the pop-out
+        "follow_np": True,           # take accent and text colors from the pop-out
         "accent": "#8b5cf6",
         "bg": "#000000",
         "panel": "#0a0a0c",
@@ -65,7 +65,7 @@ DEFAULT_CONFIG = {
         "glow": False,
         # The same shape as nowplaying.bg, so one editor and one painter
         # serve the app and all three windows. (ui.bg above is the app's flat
-        # background colour, which this sits on top of.)
+        # background color, which this sits on top of.)
         "wallpaper": {
             "mode": "solid",         # solid | gradient | image | scene
             "color": "#000000",
@@ -73,16 +73,16 @@ DEFAULT_CONFIG = {
             "angle": 135,
             "image": "",             # asset id
             "fit": "cover",          # cover | contain | stretch | tile
-            "dim": 0.0,              # veil in the app's own background colour
+            "dim": 0.0,              # veil in the app's own background color
             "blur": 0,
             "pos_x": 50,
             "pos_y": 50,
-            # Recolour the picture into two colours, the way a duotone print
+            # Recolor the picture into two colors, the way a duotone print
             # does: the image keeps its light and shade, you choose the ink.
             "zoom": 1.0,             # 1 = fit exactly; more crops in
             "tint": {
                 "on": False,
-                "c1": "",            # blank = the palette's line colour
+                "c1": "",            # blank = the palette's line color
                 "c2": "",            # blank = the accent
                 "angle": 135,
                 "strength": 1.0,     # 0 leaves the picture alone
@@ -122,9 +122,10 @@ DEFAULT_CONFIG = {
         "show_art": True,
         "show_artist": True,
         "show_times": True,
-        "follow_theme": True,        # colours, font and background from the pop-out
+        "follow_theme": True,        # colors, font and background from the pop-out
         "bg": "#0f0f17",
         "interactive": True,         # click a track to play it
+        "colors": {"text": "", "muted": "", "accent": ""},   # "" = inherit Now Playing
         # Transport buttons drawn inside the window. Off by default, and
         # hidden until the mouse is over it, so they never land on stream.
         "controls": {
@@ -138,17 +139,19 @@ DEFAULT_CONFIG = {
             "size": 1.0,
             "opacity": 0.9,
             "shape": "round",        # round | square | bare
+            "anchor": "",            # tl tc tr ml mc mr bl br; "" = legacy place/align
+            "offset": {"x": 0, "y": 0},   # px fine-tune from the anchor
         },
         "bg_own": {              # used when follow_theme is off
             "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
             "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
             "pos_x": 50, "pos_y": 50,
-            # Recolour the picture into two colours, the way a duotone print
+            # Recolor the picture into two colors, the way a duotone print
             # does: the image keeps its light and shade, you choose the ink.
             "zoom": 1.0,             # 1 = fit exactly; more crops in
             "tint": {
                 "on": False,
-                "c1": "",            # blank = the palette's line colour
+                "c1": "",            # blank = the palette's line color
                 "c2": "",            # blank = the accent
                 "angle": 135,
                 "strength": 1.0,     # 0 leaves the picture alone
@@ -169,9 +172,10 @@ DEFAULT_CONFIG = {
         "dim_past": True,
         "show_header": False,        # song title above the words
         "offset": 0.0,               # seconds; + shows lines earlier
-        "follow_theme": True,        # colours, font and background from the pop-out
+        "follow_theme": True,        # colors, font and background from the pop-out
         "bg": "#0f0f17",             # used when not following the theme
         "interactive": True,         # click a line to jump to it
+        "colors": {"text": "", "muted": "", "accent": ""},   # "" = inherit Now Playing
         # Transport buttons drawn inside the window. Off by default, and
         # hidden until the mouse is over it, so they never land on stream.
         "controls": {
@@ -185,17 +189,19 @@ DEFAULT_CONFIG = {
             "size": 1.0,
             "opacity": 0.9,
             "shape": "round",        # round | square | bare
+            "anchor": "",            # tl tc tr ml mc mr bl br; "" = legacy place/align
+            "offset": {"x": 0, "y": 0},   # px fine-tune from the anchor
         },
         "bg_own": {              # used when follow_theme is off
             "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
             "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
             "pos_x": 50, "pos_y": 50,
-            # Recolour the picture into two colours, the way a duotone print
+            # Recolor the picture into two colors, the way a duotone print
             # does: the image keeps its light and shade, you choose the ink.
             "zoom": 1.0,             # 1 = fit exactly; more crops in
             "tint": {
                 "on": False,
-                "c1": "",            # blank = the palette's line colour
+                "c1": "",            # blank = the palette's line color
                 "c2": "",            # blank = the accent
                 "angle": 135,
                 "strength": 1.0,     # 0 leaves the picture alone
@@ -215,7 +221,7 @@ DEFAULT_CONFIG = {
         "borderless": True,
         "topmost": True,
         "accent": "#8b5cf6",
-        # The four colours everything else inherits from. Any specific colour
+        # The four colors everything else inherits from. Any specific color
         # left blank takes its value from here, so changing one of these
         # restyles the whole pop-out at once.
         "palette": {
@@ -234,19 +240,19 @@ DEFAULT_CONFIG = {
             "blur": 0,
             "pos_x": 50,             # which part of the picture shows, 0-100
             "pos_y": 50,
-            # Recolour the picture into two colours, the way a duotone print
+            # Recolor the picture into two colors, the way a duotone print
             # does: the image keeps its light and shade, you choose the ink.
             "zoom": 1.0,             # 1 = fit exactly; more crops in
             "tint": {
                 "on": False,
-                "c1": "",            # blank = the palette's line colour
+                "c1": "",            # blank = the palette's line color
                 "c2": "",            # blank = the accent
                 "angle": 135,
                 "strength": 1.0,     # 0 leaves the picture alone
             },
             "scene": {               # generated artwork, see web/scenes.js
                 "id": "",            # watercolor | sakura | doodle | moon | embers
-                "c1": "", "c2": "", "c3": "",   # blank = the scene's own colours
+                "c1": "", "c2": "", "c3": "",   # blank = the scene's own colors
                 "scale": 1.0,        # motif size
                 "density": 1.0,      # how many motifs
                 "tile_scale": 1.0,   # how big each repeating tile is
@@ -308,10 +314,12 @@ DEFAULT_CONFIG = {
             "size": 1.0,
             "opacity": 0.9,
             "shape": "round",        # round | square | bare
+            "anchor": "",            # tl tc tr ml mc mr bl br; "" = legacy place/align
+            "offset": {"x": 0, "y": 0},   # px fine-tune from the anchor
         },
         "label": {"show": True, "text": "NOW PLAYING"},
         "surround": {
-            "mode": "solid",         # solid = one colour around the card | theme = the background
+            "mode": "solid",         # solid = one color around the card | theme = the background
             "color": "#000000",      # black so the window melts into a black stream canvas
         },
         "decor": {
@@ -327,7 +335,7 @@ DEFAULT_CONFIG = {
             "layer": "under",        # under = watermark behind the card
             "blur": 0,               # soften it into a shadow
             "inset": 1.0,            # how far the card steps in from the frame (0-1)
-            "tint": True,            # recolour the artwork so it reads on any background
+            "tint": True,            # recolor the artwork so it reads on any background
             "place": "in",           # in = inside the card's frame | out = around it
             "speed": 1.0,            # drift speed; higher is faster
         },
@@ -435,6 +443,43 @@ def save_config(cfg):
 
 
 CONFIG = load_config()
+
+
+# ================================================================= themes
+
+# Named looks live in their own file beside config, with their own lock so the
+# themes API never contends with (or corrupts) the live config writer.
+THEMES_PATH = os.path.join(CACHE, "themes.json")
+_themes_lock = threading.Lock()
+
+
+def load_themes():
+    """The on-disk theme store as a dict keyed by id (fresh read each call)."""
+    try:
+        with open(THEMES_PATH, "r", encoding="utf-8") as f:
+            blob = json.load(f)
+        themes = blob.get("themes")
+        return themes if isinstance(themes, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        print(f"  ! themes.json unreadable ({exc}); starting empty")
+        return {}
+
+
+def save_themes(themes):
+    with _themes_lock:
+        try:
+            os.makedirs(CACHE, exist_ok=True)
+            with open(THEMES_PATH, "w", encoding="utf-8") as f:
+                json.dump({"themes": themes}, f, indent=2)
+        except Exception as exc:
+            print(f"  ! could not save themes: {exc}")
+
+
+def _theme_slug(name):
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:48]
+    return slug or ("look-" + str(int(time.time())))
 
 
 # ================================================================= library
@@ -996,6 +1041,21 @@ def window_action(ov, cfg, page, action, data):
             cfg.update({"x": rect["x"], "y": rect["y"]})
             save_config(CONFIG)
         return {"ok": bool(rect), "rect": rect}
+    if action == "edge":
+        rect = ov.resize_edge(data.get("edge", ""), data.get("dx", 0), data.get("dy", 0))
+        if rect:
+            cfg.update({"x": rect["x"], "y": rect["y"],
+                        "width": rect["w"], "height": rect["h"]})
+            save_config(CONFIG)
+            HUB.broadcast()
+        return {"ok": bool(rect), "rect": rect}
+    if action == "minimize":
+        return {"ok": ov.minimize(), "minimized": True}
+    if action == "restore":
+        ok = ov.restore()
+        if ok and cfg.get("topmost", True):
+            ov.apply(topmost=True)
+        return {"ok": ok, "minimized": False}
     return {"ok": False, "reason": "unknown action"}
 
 
@@ -1256,6 +1316,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             return self._json(CONFIG)
 
+        if path == "/api/themes":
+            themes = load_themes()
+            ordered = sorted(themes.values(),
+                             key=lambda t: t.get("updated", t.get("created", 0)),
+                             reverse=True)
+            return self._json({"themes": ordered})
+
         if path == "/api/library":
             if query.get("rescan"):
                 LIBRARY.scan(CONFIG["music_dirs"], force=bool(query.get("force")))
@@ -1364,7 +1431,7 @@ class Handler(BaseHTTPRequestHandler):
             manual = (data.get("path") or "").strip().strip('"')
             chosen = manual if manual else pick_folder().get("path", "")
             if not chosen:
-                return self._json({"ok": False, "reason": "cancelled"})
+                return self._json({"ok": False, "reason": "canceled"})
             if not os.path.isdir(chosen):
                 return self._json({"ok": False, "reason": "not a folder"})
             chosen = os.path.abspath(chosen)
@@ -1457,6 +1524,35 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/assets/delete":
             return self._json({"ok": ASSET_STORE.delete(data.get("id", "")),
                                "assets": ASSET_STORE.list()})
+
+        if path == "/api/themes/save":
+            name = (data.get("name") or "").strip()
+            if not name:
+                return self._json({"ok": False, "reason": "a name is required"})
+            patch = data.get("data")
+            if not isinstance(patch, dict):
+                return self._json({"ok": False, "reason": "no settings to save"})
+            themes = load_themes()
+            tid = data.get("id") or _theme_slug(name)
+            now = round(time.time())
+            existing = themes.get(tid) or {}
+            themes[tid] = {"id": tid, "name": name,
+                           "created": existing.get("created", now),
+                           "updated": now, "data": patch}
+            save_themes(themes)
+            ordered = sorted(themes.values(),
+                             key=lambda t: t.get("updated", 0), reverse=True)
+            return self._json({"ok": True, "theme": themes[tid], "themes": ordered})
+
+        if path == "/api/themes/delete":
+            tid = data.get("id", "")
+            themes = load_themes()
+            removed = themes.pop(tid, None) is not None
+            if removed:
+                save_themes(themes)
+            ordered = sorted(themes.values(),
+                             key=lambda t: t.get("updated", 0), reverse=True)
+            return self._json({"ok": removed, "themes": ordered})
 
         m = re.match(r"^/api/(window|lyrics/window|queue/window)/([a-z]+)$", path)
         if m:

@@ -1,6 +1,6 @@
 /* Now Playing window.
 
-   Nothing here is hard-coded to a look: every colour, size and toggle comes
+   Nothing here is hard-coded to a look: every color, size and toggle comes
    from a CSS custom property that nowplaying.js sets from your config. The one
    fixed rule is that the page is never transparent - this is a real browser
    window, and "transparent" in a browser window means white. */
@@ -123,7 +123,7 @@ html, body {
 .card > * { position: relative; z-index: 1; }
 
 /* With a solid surround, the theme's background is painted here - inside the
-   card's rounded clip - and the stage shows one flat colour around it. */
+   card's rounded clip - and the stage shows one flat color around it. */
 .card > .card-bg {
   position: absolute; inset: 0; z-index: 0;
   display: none;
@@ -137,7 +137,7 @@ html, body {
    painted in here, so a dim layer out on the stage would never cover it. */
 .card > .card-bg::before {
   content: ""; position: absolute; inset: 0;
-  /* The veil is the theme's own ground colour, not black: on a light theme
+  /* The veil is the theme's own ground color, not black: on a light theme
      darkening a picture makes mud, where washing it out is what you want. */
   background: var(--bg, #000);
   opacity: var(--bg-dim, 0);
@@ -175,7 +175,7 @@ html, body {
 .stage.no-art-image .art-fallback { display: flex; }
 .stage.hide-art .art-wrap { display: none; }
 
-/* Little equaliser so a glance tells you it is live. */
+/* Little equalizer so a glance tells you it is live. */
 .bars {
   position: absolute; right: .35em; bottom: .35em;
   display: none; align-items: flex-end; gap: .12em;
@@ -368,32 +368,51 @@ html, body {
   padding: .18em .7em; border-radius: 1em;
   font-family: system-ui, sans-serif;
 }
-.close {
-  position: absolute; right: .3em; top: .3em;
+/* Window buttons: minimize (hides to the taskbar) and close. Sized in em to
+   match today's close button. */
+.winbtn {
+  position: absolute; top: .3em;
   width: 1.7em; height: 1.7em;
   display: grid; place-items: center;
   font-size: .9em; line-height: 1;
-  color: #fff;
-  background: rgba(220,40,60,.85);
-  border: none; border-radius: 50%;
-  cursor: pointer;
-  pointer-events: auto;
+  color: #fff; border: none; border-radius: 50%;
+  cursor: pointer; pointer-events: auto;
   font-family: system-ui, sans-serif;
 }
-.close:hover { background: rgb(230,50,70); }
+.winbtn.close { right: .3em; background: rgba(220,40,60,.85); }
+.winbtn.close:hover { background: rgb(230,50,70); }
+.winbtn.min { right: 2.1em; background: rgba(255,255,255,.14); }
+.winbtn.min:hover { background: color-mix(in srgb, var(--accent, #ffb7c5) 55%, rgba(0,0,0,.4)); }
 
-/* Resize grip: three little diagonal lines in the bottom-right corner. */
-.grip {
-  position: absolute; right: 0; bottom: 0;
-  width: 1.6em; height: 1.6em;
-  cursor: nwse-resize;
-  pointer-events: auto;
+/* Resize handles: eight edges/corners in px so they don't scale with the em
+   font. The SE corner keeps the three-diagonal-lines grip glyph. */
+.rz { position: absolute; pointer-events: auto; }
+.rz-n, .rz-s { left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.rz-n { top: 0; } .rz-s { bottom: 0; }
+.rz-e, .rz-w { top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.rz-w { left: 0; } .rz-e { right: 0; }
+.rz-nw, .rz-ne, .rz-sw, .rz-se { width: 16px; height: 16px; }
+.rz-nw { top: 0; left: 0; cursor: nwse-resize; }
+.rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.rz-ne { top: 0; right: 0; cursor: nesw-resize; }
+.rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.rz-n:hover, .rz-s:hover, .rz-e:hover, .rz-w:hover {
+  background: color-mix(in srgb, var(--accent, #ffb7c5) 45%, transparent);
+}
+.rz-se.grip {
   background:
     linear-gradient(135deg, transparent 0 55%, rgba(255,255,255,.75) 55% 62%, transparent 62% 70%,
                     rgba(255,255,255,.75) 70% 77%, transparent 77% 85%,
                     rgba(255,255,255,.75) 85% 92%, transparent 92%);
   border-bottom-right-radius: var(--card-radius, 12px);
 }
+
+/* First-open hint: show the pill on its own for a few seconds (the handles
+   group must be opaque for the pill inside it to paint; the buttons/edges are
+   held hidden so only the hint reads). */
+.stage.show-hint .handles { opacity: 1; }
+.stage.show-hint .winbtn, .stage.show-hint .rz { opacity: 0; }
+.stage.show-hint .hint { opacity: 1; transition: opacity .3s; }
 
 .offline {
   position: absolute; left: 50%; bottom: .35em;
@@ -426,7 +445,7 @@ html, body {
 }
 .stage.has-decor .decor { display: block; }
 
-/* Each strip is a band --decor-px thick with its glyphs centred inside, so
+/* Each strip is a band --decor-px thick with its glyphs centerd inside, so
    nothing is clipped whatever the font's ascent and descent do. */
 .decor-strip {
   position: absolute;

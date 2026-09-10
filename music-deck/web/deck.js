@@ -69,6 +69,7 @@ function patchFor(path, val) {
 
 let npTimer = null, npPending = {};
 function saveNp(patch) {
+  beginEdit();
   Object.entries(patch).forEach(([k, v]) => setPath(CONFIG.nowplaying, k, v));
   // Push straight into the preview so it never lags behind the sliders.
   pushPreview();
@@ -87,9 +88,9 @@ function saveNp(patch) {
   }, 180);
 }
 
-/* Colours a theme owns but that live on individual controls. Clearing them
+/* Colors a theme owns but that live on individual controls. Clearing them
    hands those elements back to the palette. */
-const LOCAL_COLOUR_KEYS = [
+const LOCAL_COLOR_KEYS = [
   'text.title_color', 'text.artist_color', 'text.label_color',
   'card.border_color', 'card.fill', 'art.border_color',
   'progress.color', 'decor.color',
@@ -97,6 +98,7 @@ const LOCAL_COLOUR_KEYS = [
 
 let uiTimer = null, uiPending = {};
 function saveUi(patch) {
+  beginEdit();
   Object.entries(patch).forEach(([k, v]) => setPath(CONFIG.ui, k, v));
   applyUi(CONFIG.ui);
   Object.assign(uiPending, patch);
@@ -111,6 +113,7 @@ function saveUi(patch) {
 
 let lyTimer = null, lyPending = {};
 function saveLy(patch) {
+  beginEdit();
   CONFIG.lyrics = CONFIG.lyrics || {};
   CONFIG.queue = CONFIG.queue || {};
   Object.entries(patch).forEach(([k, v]) => setPath(CONFIG.lyrics, k, v));
@@ -126,6 +129,7 @@ function saveLy(patch) {
 
 let qTimer = null, qPending = {};
 function saveQ(patch) {
+  beginEdit();
   CONFIG.queue = CONFIG.queue || {};
   Object.entries(patch).forEach(([k, v]) => setPath(CONFIG.queue, k, v));
   Object.assign(qPending, patch);
@@ -136,6 +140,154 @@ function saveQ(patch) {
     qPending = {};
     post('/api/config', { queue: body });
   }, 180);
+}
+
+/* ------------------------------------------------------------- undo / redo
+
+   Every design change goes through one of the save fns above, and each calls
+   beginEdit() first. beginEdit snapshots the WHOLE config once per gesture: the
+   first change after a 500 ms lull pushes a baseline, so dragging a slider forty
+   pixels is one undo step, not forty. Undo/redo restore a full snapshot through
+   /api/config - the server deep-merges and never deletes keys, so a restore can
+   never leave a stale value behind. */
+const undoStack = [];
+const redoStack = [];
+let histArmed = false;      // a baseline is already banked for this gesture
+let histIdle = null;        // resets histArmed after a pause
+let restoring = false;      // guards beginEdit while we apply a snapshot
+
+const snap = () => JSON.stringify(CONFIG);
+
+function beginEdit() {
+  if (restoring || !CONFIG) return;
+  if (!histArmed) {
+    undoStack.push(snap());
+    if (undoStack.length > 50) undoStack.shift();
+    redoStack.length = 0;
+    histArmed = true;
+    updateUndoButtons();
+  }
+  clearTimeout(histIdle);
+  histIdle = setTimeout(() => { histArmed = false; }, 500);
+}
+
+/* Put a full config snapshot back in force, everywhere. */
+function applySnapshot(str) {
+  restoring = true;
+  // Drop any half-second of debounced patches still in flight, or they would
+  // land on top of the snapshot we are restoring and undo the undo.
+  clearTimeout(npTimer); clearTimeout(uiTimer); clearTimeout(lyTimer); clearTimeout(qTimer);
+  npPending = {}; uiPending = {}; lyPending = {}; qPending = {};
+  CONFIG = JSON.parse(str);
+  CONFIG.lyrics = CONFIG.lyrics || {};
+  CONFIG.queue = CONFIG.queue || {};
+  post('/api/config', CONFIG);          // FULL snapshot, not a diff
+  applyUi(CONFIG.ui);
+  syncControls();
+  pushPreview();
+  renderPickers();
+  restoring = false;
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  clearTimeout(histIdle);
+  histArmed = false;
+  redoStack.push(snap());
+  applySnapshot(undoStack.pop());
+  updateUndoButtons();
+  toast('Undone');
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  clearTimeout(histIdle);
+  histArmed = false;
+  undoStack.push(snap());
+  applySnapshot(redoStack.pop());
+  updateUndoButtons();
+  toast('Redone');
+}
+
+function updateUndoButtons() {
+  const u = $('undoBtn'), r = $('redoBtn');
+  if (u) u.disabled = !undoStack.length;
+  if (r) r.disabled = !redoStack.length;
+}
+
+/* ------------------------------------------------------------- saved looks
+
+   A "look" is a named bundle of the design config, kept server-side under
+   /api/themes. The wire field is `data` (a partial /api/config patch), not
+   `config`. Applying one is a normal /api/config POST - there is no separate
+   apply endpoint - and is itself undoable. */
+let SAVED_THEMES = [];
+
+function captureLook() {
+  const ly = CONFIG.lyrics || {}, q = CONFIG.queue || {};
+  return {
+    nowplaying: CONFIG.nowplaying,
+    ui: CONFIG.ui,
+    lyrics: { colors: ly.colors, bg_own: ly.bg_own, bg: ly.bg, follow_theme: ly.follow_theme },
+    queue:  { colors: q.colors,  bg_own: q.bg_own,  bg: q.bg,  follow_theme: q.follow_theme },
+  };
+}
+
+function renderSavedThemes() {
+  const sel = $('savedThemes');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— saved looks —</option>' +
+    SAVED_THEMES.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  sel.value = cur;
+}
+
+function loadSavedThemes() {
+  return fetch('/api/themes').then((r) => r.json())
+    .then((d) => { SAVED_THEMES = (d && d.themes) || []; renderSavedThemes(); })
+    .catch(() => { SAVED_THEMES = []; renderSavedThemes(); });
+}
+
+function saveLook() {
+  const name = (prompt('Name this look:') || '').trim();
+  if (!name) return;
+  post('/api/themes/save', { name, data: captureLook() }).then((res) => {
+    if (res && res.ok) {
+      SAVED_THEMES = res.themes || SAVED_THEMES;
+      renderSavedThemes();
+      toast('Look saved');
+    } else {
+      toast((res && res.reason) || 'Could not save the look');
+    }
+  });
+}
+
+function applySavedTheme(id) {
+  const theme = SAVED_THEMES.find((t) => t.id === id);
+  if (!theme) return;
+  beginEdit();                          // applying a look is undoable
+  post('/api/config', theme.data).then(() =>
+    fetch('/api/config').then((r) => r.json()).then((cfg) => {
+      CONFIG = cfg;
+      CONFIG.lyrics = CONFIG.lyrics || {};
+      CONFIG.queue = CONFIG.queue || {};
+      applyUi(CONFIG.ui);
+      syncControls();
+      pushPreview();
+      renderPickers();
+      renderStickerList();
+      renderScenePickers();
+      toast('Look applied');
+      setTimeout(healWindows, 700);
+    }));
+}
+
+function deleteSavedTheme(id) {
+  post('/api/themes/delete', { id }).then((res) => {
+    SAVED_THEMES = (res && res.themes) || [];
+    renderSavedThemes();
+    toast('Look deleted');
+  });
 }
 
 /* When the app is set to follow the pop-out, mirror its palette onto the deck
@@ -165,7 +317,7 @@ function deepMerge(target, src) {
 
 /* ------------------------------------------------------------- app theme */
 
-/* Black or white, whichever stays readable on this colour. A white accent on a
+/* Black or white, whichever stays readable on this color. A white accent on a
    white-filled button is invisible otherwise. */
 let lastWallKey = null;
 
@@ -195,8 +347,8 @@ function applyUi(ui) {
   if (key === lastWallKey) return;
   lastWallKey = key;
 
-  // "Solid" means no wallpaper here: the app's own background colour shows,
-  // rather than a second colour control fighting with it.
+  // "Solid" means no wallpaper here: the app's own background color shows,
+  // rather than a second color control fighting with it.
   const off = (wall.mode || 'solid') === 'solid';
   $('appWall').hidden = off;
   if (off) {
@@ -242,22 +394,26 @@ function controlEditorHTML(t) {
     </label>
 
     <label class="field">
-      <span>Where</span>
-      <div class="segmented small" ${D('place')} data-kind="seg">
-        <button data-v="card">With the text</button>
-        <button data-v="art">Over the art</button>
-        <button data-v="corner">Window corner</button>
+      <span>Where the buttons sit</span>
+      <div class="segmented small anchor-grid" ${D('anchor')} data-kind="seg"
+           style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;width:max-content">
+        <button type="button" data-v="tl" title="Top left">&#8598;</button>
+        <button type="button" data-v="tc" title="Top center">&#8593;</button>
+        <button type="button" data-v="tr" title="Top right">&#8599;</button>
+        <button type="button" data-v="ml" title="Middle left">&#8592;</button>
+        <button type="button" data-v="mc" title="Center">&#9679;</button>
+        <button type="button" data-v="mr" title="Middle right">&#8594;</button>
+        <button type="button" data-v="bl" title="Bottom left">&#8601;</button>
+        <span class="anchor-gap" aria-hidden="true"></span>
+        <button type="button" data-v="br" title="Bottom right">&#8600;</button>
       </div>
+      <span class="hint">Pick a corner or edge for the transport buttons. Leave it untouched
+        to keep the classic placement. Drag the buttons on the window to nudge them from there.</span>
     </label>
 
-    <label class="field">
-      <span>Line them up</span>
-      <div class="segmented small" ${D('align')} data-kind="seg">
-        <button data-v="left">Left</button>
-        <button data-v="center">Centre</button>
-        <button data-v="right">Right</button>
-      </div>
-    </label>
+    <div class="row gap wrap">
+      <button type="button" class="btn btn-ghost btn-sm nudge-reset">Recenter buttons</button>
+    </div>
 
     <label class="field">
       <span>Shape</span>
@@ -307,7 +463,7 @@ function selectControlTarget(key) {
    wired and synced by the same machinery as the hand-written ones. */
 
 const BG_TARGETS = [
-  { key: 'np',     attr: 'np', out: '',   prefix: 'bg',        what: 'the pop-out',
+  { key: 'np',     attr: 'np', out: '',   prefix: 'bg',        what: 'the Now Playing window',
     root: () => CONFIG.nowplaying,   save: (p) => saveNp(p) },
   { key: 'lyrics', attr: 'ly', out: 'ly', prefix: 'bg_own',    what: 'the lyrics window',
     root: () => CONFIG.lyrics || {}, save: (p) => saveLy(p) },
@@ -333,18 +489,18 @@ function bgEditorHTML(t) {
   const isApp = t.key === 'app';
   const window_ = t.key === 'lyrics' || t.key === 'queue';
 
-  // For the app, "solid" means no wallpaper at all - its own background colour
-  // shows through - so there is no second colour control competing with it.
+  // For the app, "solid" means no wallpaper at all - its own background color
+  // shows through - so there is no second color control competing with it.
   const modes = [['solid', isApp ? 'None' : 'Solid'], ['gradient', 'Gradient'],
                  ['scene', 'Artwork'], ['image', 'Image']];
   // Only the pop-out has a cover to use as its own background.
   if (t.key === 'np') modes.push(['art', 'Album art']);
 
   return `
-    ${window_ ? `<p class="hint">Used when this window is not matching the pop-out.
+    ${window_ ? `<p class="hint">Used when this window is not matching the Now Playing window.
         <label class="check inline"><input type="checkbox" data-${a}="follow_theme" data-kind="bool">
-        <span>Match the pop-out</span></label></p>` : ''}
-    ${isApp ? `<p class="hint">Sits behind the whole control room. Its flat colour
+        <span>Use the same background as Now Playing</span></label></p>` : ''}
+    ${isApp ? `<p class="hint">Sits behind the whole control room. Its flat color
         comes from <b>App look \u2192 Background</b>; this is what goes on top.</p>` : ''}
 
     <label class="field">
@@ -355,7 +511,7 @@ function bgEditorHTML(t) {
     </label>
     <div class="bg-when" data-when="art">
       <p class="hint">The cover of whatever is playing becomes the background, and
-        the text and accent colours are taken from it so they stay readable as the
+        the text and accent colors are taken from it so they stay readable as the
         art changes. Darken it below if the words get lost.</p>
       <label class="field">
         <span>Darken <b class="mono" ${O('dim')}>0.45</b></span>
@@ -366,9 +522,9 @@ function bgEditorHTML(t) {
 
     <div class="bg-when" data-when="solid gradient">
     <div class="field two">
-      <label><span>${isApp ? 'Gradient from' : 'Colour'}</span>
+      <label><span>${isApp ? 'Gradient from' : 'Color'}</span>
         <input class="color wide" type="color" ${D('color')} data-kind="color"></label>
-      <label><span>${isApp ? 'Gradient to' : 'Second colour'}</span>
+      <label><span>${isApp ? 'Gradient to' : 'Second color'}</span>
         <input class="color wide" type="color" ${D('color2')} data-kind="color"></label>
     </div>
     <label class="field">
@@ -394,7 +550,7 @@ function bgEditorHTML(t) {
       <label><span>Detail</span>
         <input class="color wide" type="color" ${D('scene.c3')} data-kind="color"></label>
       <label><span>&nbsp;</span>
-        <button class="btn btn-ghost btn-sm" data-bgact="sceneReset">Scene's own colours</button></label>
+        <button class="btn btn-ghost btn-sm" data-bgact="sceneReset">Scene's own colors</button></label>
     </div>
     <label class="field">
       <span>Motif size <b class="mono" ${O('scene.scale')}>1.00</b></span>
@@ -431,7 +587,7 @@ function bgEditorHTML(t) {
     </div>
 
     <label class="field">
-      <span>Colour beneath the picture</span>
+      <span>Color beneath the picture</span>
       <div class="row gap">
         <input class="color" type="color" ${isApp ? 'data-ui="bg"' : D('color')} data-kind="color">
         <span class="hint">Shows wherever the picture does not reach, and through
@@ -450,9 +606,9 @@ function bgEditorHTML(t) {
     </label>
 
     <label class="field">
-      <span>Recolour the picture</span>
+      <span>Recolor the picture</span>
       <label class="check"><input type="checkbox" ${D('tint.on')} data-kind="bool">
-        <span>Print it in two colours</span></label>
+        <span>Print it in two colors</span></label>
       <span class="hint">The picture keeps its light and shade; you choose the ink.
         A photograph becomes something that matches your theme instead of fighting it.</span>
     </label>
@@ -542,11 +698,11 @@ function bgTargetSize(t) {
   return { w: cfg.width || 760, h: cfg.height || 190, label: t.what };
 }
 
-/* Dress the whole app from the colours in one picture, and put the picture
+/* Dress the whole app from the colors in one picture, and put the picture
    itself behind the window you are theming - a theme taken from a photograph
-   you cannot see is just a set of colours from nowhere. */
+   you cannot see is just a set of colors from nowhere. */
 function applyPictureTheme(assetId, targetKey) {
-  toast('Reading the colours…');
+  toast('Reading the colors…');
   paletteFor(assetId).then((th) => {
     if (!th) { toast('Could not read that picture'); return; }
 
@@ -555,7 +711,7 @@ function applyPictureTheme(assetId, targetKey) {
     saveNp({
       'accent': th.accent,
       'palette.text': th.text, 'palette.muted': th.muted, 'palette.line': th.line,
-      // Hand the per-element colours back so the palette actually governs.
+      // Hand the per-element colors back so the palette actually governs.
       'text.title_color': '', 'text.artist_color': '', 'text.label_color': '',
       'card.border_color': '', 'progress.color': '', 'decor.color': '',
       'surround.color': th.surround,
@@ -566,7 +722,7 @@ function applyPictureTheme(assetId, targetKey) {
     });
 
     // The picture goes behind whichever surface you were pointing at, exactly
-    // as it is: no blur, no darkening, nothing two-coloured. You came here for
+    // as it is: no blur, no darkening, nothing two-colored. You came here for
     // that picture, so you get that picture - the tools underneath are there
     // when you want to change it, and the shadow above keeps the text legible
     // without touching the image itself.
@@ -576,7 +732,7 @@ function applyPictureTheme(assetId, targetKey) {
       [P('mode')]: 'image', [P('image')]: assetId,
       [P('dim')]: 0, [P('blur')]: 0, [P('zoom')]: 1,
       [P('pos_x')]: 50, [P('pos_y')]: 50, [P('tint.on')]: false,
-      // The app's under-picture colour is ui.bg - which saveUi above already
+      // The app's under-picture color is ui.bg - which saveUi above already
       // set - so writing wallpaper.color here would only disagree with the
       // editor, which binds ui.bg for that target.
       ...(t.key === 'app' ? {} : { [P('color')]: th.bg }),
@@ -596,7 +752,7 @@ function applyPictureTheme(assetId, targetKey) {
 
 /* A theme per picture, worked out from the picture itself.
 
-   Reading a picture's colours means fetching it whole and scanning its
+   Reading a picture's colors means fetching it whole and scanning its
    pixels, and the shipped set alone is 13 MB. Doing all of that while the deck
    is still starting makes for a slow start, so the swatches are filled when
    the browser is idle rather than all at once while the deck is starting. */
@@ -625,7 +781,7 @@ function renderPictureThemes() {
   idle(step, { timeout: 500 });
 }
 
-/** Read one picture's colours and show them on its swatch strip. */
+/** Read one picture's colors and show them on its swatch strip. */
 function fillPictureTheme(btn) {
   paletteFor(btn.dataset.id).then((th) => {
     if (!th) { btn.classList.add('pt-bad'); return; }
@@ -813,7 +969,7 @@ function renderScenePickers() {
   syncSceneColors();
 }
 
-/* Blank scene colours mean "use the scene's own", so show those in the pickers. */
+/* Blank scene colors mean "use the scene's own", so show those in the pickers. */
 function syncSceneColors() {
   for (const t of BG_TARGETS) {
     const cfg = bgOf(t).scene || {};
@@ -1139,7 +1295,7 @@ const THEMES = {
 };
 
 /* Everything a theme owns. Applying one rewrites every key in these lists, so
-   a colour the user picked by hand earlier cannot survive into the new theme
+   a color the user picked by hand earlier cannot survive into the new theme
    and leave it looking half-applied. Anything a theme does not mention falls
    back to the neutral value below. */
 const THEMED_NP = {
@@ -1197,7 +1353,7 @@ function applyTheme(name) {
   // A theme is meant to dress the whole rig, not just the pop-out. The other
   // two windows read the palette live from the pop-out already, but their
   // background is their own - so translate the theme's background onto each and
-  // point them back at it, or picking a theme would change their text colour
+  // point them back at it, or picking a theme would change their text color
   // while leaving a stale picture behind (which is exactly what looked broken).
   const ownBg = {};
   for (const [k, v] of Object.entries(np)) {
@@ -1316,8 +1472,12 @@ function bindControls() {
     });
   });
 
+  const SAVE_BY_SCOPE = { np: saveNp, ui: saveUi, ly: saveLy, q: saveQ };
   document.querySelectorAll('[data-clear]').forEach((btn) => {
-    btn.addEventListener('click', () => saveNp({ [btn.dataset.clear]: '' }));
+    btn.addEventListener('click', () => {
+      (SAVE_BY_SCOPE[btn.dataset.scope || 'np'])({ [btn.dataset.clear]: '' });
+      syncControls();
+    });
   });
 }
 
@@ -1359,6 +1519,13 @@ function syncControls() {
 
   document.querySelectorAll('#sourceMode button').forEach((b) =>
     b.classList.toggle('on', b.dataset.mode === CONFIG.source_mode));
+
+  // Spotify account controls that are not data-* bound.
+  const spCfg = CONFIG.spotify || {};
+  if (document.activeElement !== $('spUseAccount'))
+    $('spUseAccount').checked = spCfg.use_account !== false;
+  if (document.activeElement !== $('spClientId2') && !$('spClientId2').value)
+    $('spClientId2').value = spCfg.client_id || '';
 
   const vol = Math.round((CONFIG.volume ?? 0.7) * 100);
   $('volume').value = vol;
@@ -1756,6 +1923,15 @@ $('preset').addEventListener('change', () => {
   const name = $('preset').value;
   const p = NP_PRESETS[name];
   if (!p) { $('preset').value = CONFIG.nowplaying.preset || ''; return; }
+  // Warn before a preset paints over colors the streamer has set by hand.
+  const hasLocal = LOCAL_COLOR_KEYS.some((k) => {
+    const v = getPath(CONFIG.nowplaying, k);
+    return v !== undefined && v !== null && v !== '';
+  });
+  if (hasLocal && !confirm('Apply this look? It replaces the colors you set for this window.')) {
+    $('preset').value = CONFIG.nowplaying.preset || '';
+    return;
+  }
   saveNp({ ...p, preset: name });
   syncControls();
   renderPickers();
@@ -1800,25 +1976,25 @@ $('surroundSwatches').addEventListener('click', (e) => {
 
 /* Sample whatever sits behind the card, so the margin blends into the artwork
    rather than cutting a frame around it. */
-$('resetColours').addEventListener('click', () => {
+$('resetColors').addEventListener('click', () => {
   const blanks = {};
-  for (const k of LOCAL_COLOUR_KEYS) blanks[k] = '';
+  for (const k of LOCAL_COLOR_KEYS) blanks[k] = '';
   saveNp(blanks);
   syncControls();
-  toast('Colours handed back to the theme');
+  toast('Colors handed back to the theme');
 });
 
 $('surroundMatch').addEventListener('click', () => {
   const bg = CONFIG.nowplaying.bg || {};
-  let colour = bg.color || '#0f0f17';
+  let color = bg.color || '#0f0f17';
   if (bg.mode === 'scene' && bg.scene && SCENES[bg.scene.id]) {
-    colour = renderScene(bg.scene.id, sceneParams(bg.scene)).base;
+    color = renderScene(bg.scene.id, sceneParams(bg.scene)).base;
   }
-  if (!/^#[0-9a-f]{6}$/i.test(colour)) {
-    toast('That background has no single colour to match');
+  if (!/^#[0-9a-f]{6}$/i.test(color)) {
+    toast('That background has no single color to match');
     return;
   }
-  saveNp({ 'surround.color': colour, 'surround.mode': 'solid' });
+  saveNp({ 'surround.color': color, 'surround.mode': 'solid' });
   syncControls();
   toast('Margin matched to the background');
 });
@@ -2097,7 +2273,7 @@ $('addFolder').addEventListener('click', () => {
   toast('Pick a folder in the dialog…');
   post('/api/folders/add', {}).then((res) => {
     if (res.ok) { loadLibrary(); toast(`Added — ${res.count} tracks`); }
-    else if (res.reason !== 'cancelled') toast('Could not add that folder');
+    else if (res.reason !== 'canceled') toast('Could not add that folder');
   });
 });
 
@@ -2157,15 +2333,18 @@ document.querySelectorAll('#sourceMode button').forEach((btn) => {
 
 const WINDOWS = {
   np: {
-    page: 'nowplaying.html', size: 'npSize', title: 'This is what the pop-out looks like',
+    page: 'nowplaying.html', size: 'npSize', label: 'Now Playing',
+    title: 'This is what the window looks like',
     cfg: () => (CONFIG || {}).nowplaying,
   },
   lyrics: {
-    page: 'lyrics.html', size: 'lySize', title: 'This is what the lyrics window looks like',
+    page: 'lyrics.html', size: 'lySize', label: 'Lyrics',
+    title: 'This is what the lyrics window looks like',
     cfg: () => (CONFIG || {}).lyrics,
   },
   queue: {
-    page: 'queue.html', size: 'qSize', title: 'This is what the queue window looks like',
+    page: 'queue.html', size: 'qSize', label: 'Queue',
+    title: 'This is what the queue window looks like',
     cfg: () => (CONFIG || {}).queue,
   },
 };
@@ -2200,6 +2379,7 @@ function selectWindow(id) {
   selectControlTarget(id);
 
   $('previewTitle').textContent = WINDOWS[id].title;
+  $('designingName').textContent = WINDOWS[id].label;
   // Stickers only exist on the pop-out, so their drag handles go with it.
   $('previewEdit').hidden = id !== 'np';
   $('dropHintWhat').textContent = id === 'np'
@@ -2374,6 +2554,16 @@ function pollLyrics() {
   post('/api/lyrics/window/apply', { width: w, height: h });
 }));
 
+$('lySizePresets').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-w]');
+  if (!btn) return;
+  const w = +btn.dataset.w, h = +btn.dataset.h;
+  $('lyWidth').value = w; $('lyHeight').value = h;
+  saveLy({ width: w, height: h });
+  post('/api/lyrics/window/apply', { width: w, height: h });
+  if (selectedWin === 'lyrics') layoutPreview();
+});
+
 $('lySnap').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-c]');
   if (btn) post('/api/lyrics/window/snap', { corner: btn.dataset.c })
@@ -2422,6 +2612,16 @@ function pollQueueWindow() {
   saveQ({ width: w, height: h });
   post('/api/queue/window/apply', { width: w, height: h });
 }));
+
+$('qSizePresets').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-w]');
+  if (!btn) return;
+  const w = +btn.dataset.w, h = +btn.dataset.h;
+  $('qWidth').value = w; $('qHeight').value = h;
+  saveQ({ width: w, height: h });
+  post('/api/queue/window/apply', { width: w, height: h });
+  if (selectedWin === 'queue') layoutPreview();
+});
 
 $('qSnap').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-c]');
@@ -2473,13 +2673,6 @@ function paintSpotify(state) {
   }
 
   const acc = status.account || {};
-  let line = 'Account: not connected';
-  if (acc.connected) {
-    line = acc.has ? `Account: connected \u00b7 playing on ${acc.device || 'a device'}`
-                   : 'Account: connected \u00b7 nothing playing';
-  }
-  if (acc.error) line += ` \u2014 ${acc.error}`;
-  $('spAccStatus').textContent = line;
   // A pop-out asked to seek a local file; we hold the audio element.
   const sk = state.local_seek;
   if (sk && sk.id !== lastSeekId) {
@@ -2503,46 +2696,12 @@ function paintSpotify(state) {
   queueFollowsTrack(state);
   if (acc.connected && spWaiting) {
     spWaiting = false;
-    $('spPending').hidden = true;
     $('spPending2').hidden = true;
-    $('spManual').hidden = true;
     $('spManual2').hidden = true;
   }
-  $('spAccToggle').textContent = $('spAccSetup').hidden
-    ? (acc.connected ? 'Account settings' : 'Connect account\u2026') : 'Hide';
-  if (acc.redirect_uri) $('spRedirect').textContent = acc.redirect_uri;
 }
-
-$('spAccToggle').addEventListener('click', () => {
-  $('spAccSetup').hidden = !$('spAccSetup').hidden;
-  if (!$('spAccSetup').hidden && CONFIG && CONFIG.spotify) {
-    $('spClientId').value = CONFIG.spotify.client_id || '';
-    $('spUseAccount').checked = CONFIG.spotify.use_account !== false;
-  }
-});
 let spWaiting = false;
 
-$('spConnect').addEventListener('click', () => {
-  const id = $('spClientId').value.trim();
-  if (!id) { toast('Paste the Client ID from your Spotify app first'); return; }
-  if (CONFIG) CONFIG.spotify = Object.assign(CONFIG.spotify || {}, { client_id: id });
-  post('/api/spotify/connect', { client_id: id }).then((res) => {
-    if (!res.ok) { toast(res.reason || 'Could not start the Spotify sign-in'); return; }
-    spWaiting = true;
-    $('spPending').hidden = false;
-    // A blocked pop-up or a missing browser still leaves a way through.
-    $('spManualLink').href = res.url;
-    $('spManual').hidden = !!res.windowed;
-    toast(res.windowed ? 'Approve Awesome Music Streaming Deck in the window that just opened'
-                       : 'Approve Awesome Music Streaming Deck in your browser');
-    setTimeout(() => {   // stop waiting if they walk away from it
-      if (spWaiting) { spWaiting = false; $('spPending').hidden = true; }
-    }, 180000);
-  });
-});
-$('spDisconnect').addEventListener('click', () => {
-  post('/api/spotify/disconnect').then(() => toast('Spotify account disconnected'));
-});
 $('spUseAccount').addEventListener('change', () => {
   if (CONFIG) CONFIG.spotify = Object.assign(CONFIG.spotify || {}, { use_account: $('spUseAccount').checked });
   post('/api/config', { spotify: { use_account: $('spUseAccount').checked } });
@@ -2654,7 +2813,7 @@ function refreshDevices(force) {
 function paintSpotifyAccount(acc, sp) {
   const wasConnected = spConnected;
   spConnected = !!acc.connected;
-  $('spSetup').hidden = spConnected;
+  $('spSetupBox').hidden = spConnected;
   $('spQueueWrap').hidden = !spConnected;
   $('spDisconnectWrap').hidden = !spConnected;
   $('spDevice').hidden = !spConnected;
@@ -2823,6 +2982,28 @@ function queueFollowsTrack(state) {
   }
 }
 
+/* --------------------------------------------------- onboarding & app look */
+
+/* First-run help banner, remembered per browser. The ? button brings it back. */
+(function () {
+  let seen = false;
+  try { seen = localStorage.getItem('amsd.onboarded') === '1'; } catch (_) {}
+  if (!seen) $('onboard').hidden = false;
+  $('onboardOk').addEventListener('click', () => {
+    $('onboard').hidden = true;
+    try { localStorage.setItem('amsd.onboarded', '1'); } catch (_) {}
+  });
+  $('helpBtn').addEventListener('click', () => { $('onboard').hidden = false; });
+})();
+
+/* The app's own appearance lives in a collapsible panel, opened from the top bar. */
+$('appLookToggle').addEventListener('click', () => {
+  const panel = $('appAppearance');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+});
+$('appLookClose').addEventListener('click', () => { $('appAppearance').hidden = true; });
+
 /* ------------------------------------------------------------- boot */
 
 function fillDecorPickers() {
@@ -2836,6 +3017,42 @@ function fillDecorPickers() {
 $('fullTheme').addEventListener('change', () => {
   const name = $('fullTheme').value;
   if (name) applyTheme(name); else $('fullTheme').value = CONFIG.theme || '';
+});
+
+/* ------------------------------------------------------------- looks & undo */
+
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
+$('saveLook').addEventListener('click', saveLook);
+$('savedThemes').addEventListener('change', () => {
+  const id = $('savedThemes').value;
+  if (id) applySavedTheme(id);
+});
+$('deleteLook').addEventListener('click', () => {
+  const id = $('savedThemes').value;
+  if (!id) { toast('Pick a saved look first'); return; }
+  const t = SAVED_THEMES.find((x) => x.id === id);
+  if (!confirm(`Delete the look "${t ? t.name : id}"?`)) return;
+  deleteSavedTheme(id);
+});
+
+// Keyboard undo/redo, but never while the streamer is typing in a field.
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const z = e.key === 'z' || e.key === 'Z';
+  const y = e.key === 'y' || e.key === 'Y';
+  if (z && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (y || (z && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+
+// "Recenter buttons" clears the fine-tune nudge on whichever window's editor.
+$('controlEditors').addEventListener('click', (e) => {
+  const btn = e.target.closest('.nudge-reset');
+  if (!btn) return;
+  const ed = btn.closest('.control-editor');
+  const t = ed && CONTROL_TARGETS.find((x) => x.key === ed.dataset.ctl);
+  if (t) { t.save({ 'controls.offset': { x: 0, y: 0 } }); toast('Buttons recenterd'); }
 });
 
 fillFonts();
@@ -2873,6 +3090,8 @@ fetch('/api/config').then((r) => r.json()).then((cfg) => {
   paintQStatus();
   selectWindow('np');
   paintSourcePanels();
+  updateUndoButtons();
+  loadSavedThemes();
   pollWindow();
   pollLyrics();
   pollQueueWindow();

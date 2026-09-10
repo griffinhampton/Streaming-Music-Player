@@ -24,7 +24,7 @@ VSVersionInfo(
          StringStruct('FileDescription', 'Awesome Music Streaming Deck'),
          StringStruct('FileVersion', '1.0.0.0'),
          StringStruct('InternalName', 'AwesomeMusicStreamingDeck'),
-         StringStruct('LegalCopyright', 'Open source - MIT licence'),
+         StringStruct('LegalCopyright', 'Open source - MIT license'),
          StringStruct('OriginalFilename', 'Awesome Music Streaming Deck.exe'),
          StringStruct('ProductName', 'Awesome Music Streaming Deck'),
          StringStruct('ProductVersion', '1.0.0.0'),

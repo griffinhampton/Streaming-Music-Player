@@ -44,6 +44,7 @@ HWND_TOP = 0
 HWND_TOPMOST = -1
 HWND_NOTOPMOST = -2
 
+SW_SHOWMINNOACTIVE = 7
 SW_RESTORE = 9
 WM_CLOSE = 0x0010
 
@@ -156,6 +157,21 @@ def close_window(hwnd):
     if not _HAVE_WIN32 or not hwnd:
         return False
     user32.PostMessageW(wintypes.HWND(hwnd), WM_CLOSE, 0, 0)
+    return True
+
+
+def minimize(hwnd):
+    """Minimize without activating, so focus never leaves the deck mid-stream."""
+    if not _HAVE_WIN32 or not hwnd:
+        return False
+    user32.ShowWindow(wintypes.HWND(hwnd), SW_SHOWMINNOACTIVE)
+    return True
+
+
+def restore(hwnd):
+    if not _HAVE_WIN32 or not hwnd:
+        return False
+    user32.ShowWindow(wintypes.HWND(hwnd), SW_RESTORE)
     return True
 
 

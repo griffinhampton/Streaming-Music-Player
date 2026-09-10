@@ -68,3 +68,17 @@
   color: var(--on-accent, #fff);
 }
 .transport-row .tbtn-play:hover { background: var(--accent); }
+
+/* Anchored placement: pin the row to a window edge with an optional px offset,
+   regardless of its DOM parent. --t-inset is the margin off the edge; --t-dx /
+   --t-dy are the fine-tune offset (unitless -> px in the transform). */
+.transport-row.anchored{position:fixed;margin:0;z-index:9;--t-inset:.6em;transform:translate(calc(var(--t-dx,0)*1px),calc(var(--t-dy,0)*1px))}
+.transport-row.anchored.ax-l{left:var(--t-inset);right:auto;justify-content:flex-start}
+.transport-row.anchored.ax-c{left:50%;right:auto;justify-content:center}
+.transport-row.anchored.ax-r{right:var(--t-inset);left:auto;justify-content:flex-end}
+.transport-row.anchored.ay-t{top:var(--t-inset);bottom:auto}
+.transport-row.anchored.ay-m{top:50%;bottom:auto}
+.transport-row.anchored.ay-b{bottom:var(--t-inset);top:auto}
+.transport-row.anchored.ax-c{transform:translate(calc(-50% + var(--t-dx,0)*1px),calc(var(--t-dy,0)*1px))}
+.transport-row.anchored.ay-m{transform:translate(calc(var(--t-dx,0)*1px),calc(-50% + var(--t-dy,0)*1px))}
+.transport-row.anchored.ax-c.ay-m{transform:translate(calc(-50% + var(--t-dx,0)*1px),calc(-50% + var(--t-dy,0)*1px))}

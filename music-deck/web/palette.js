@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - reading colours out of a picture.
+/* Awesome Music Streaming Deck - reading colors out of a picture.
 
    Two jobs. One: build a theme from an image, so a background you like can
    dress the rest of the app instead of clashing with it. Two: give the
@@ -52,10 +52,10 @@ function lum(hex) {
 }
 
 /**
- * The handful of colours a picture is actually made of.
+ * The handful of colors a picture is actually made of.
  *
  * Buckets pixels by hue and lightness rather than exact value - two pixels of
- * almost the same blue should count as the same colour, or every photograph
+ * almost the same blue should count as the same color, or every photograph
  * comes back with a thousand of them.
  */
 function extractColors(img, want = 6) {
@@ -66,9 +66,9 @@ function extractColors(img, want = 6) {
   ctx.drawImage(img, 0, 0, N, N);
   const px = ctx.getImageData(0, 0, N, N).data;
 
-  // One pass over the pixels does both jobs: sorting them into colour bins,
+  // One pass over the pixels does both jobs: sorting them into color bins,
   // and recording the spread of brightness. Bin averages smooth away exactly
-  // what the second job needs - a bin averaging light grey can still hold
+  // what the second job needs - a bin averaging light gray can still hold
   // near-black pixels, and text has to survive those, not the average.
   //
   // Brightness goes into a histogram rather than a list: we only ever read two
@@ -108,7 +108,7 @@ function extractColors(img, want = 6) {
 
   const out = [...bins.values()]
     // Weight by how much of the picture it is, but let a small vivid area beat
-    // a large flat one - that is what the eye picks out as "the colour".
+    // a large flat one - that is what the eye picks out as "the color".
     .sort((a, b) => (b.n * (0.6 + 0.9 * (b.s / b.n))) - (a.n * (0.6 + 0.9 * (a.s / a.n))))
     .slice(0, want)
     .map((b) => ({
@@ -134,10 +134,10 @@ function contrastRatio(a, b) {
 }
 
 /**
- * Keep a colour's hue but move its lightness until it is legible on `ground`.
+ * Keep a color's hue but move its lightness until it is legible on `ground`.
  *
  * A theme taken from a photograph has no reason to be readable by itself - a
- * pale sky gives pale text on a pale panel. This walks the colour away from
+ * pale sky gives pale text on a pale panel. This walks the color away from
  * the background until it clears the bar, so every generated theme is legible
  * whatever the picture was.
  */
@@ -168,7 +168,7 @@ function legibleOn(hex, ground, target) {
 /**
  * How opaque the veil between a picture and the text on top of it has to be.
  *
- * The veil is painted in the theme's own ground colour, so laying it over the
+ * The veil is painted in the theme's own ground color, so laying it over the
  * picture at opacity a gives a luminance of pic*(1-a) + ground*a. We need that
  * far enough from the text to read - measured against the worst patch of the
  * picture, not its average.
@@ -188,11 +188,11 @@ function veilFor(colors, groundHex, textHex, target = 3.2) {
   return 0.85;
 }
 
-/** Turn those colours into a theme the whole app can wear. */
+/** Turn those colors into a theme the whole app can wear. */
 function themeFromColors(colors) {
   if (!colors.length) return null;
   const byPop = [...colors];
-  // The accent wants to be the most colourful thing present, not the biggest -
+  // The accent wants to be the most colorful thing present, not the biggest -
   // a photo is mostly sky, and a sky-blue accent on a sky background vanishes.
   const accent = [...colors].sort((a, b) =>
     (b.sat * Math.min(1, b.share / 40)) - (a.sat * Math.min(1, a.share / 40)))[0];
@@ -201,11 +201,11 @@ function themeFromColors(colors) {
 
   const g = hexToHsl(ground.hex);
   const a = hexToHsl(accent.hex);
-  // A picture with no real colour in it - a pencil drawing, dithered black and
+  // A picture with no real color in it - a pencil drawing, dithered black and
   // white - has no hue worth amplifying. Forcing one just turns sensor noise
   // into a vivid accent nobody chose, so stay near-neutral instead.
-  const colourful = colors.some((c) => c.sat > 0.18);
-  const accentHex = colourful
+  const colorful = colors.some((c) => c.sat > 0.18);
+  const accentHex = colorful
     ? hslToHex(a.h, Math.max(0.55, a.s), dark ? 0.62 : 0.46)
     : hslToHex(a.h, 0.10, dark ? 0.86 : 0.24);
 

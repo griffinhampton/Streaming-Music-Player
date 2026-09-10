@@ -1,7 +1,7 @@
 /* Generated background artwork ("scenes").
 
    Every scene is drawn as SVG on the fly from a handful of parameters -
-   three colours, a scale, a density, an opacity and a shuffle seed - so the
+   three colors, a scale, a density, an opacity and a shuffle seed - so the
    look is yours to change and nothing is ever downloaded. Tiling scenes wrap
    at their edges so they repeat without a visible seam; "cover" scenes are a
    single picture that stretches to fill the window. */
@@ -19,7 +19,7 @@ function mulberry32(seed) {
 const f1 = (n) => Number(n).toFixed(1);
 
 /* Draw at (x, y) and again across any edge the shape crosses, so the tile
-   repeats seamlessly. r is the shape's reach from its centre. */
+   repeats seamlessly. r is the shape's reach from its center. */
 function wrapped(x, y, r, W, H, draw) {
   const xs = [x], ys = [y];
   if (x - r < 0) xs.push(x + W);
@@ -45,7 +45,7 @@ function readableOn(hex) {
   return L > 0.45 ? '#0a0a0c' : '#ffffff';
 }
 
-/* Mix a colour toward black (t<0) or white (t>0); hex in, hex out. */
+/* Mix a color toward black (t<0) or white (t>0); hex in, hex out. */
 function shade(hex, t) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
   if (!m) return hex;
@@ -62,7 +62,7 @@ function shade(hex, t) {
 // A cherry petal, tip up, about 13 units long, with the little notch.
 const PETAL = 'M0,0 C-4.6,-2.6 -6.1,-9.1 -2.7,-12.6 C-1.7,-14 -0.9,-12.8 0,-11.2 ' +
               'C0.9,-12.8 1.7,-14 2.7,-12.6 C6.1,-9.1 4.6,-2.6 0,0 Z';
-// A rounder, blobbier petal for the watercolour look.
+// A rounder, blobbier petal for the watercolor look.
 const PETAL_SOFT = 'M0,0 C-6.2,-3.2 -8.4,-10.2 -3.4,-13.4 C-1.2,-14.8 1.2,-14.8 3.4,-13.4 ' +
                    'C8.4,-10.2 6.2,-3.2 0,0 Z';
 
@@ -147,7 +147,7 @@ const SCENES = {
   },
 
   watercolor: {
-    label: 'Watercolour blossoms',
+    label: 'Watercolor blossoms',
     tile: 560,
     defaults: { c1: '#f6d9dc', c2: '#e39aa8', c3: '#8d4a58', scale: 1, density: 1, seed: 7 },
     build(p, rnd) {
@@ -167,7 +167,7 @@ const SCENES = {
           let g = `<g transform="translate(${f1(xx)} ${f1(yy)}) rotate(${f1(rot)}) scale(${f1(s)})" filter="url(#soft)">`;
           for (let k = 0; k < 5; k++) g += `<path d="${PETAL_SOFT}" fill="${p.c2}" fill-opacity=".5" transform="rotate(${k * 72}) scale(1.12)"/>`;
           for (let k = 0; k < 5; k++) g += `<path d="${PETAL_SOFT}" fill="${p.c2}" fill-opacity=".42" transform="rotate(${k * 72 + 9}) scale(.92)"/>`;
-          // Stamens and centre in the detail colour.
+          // Stamens and center in the detail color.
           g += `</g><g transform="translate(${f1(xx)} ${f1(yy)}) rotate(${f1(rot)}) scale(${f1(s)})" fill="none" stroke="${p.c3}" stroke-opacity=".8" stroke-width=".4" stroke-linecap="round">`;
           for (let k = 0; k < 7; k++) {
             const a = k * 51 + 12, L = 2.4 + (k % 3) * .7;
@@ -385,7 +385,7 @@ function paintScene(el, id, params) {
 }
 
 
-/** Config -> render params, leaving blanks so the scene's own colours apply. */
+/** Config -> render params, leaving blanks so the scene's own colors apply. */
 function sceneParams(cfg) {
   const p = {};
   const c = cfg || {};
@@ -398,14 +398,14 @@ function sceneParams(cfg) {
 
 /**
  * Paint the same background config inside the card instead of the stage - used
- * when a solid "surround" colour fills the window around the card.
+ * when a solid "surround" color fills the window around the card.
  */
 function applyBackgroundInside(stage, cardBg, bg) {
   applyBackground(stage, cardBg, bg, (k, v) => {
     if (k !== '--bg') return;
     cardBg.style.background = v;
     // Also publish it, so the dimming veil can be this theme's own ground
-    // colour rather than flat black.
+    // color rather than flat black.
     stage.style.setProperty('--bg', v);
   });
   stage.classList.remove('has-bg-image');   // artwork lives in the card now
@@ -428,7 +428,7 @@ function imageAspect(id) {
 
 /**
  * Paint a background config (solid / gradient / image / scene) onto a stage:
- * --bg carries the flat colour or gradient, `layer` carries any artwork.
+ * --bg carries the flat color or gradient, `layer` carries any artwork.
  */
 function applyBackground(stage, layer, bg, setVar) {
   bg = bg || {};
@@ -474,7 +474,7 @@ function applyBackground(stage, layer, bg, setVar) {
     const tint = bg.tint || {};
     if (tint.on) {
       // A duotone, the way a two-ink print works: the picture keeps its light
-      // and shade, the gradient supplies the colour. `background-blend-mode:
+      // and shade, the gradient supplies the color. `background-blend-mode:
       // color` does exactly that in one element, so it works the same whether
       // the picture is on the stage or inside the card.
       const k = Math.max(0, Math.min(1, tint.strength ?? 1));

@@ -1,6 +1,6 @@
 /* Awesome Music Streaming Deck - control room.
 
-   Black and minimal out of the box. Every colour, the radius, the font and the
+   Black and minimal out of the box. Every color, the radius, the font and the
    spacing come from CSS variables that deck.js writes from your config, so the
    whole app is reskinnable from the App look tab. */
 
@@ -16,6 +16,14 @@
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --d: 1;                       /* density multiplier */
   --glow: none;
+
+  /* Derived, theme-aware legibility tokens. These recompute from the
+     runtime-set --fg/--dim/--line for all 14 app themes, so applyUi() never
+     needs to touch them. --label lifts load-bearing control labels and hints
+     off the tertiary --dim; --line-strong makes structural separators visible
+     without darkening every incidental hairline. */
+  --label:       color-mix(in srgb, var(--fg) 40%, var(--dim));
+  --line-strong: color-mix(in srgb, var(--fg) 18%, var(--line));
 
   --good: #34d399;
   --warn: #fbbf24;
@@ -36,13 +44,13 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font);
-  font-size: calc(13.5px * (0.5 + var(--d) * 0.5));
+  font-size: calc(15px * (0.5 + var(--d) * 0.5));
   overflow: hidden;
 }
 
 /* The app's wallpaper. Three stacked layers so the same painter that dresses
-   the pop-out works here: a flat colour or gradient, the artwork or picture on
-   top of it, then a veil in the app's own background colour to keep the
+   the pop-out works here: a flat color or gradient, the artwork or picture on
+   top of it, then a veil in the app's own background color to keep the
    controls readable. */
 .app-wall { position: fixed; inset: 0; z-index: -2; pointer-events: none; }
 .app-wall > div { position: absolute; inset: 0; }
@@ -57,7 +65,7 @@ h1 { font-size: 1.05em; font-weight: 600; letter-spacing: -0.01em; white-space: 
 h2 {
   font-size: 0.8em; font-weight: 600;
   letter-spacing: .1em; text-transform: uppercase;
-  color: var(--dim);
+  color: var(--label);
 }
 
 .muted { color: var(--dim); }
@@ -66,7 +74,7 @@ h2 {
 .row { display: flex; align-items: center; }
 .gap { gap: 8px; }
 .wrap { flex-wrap: wrap; }
-.divider { height: 1px; background: var(--line); margin: calc(6px * var(--d)) 0; }
+.divider { height: 1px; background: var(--line-strong); margin: calc(6px * var(--d)) 0; }
 
 /* ---------------------------------------------------------------- topbar */
 
@@ -75,7 +83,7 @@ h2 {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
   padding: calc(11px * var(--d)) calc(16px * var(--d));
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
   background: var(--bg);
 }
 .brand { display: flex; align-items: center; gap: 9px; }
@@ -124,7 +132,7 @@ h2 {
   box-shadow: var(--glow);
 }
 .btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); }
-.btn-sm { font-size: .84em; padding: 5px 10px; }
+.btn-sm { font-size: .84em; padding: 7px 12px; }
 
 .segmented {
   display: inline-flex; padding: 2px; gap: 2px;
@@ -132,22 +140,22 @@ h2 {
   border-radius: calc(var(--radius) * .75);
 }
 .segmented button {
-  font: inherit; font-size: .85em; font-weight: 500;
-  padding: 5px 12px; border: none;
+  font: inherit; font-size: .92em; font-weight: 500;
+  padding: 7px 14px; border: none;
   border-radius: calc(var(--radius) * .55);
-  background: transparent; color: var(--dim); cursor: pointer;
+  background: transparent; color: var(--label); cursor: pointer;
   white-space: nowrap;
   transition: background 120ms ease, color 120ms ease;
 }
 .segmented button:hover { color: var(--fg); }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
-.segmented.small button { padding: 4px 10px; font-size: .82em; }
+.segmented.small button { padding: 6px 12px; font-size: .86em; }
 
 .input {
   font: inherit; font-size: .9em;
   padding: calc(7px * var(--d)) 10px;
   border-radius: calc(var(--radius) * .7);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: transparent; color: var(--fg);
   min-width: 0; width: 100%;
 }
@@ -156,7 +164,7 @@ select.input { cursor: pointer; }
 select.input option { background: var(--panel); color: var(--fg); }
 
 .color {
-  width: 40px; height: 30px; padding: 2px; flex: 0 0 auto;
+  width: 44px; height: 32px; padding: 2px; flex: 0 0 auto;
   border: 1px solid var(--line); border-radius: calc(var(--radius) * .55);
   background: transparent; cursor: pointer;
 }
@@ -164,12 +172,12 @@ select.input option { background: var(--panel); color: var(--fg); }
 
 .range { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer; }
 .range::-webkit-slider-runnable-track {
-  height: 3px; border-radius: 3px;
+  height: 4px; border-radius: 3px;
   background: color-mix(in srgb, var(--fg) 14%, transparent);
 }
 .range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 13px; height: 13px; margin-top: -5px;
+  width: 16px; height: 16px; margin-top: -6px;
   border-radius: 50%; background: var(--accent); border: none;
   box-shadow: var(--glow);
 }
@@ -200,7 +208,7 @@ select.input option { background: var(--panel); color: var(--fg); }
 .grid {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) calc(360px * (0.7 + var(--d) * 0.3));
+  grid-template-columns: minmax(0, 1.35fr) calc(340px * (0.7 + var(--d) * 0.3));
   gap: calc(12px * var(--d));
   padding: calc(12px * var(--d)) calc(16px * var(--d)) calc(16px * var(--d));
   min-height: 0;
@@ -213,7 +221,7 @@ select.input option { background: var(--panel); color: var(--fg); }
    scroll area - two bars, neither obviously the one you want - the panel keeps
    its full height and the rail scrolls it, with the tabs pinned so you can
    still change section from anywhere in the list. */
-.panel.design > .tabs {
+.panel.appearance > .tabs {
   position: sticky; top: 0; z-index: 2;
   background: var(--panel);
 }
@@ -221,26 +229,27 @@ select.input option { background: var(--panel); color: var(--fg); }
 .panel {
   display: flex; flex-direction: column;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   min-height: 0;
 }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; padding: calc(11px * var(--d)) calc(14px * var(--d));
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
 }
 .panel-head.tight { border-bottom: none; }
 .panel-head .row { flex: 1 1 auto; justify-content: flex-end; max-width: 420px; }
 .panel-foot {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; padding: calc(9px * var(--d)) calc(14px * var(--d));
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-strong);
 }
 
 /* ---------------------------------------------------------------- preview */
 
 .preview-panel { flex: 0 0 auto; }
+.preview-panel .preview-stage { max-height: clamp(150px, 26vh, 240px); }
 
 .preview-stage {
   position: relative;
@@ -334,7 +343,7 @@ select.input option { background: var(--panel); color: var(--fg); }
 .t-artist { font-size: .86em; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-time { font-size: .82em; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
 
-.empty { padding: 38px 24px; text-align: center; color: var(--dim); line-height: 1.7; font-size: .92em; }
+.empty { padding: 38px 24px; text-align: center; color: var(--label); line-height: 1.7; font-size: .92em; }
 .empty b { color: var(--fg); font-weight: 600; }
 
 /* ---------------------------------------------------------------- player */
@@ -370,7 +379,7 @@ select.input option { background: var(--panel); color: var(--fg); }
 .volume .range { flex: 1 1 auto; }
 .volume .mono { width: 24px; text-align: right; }
 
-.hint { font-size: .8em; line-height: 1.55; color: var(--dim); }
+.hint { font-size: .92em; line-height: 1.55; color: var(--label); }
 .hint b { color: color-mix(in srgb, var(--fg) 70%, var(--dim)); font-weight: 600; }
 
 /* ---------------------------------------------------------------- spotify */
@@ -392,17 +401,74 @@ code {
   padding: 1px 5px; border-radius: 4px; user-select: all;
 }
 
+/* ------------------------------------------------ information architecture */
+
+/* Numbered step headings that walk the streamer down the page. */
+.band-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: calc(12px * var(--d)) calc(16px * var(--d)) 0;
+}
+.band-head-inset { padding: calc(12px * var(--d)) calc(14px * var(--d)) calc(2px * var(--d)); }
+.band { display: flex; align-items: center; gap: 9px; }
+.band-no {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5em; height: 1.5em; flex: 0 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent); font-size: .9em; font-weight: 700;
+}
+.preview-panel .panel-head .band-no { margin-right: 2px; }
+
+/* First-run welcome banner. */
+.onboard {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin: calc(12px * var(--d)) calc(16px * var(--d)) 0;
+  padding: calc(11px * var(--d)) calc(14px * var(--d));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+.onboard-body { font-size: .95em; line-height: 1.5; }
+.onboard-steps { display: block; margin-top: 3px; color: var(--dim); }
+.onboard .btn { flex: 0 0 auto; }
+
+/* The consolidated music panel: source + facts + spotify + library. */
+.music-facts {
+  display: flex; flex-direction: column; gap: calc(8px * var(--d));
+  padding: calc(10px * var(--d)) calc(14px * var(--d));
+  border-bottom: 1px solid var(--line);
+}
+.music .library .panel-head,
+.music .spotify-main > .panel-head { border-top: 1px solid var(--line); }
+
+/* The single guided-connect, tucked inside a disclosure. */
+.sp-connect { border-top: 1px solid var(--line); }
+.sp-connect > summary {
+  cursor: pointer; list-style: none;
+  padding: calc(11px * var(--d)) calc(14px * var(--d));
+  font-size: .9em; color: var(--accent);
+}
+.sp-connect > summary::-webkit-details-marker { display: none; }
+.sp-connect > summary:hover { text-decoration: underline; }
+.sp-connect[open] > summary { color: var(--fg); }
+
+/* The app's own appearance, in a collapsible side panel. */
+.app-appearance-body {
+  display: flex; flex-direction: column; gap: calc(10px * var(--d));
+  padding: calc(13px * var(--d)) calc(14px * var(--d));
+}
+
 /* ---------------------------------------------------------------- design */
 
 .tabs {
   display: flex; flex-wrap: wrap; gap: 2px;
   padding: 8px 8px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
 }
 .tabs button {
-  font: inherit; font-size: .8em; font-weight: 500;
+  font: inherit; font-size: .88em; font-weight: 500;
   padding: 6px 9px; border: none; background: transparent;
-  color: var(--dim); cursor: pointer;
+  color: var(--label); cursor: pointer;
   border-radius: calc(var(--radius) * .5) calc(var(--radius) * .5) 0 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -414,25 +480,60 @@ code {
 .tabpane.on { display: flex; }
 
 .field { display: flex; flex-direction: column; gap: 5px; }
-.field > span { font-size: .8em; font-weight: 500; color: var(--dim); }
+.field > span { font-size: 1em; font-weight: 500; color: var(--label); }
 .field > span b { color: var(--fg); font-weight: 600; }
 .field.two { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .field.two label { display: flex; flex-direction: column; gap: 5px; }
-.field.two span { font-size: .8em; font-weight: 500; color: var(--dim); }
+.field.two span { font-size: 1em; font-weight: 500; color: var(--label); }
 
 .swatches { display: flex; gap: 4px; flex-wrap: wrap; }
 .swatches button {
-  width: 20px; height: 20px; border-radius: calc(var(--radius) * .4);
+  width: 24px; height: 24px; border-radius: calc(var(--radius) * .4);
   border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
   cursor: pointer; padding: 0;
 }
 .swatches button:hover { transform: scale(1.12); }
 
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
-.check { display: flex; align-items: center; gap: 6px; font-size: .85em; color: var(--dim); cursor: pointer; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 1em; color: var(--label); cursor: pointer; }
 .check.big { font-size: .95em; color: var(--fg); }
-.check input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
 .check:hover span { color: var(--fg); }
+
+/* A color swatch paired with a ↺ dot that hands the element back to its theme
+   color. The wide swatch fills the row; the dot keeps a fixed, comfortable
+   hit area beside it. */
+.color-row { display: flex; align-items: center; gap: 6px; }
+.color-row .color { flex: 1 1 auto; }
+.reset-dot {
+  flex: 0 0 auto;
+  width: 20px; height: 20px; line-height: 18px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 12px; text-align: center; cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.reset-dot:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--fg) 6%, var(--panel));
+}
+
+/* "Fine-tune individual colors" disclosure inside the Colors tab: the eight
+   per-element overrides, folded away under the four theme roots. */
+details.adv { border-top: 1px solid var(--line-strong); padding-top: calc(4px * var(--d)); }
+details.adv > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  padding: calc(8px * var(--d)) 0 calc(6px * var(--d));
+  font-size: .92em; color: var(--label);
+}
+details.adv > summary::-webkit-details-marker { display: none; }
+details.adv > summary::before { content: '▸ '; }
+details.adv[open] > summary::before { content: '▾ '; }
+details.adv > summary:hover { color: var(--fg); }
+details.adv[open] { display: flex; flex-direction: column; gap: calc(10px * var(--d)); }
 
 /* ---------------------------------------------------------------- assets */
 
@@ -576,12 +677,12 @@ body.decor-animate .app-decor .decor-strip span { animation: drift 24s linear in
 .theme-bar {
   display: flex; align-items: center; gap: 10px;
   padding: calc(11px * var(--d)) calc(14px * var(--d));
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
 }
 .theme-bar > span {
   font-size: .8em; font-weight: 600;
   letter-spacing: .1em; text-transform: uppercase;
-  color: var(--dim); white-space: nowrap;
+  color: var(--label); white-space: nowrap;
 }
 
 body.decor-motif .app-decor .decor-strip { letter-spacing: 0; }
@@ -678,7 +779,7 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   display: flex; flex-direction: column; gap: calc(3px * var(--d));
   padding: calc(10px * var(--d)) calc(13px * var(--d));
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-left-width: 3px;
   border-radius: var(--radius);
   cursor: pointer;
@@ -705,7 +806,7 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   text-transform: uppercase; color: var(--dim);
 }
 .wincard.live .wc-state { color: var(--good); }
-.wc-sub { font-size: .8em; color: var(--dim); }
+.wc-sub { font-size: .8em; color: var(--label); }
 .wc-foot {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; margin-top: calc(4px * var(--d));
@@ -785,7 +886,7 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   display: flex; flex-direction: column;
   width: min(920px, 100%); max-height: 100%;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -794,8 +895,8 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   display: flex; align-items: center; gap: calc(12px * var(--d));
   padding: calc(11px * var(--d)) calc(14px * var(--d));
 }
-.modal-head { border-bottom: 1px solid var(--line); }
-.modal-foot { border-top: 1px solid var(--line); flex-wrap: wrap; }
+.modal-head { border-bottom: 1px solid var(--line-strong); }
+.modal-foot { border-top: 1px solid var(--line-strong); flex-wrap: wrap; }
 .modal-head h2 { flex: 0 0 auto; }
 .modal-head #framerSize { margin-right: auto; }
 .modal-foot .row { margin-left: auto; }

@@ -3,7 +3,7 @@
    Two kinds:
      motifs      repeating SVG tiles (the pretty ones - pastel sakura and
                  friends). Drawn as a tiled background on each edge strip.
-     characters  a short string repeated around the edge. Cheap, recolours
+     characters  a short string repeated around the edge. Cheap, recolors
                  with the theme, good for terminal/arcade looks.
 
    Motif ids are prefixed "motif:" in the config so one field covers both. */
@@ -79,9 +79,9 @@ function renderDecor(root, container, decor, fallbackColor) {
   const strips = container.querySelectorAll('.decor-strip');
   if (motif) {
     // Tinted: draw the tile as a mask so the shapes take --decor-color.
-    // Otherwise use the artwork's own colours.
+    // Otherwise use the artwork's own colors.
     const tint = d.tint !== false;
-    const colour = d.color || fallbackColor || '#ffffff';
+    const color = d.color || fallbackColor || '#ffffff';
     strips.forEach((strip) => {
       const vertical = strip.classList.contains('decor-left') ||
                        strip.classList.contains('decor-right');
@@ -108,7 +108,7 @@ function renderDecor(root, container, decor, fallbackColor) {
       st.height = vertical ? '200%' : '100%';
       if (tint) {
         st.backgroundImage = 'none';
-        st.backgroundColor = colour;
+        st.backgroundColor = color;
         st.webkitMaskImage = url;  st.maskImage = url;
         st.webkitMaskRepeat = repeat; st.maskRepeat = repeat;
         st.webkitMaskSize = size;  st.maskSize = size;

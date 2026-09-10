@@ -28,12 +28,19 @@ WS_CHILD = 0x40000000
 WS_CLIPCHILDREN = 0x02000000
 WS_CLIPSIBLINGS = 0x04000000
 WS_EX_APPWINDOW = 0x00040000
+# So the taskbar can show and restore the frameless host (no WS_CAPTION, so it
+# stays borderless): a minimize box plus a system menu is all the shell needs.
+WS_MINIMIZEBOX = 0x00020000
+WS_SYSMENU = 0x00080000
 
 SW_HIDE = 0
 SW_SHOW = 5
+SW_SHOWMINNOACTIVE = 7      # minimize without stealing focus mid-stream
+SW_RESTORE = 9
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
 WM_SIZE = 0x0005
+SIZE_RESTORED = 0           # WM_SIZE wparam: un-minimized / un-maximized
 WM_ERASEBKGND = 0x0014
 GWL_STYLE = -16
 
@@ -85,6 +92,8 @@ user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
                                 wintypes.WPARAM, wintypes.LPARAM]
 user32.GetSystemMetrics.restype = ctypes.c_int
 user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+user32.IsIconic.restype = wintypes.BOOL
+user32.IsIconic.argtypes = [wintypes.HWND]
 
 _set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
 _set_long.restype = ctypes.c_ssize_t
@@ -173,6 +182,7 @@ class HostWindow:
         self.margin = 2             # viewport overhang past every edge, px
         self._brush = None
         self._backdrop = 0x000000   # COLORREF (BGR), repainted on demand
+        self._topmost = False       # last requested z-order, re-asserted on restore
 
     # ------------------------------------------------------------- lifecycle
 
@@ -185,16 +195,22 @@ class HostWindow:
 
     def _wndproc(self, hwnd, msg, wparam, lparam):
         if msg == WM_ERASEBKGND:
-            # Paint the sliver Chrome leaves bare in the chosen margin colour.
+            # Paint the sliver Chrome leaves bare in the chosen margin color.
             rect = wintypes.RECT()
             user32.GetClientRect(hwnd, ctypes.byref(rect))
             if not self._brush:
                 self._brush = gdi32.CreateSolidBrush(self._backdrop)
             user32.FillRect(wintypes.HDC(wparam), ctypes.byref(rect), self._brush)
             return 1
-        if msg == WM_SIZE and self.child:
-            # However the host came to be resized, Chrome has to follow.
-            self.schedule_align(0.12)
+        if msg == WM_SIZE:
+            # Restoring from the taskbar drops a WS_POPUP out of the topmost
+            # band; re-raise it here so it lands back over the stream canvas
+            # without waiting for the heal cycle.
+            if wparam == SIZE_RESTORED and self._topmost:
+                self.set_topmost(True)
+            if self.child:
+                # However the host came to be resized, Chrome has to follow.
+                self.schedule_align(0.12)
         if msg == WM_CLOSE:
             if self.child:
                 user32.PostMessageW(wintypes.HWND(self.child), WM_CLOSE, 0, 0)
@@ -227,7 +243,7 @@ class HostWindow:
 
         self.hwnd = user32.CreateWindowExW(
             WS_EX_APPWINDOW, self._class, self.title,
-            WS_POPUP | WS_VISIBLE | WS_CLIPCHILDREN,
+            WS_POPUP | WS_VISIBLE | WS_CLIPCHILDREN | WS_MINIMIZEBOX | WS_SYSMENU,
             int(x), int(y), int(w), int(h),
             None, None, hinst, None)
         if self.hwnd and (icon_big or icon_small):
@@ -361,7 +377,7 @@ class HostWindow:
         return True
 
     def set_backdrop(self, hex_color):
-        """Colour behind Chrome, given as #rrggbb."""
+        """Color behind Chrome, given as #rrggbb."""
         try:
             n = int((hex_color or "#000000").lstrip("#"), 16)
         except ValueError:
@@ -431,12 +447,59 @@ class HostWindow:
         return True
 
     def set_topmost(self, on=True):
+        self._topmost = bool(on)
         if not self.alive():
             return False
         user32.SetWindowPos(wintypes.HWND(self.hwnd),
                             wintypes.HWND(HWND_TOPMOST if on else HWND_NOTOPMOST),
                             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
         return True
+
+    # ------------------------------------------------------------- minimize
+
+    def minimize(self):
+        """Send the host to the taskbar without stealing focus."""
+        if not self.alive():
+            return False
+        user32.ShowWindow(wintypes.HWND(self.hwnd), SW_SHOWMINNOACTIVE)
+        return True
+
+    def restore(self):
+        """Bring it back, re-raise it, and re-align Chrome once it settles."""
+        if not self.alive():
+            return False
+        user32.ShowWindow(wintypes.HWND(self.hwnd), SW_RESTORE)
+        if self._topmost:
+            self.set_topmost(True)
+        if self.child:
+            self.schedule_align(0.15)
+        return True
+
+    def minimized(self):
+        return bool(self.alive() and user32.IsIconic(wintypes.HWND(self.hwnd)))
+
+    def set_bounds(self, x, y, w, h):
+        """Move and resize the host in one call; Chrome follows underneath.
+
+        Unlike resize_content this moves the window too, so a dragged left or
+        top edge repositions the frame while the opposite edge stays put.
+        """
+        if not self.alive():
+            return None
+        user32.SetWindowPos(wintypes.HWND(self.hwnd), None,
+                            int(x), int(y), int(w), int(h), SWP_NOACTIVATE)
+        ox, oy = self._offset
+        if self.child:
+            if self._frame:
+                cw = int(w + 2 * self.margin + self._frame[0])
+                ch = int(h + 2 * self.margin + self._frame[1])
+            else:
+                cw = int(w + ox * 2)
+                ch = int(h + oy + ox)
+            user32.MoveWindow(wintypes.HWND(self.child), -int(ox), -int(oy), cw, ch, True)
+            self._child_size = (cw, ch)
+            self.schedule_align()
+        return self.rect()
 
 
 def chrome_insets(child_hwnd, inner_w, inner_h):

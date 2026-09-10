@@ -1,6 +1,6 @@
 /* Queue window: what is coming up next, for the stream.
 
-   Follows the pop-out's colours, font and background by default so the windows
+   Follows the pop-out's colors, font and background by default so the windows
    read as one set. Sized in em off a root font-size the script derives from the
    window, so it scales however you stretch it. */
 
@@ -170,24 +170,48 @@ html, body {
   color: rgba(255,255,255,.7); background: rgba(0,0,0,.55);
   padding: .18em .7em; border-radius: 1em; font-family: system-ui, sans-serif;
 }
-.close {
-  position: absolute; right: .3em; top: .3em;
+/* Window buttons: minimize (hides to the taskbar) and close. */
+.winbtn {
+  position: absolute; top: .3em;
   width: 1.5em; height: 1.5em; display: grid; place-items: center;
   font-size: .8em; line-height: 1; color: #fff;
-  background: rgba(220,40,60,.85); border: none; border-radius: 50%;
+  border: none; border-radius: 50%;
   cursor: pointer; pointer-events: auto; font-family: system-ui, sans-serif;
 }
-.close:hover { background: rgb(230,50,70); }
-.grip {
-  position: absolute; right: 0; bottom: 0;
-  width: 1.4em; height: 1.4em;
-  cursor: nwse-resize; pointer-events: auto;
+.winbtn.close { right: .3em; background: rgba(220,40,60,.85); }
+.winbtn.close:hover { background: rgb(230,50,70); }
+.winbtn.min { right: 2.1em; background: rgba(255,255,255,.14); }
+.winbtn.min:hover { background: color-mix(in srgb, var(--accent, #ffb7c5) 55%, rgba(0,0,0,.4)); }
+
+/* Resize handles: eight edges/corners in px so they don't scale with the em
+   font. The SE corner keeps the three-diagonal-lines grip glyph. */
+.rz { position: absolute; pointer-events: auto; }
+.rz-n, .rz-s { left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.rz-n { top: 0; } .rz-s { bottom: 0; }
+.rz-e, .rz-w { top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.rz-w { left: 0; } .rz-e { right: 0; }
+.rz-nw, .rz-ne, .rz-sw, .rz-se { width: 16px; height: 16px; }
+.rz-nw { top: 0; left: 0; cursor: nwse-resize; }
+.rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.rz-ne { top: 0; right: 0; cursor: nesw-resize; }
+.rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.rz-n:hover, .rz-s:hover, .rz-e:hover, .rz-w:hover {
+  background: color-mix(in srgb, var(--accent, #ffb7c5) 45%, transparent);
+}
+.rz-se.grip {
   background:
     linear-gradient(135deg, transparent 0 55%, rgba(255,255,255,.75) 55% 62%, transparent 62% 70%,
                     rgba(255,255,255,.75) 70% 77%, transparent 77% 85%,
                     rgba(255,255,255,.75) 85% 92%, transparent 92%);
   border-bottom-right-radius: var(--card-radius, 12px);
 }
+
+/* First-open hint: show the pill on its own for a few seconds (the handles
+   group must be opaque for the pill inside it to paint; buttons/edges stay
+   hidden so only the hint reads). */
+.stage.show-hint .handles { opacity: 1; }
+.stage.show-hint .winbtn, .stage.show-hint .rz { opacity: 0; }
+.stage.show-hint .hint { opacity: 1; transition: opacity .3s; }
 
 .offline {
   position: absolute; left: 50%; bottom: .35em; transform: translateX(-50%);

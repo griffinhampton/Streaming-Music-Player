@@ -33,21 +33,28 @@
     <span class="tag">local first</span>
   </div>
 
-  <span class="topbar-label">Playing from</span>
-  <div class="segmented" id="sourceMode" role="group" aria-label="Where the music comes from">
-    <button data-mode="auto" class="on">Auto</button>
-    <button data-mode="local">My files</button>
-    <button data-mode="spotify">Spotify</button>
-  </div>
-
   <div class="topbar-right">
+    <button id="appLookToggle" class="btn btn-ghost btn-sm" title="Colors, font and density of this app's own window">App appearance&hellip;</button>
     <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Awesome Music Streaming Deck completely">Quit</button>
   </div>
 </header>
 
+<!-- First-run help, dismissable; the ? button brings it back any time. -->
+<div class="onboard" id="onboard" hidden>
+  <div class="onboard-body">
+    <b>Welcome!</b> Put a live now-playing window on your stream in three steps:
+    <span class="onboard-steps">① pick a window &middot; ② size and style it in the preview &middot; ③ open it and add it in TikTok Studio.</span>
+  </div>
+  <button id="onboardOk" class="btn btn-primary btn-sm">Got it</button>
+</div>
+
 <!-- The three windows you can put on stream. Picking one decides what the
      preview below shows and which settings appear; the button on each card
      opens or closes that window. -->
+<div class="band-head">
+  <h2 class="band"><span class="band-no">①</span> Pick a window to put on stream</h2>
+  <button id="helpBtn" class="btn btn-ghost btn-sm" title="Show the welcome help again" aria-label="Show help">?</button>
+</div>
 <nav class="windows" id="windowsBar" aria-label="Stream windows">
   <div class="wincard on" data-win="np" tabindex="0" role="button" aria-pressed="true">
     <div class="wc-head">
@@ -91,12 +98,13 @@
 
 <main class="grid">
 
-  <!-- ============================================ left: preview + library -->
+  <!-- ============================================ left: preview + customize -->
   <div class="col">
 
     <section class="panel preview-panel">
       <div class="panel-head">
-        <h2 id="previewTitle">This is what the pop-out looks like</h2>
+        <span class="band-no" title="Step 2">②</span>
+        <h2 id="previewTitle">This is what the window looks like</h2>
         <div class="row gap">
           <span id="previewSize" class="muted small mono">760 × 190</span>
           <button id="previewReload" class="btn btn-ghost btn-sm">Refresh</button>
@@ -120,7 +128,814 @@
       </div>
     </section>
 
-    <section class="panel spotify-main" id="spotifyMain" hidden>
+    <section class="panel appearance">
+      <div class="band-head band-head-inset">
+        <h2 class="band"><span class="band-no">③</span> Customize <span id="designingName">Now Playing</span></h2>
+      </div>
+      <div class="theme-bar">
+        <span>Theme</span>
+        <select id="fullTheme" class="input">
+          <option value="">— pick a full theme —</option>
+          <option value="midnight">Midnight</option>
+          <option value="minimal">Minimal</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="blossom">Watercolor Blossom</option>
+          <option value="hanami">Hanami</option>
+          <option value="cutecore">Cutecore</option>
+          <option value="bloom">Bloom</option>
+          <option value="sakura">Sakura Night</option>
+          <option value="redmoon">Red Moon</option>
+          <option value="ember">Embers</option>
+          <option value="arcade">Neon Arcade</option>
+          <option value="vapor">Vaporwave</option>
+          <option value="terminal">Terminal</option>
+        </select>
+
+        <!-- Undo/redo of every design change, and your own saved looks. -->
+        <span class="theme-bar-spacer"></span>
+        <button id="undoBtn" class="btn btn-ghost btn-sm" title="Undo (Ctrl+Z)" disabled>&#8630; Undo</button>
+        <button id="redoBtn" class="btn btn-ghost btn-sm" title="Redo (Ctrl+Shift+Z)" disabled>&#8631; Redo</button>
+        <span>Looks</span>
+        <select id="savedThemes" class="input" title="Apply one of your saved looks">
+          <option value="">— saved looks —</option>
+        </select>
+        <button id="saveLook" class="btn btn-ghost btn-sm" title="Save the current look under a name">Save look&hellip;</button>
+        <button id="deleteLook" class="btn btn-ghost btn-sm" title="Delete the selected saved look">Delete</button>
+      </div>
+
+      <!-- Window-scoped tabs: data-for says which window a tab belongs to, the
+           rest are hidden. Same click handler maps data-tab -> data-pane. -->
+      <div class="tabs" id="designTabs">
+        <button data-tab="layout" data-for="np" class="on">Colors</button>
+        <button data-tab="lyrics" data-for="lyrics">Look</button>
+        <button data-tab="queue" data-for="queue">Look</button>
+        <button data-tab="text" data-for="np">Text</button>
+        <button data-tab="lyrics-text" data-for="lyrics">Text</button>
+        <button data-tab="queue-text" data-for="queue">Text</button>
+        <button data-tab="bits" data-for="np">Art &amp; bar</button>
+        <button data-tab="bg" data-for="all">Background</button>
+        <button data-tab="controls" data-for="all">Buttons</button>
+        <button data-tab="decor" data-for="np">Decor</button>
+        <button data-tab="stickers" data-for="np">Stickers</button>
+        <button data-tab="window" data-for="np">Size</button>
+        <button data-tab="lyrics-size" data-for="lyrics">Size</button>
+        <button data-tab="queue-size" data-for="queue">Size</button>
+      </div>
+
+      <!-- layout -->
+      <div class="tabpane on" data-pane="layout">
+        <label class="field">
+          <span>Start from a preset</span>
+          <select id="preset" class="input">
+            <option value="">— choose a preset —</option>
+            <option value="midnight">Midnight glass</option>
+            <option value="ink">Solid black</option>
+            <option value="neon">Neon glow</option>
+            <option value="light">Light</option>
+            <option value="sunset">Sunset gradient</option>
+            <option value="chroma">Green screen (for chroma key)</option>
+            <option value="magenta">Magenta screen (for chroma key)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Accent</span>
+          <div class="row gap">
+            <input class="color" type="color" data-np="accent" data-kind="color">
+            <div class="swatches" id="swatches"></div>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Theme colors</span>
+          <div class="field two">
+            <label><span>Text</span>
+              <input class="color wide" type="color" data-np="palette.text" data-kind="color"></label>
+            <label><span>Secondary text</span>
+              <input class="color wide" type="color" data-np="palette.muted" data-kind="color"></label>
+          </div>
+          <label><span>Lines and borders</span>
+            <input class="color wide" type="color" data-np="palette.line" data-kind="color"></label>
+          <span class="hint">Everything inherits these unless you set that thing's own color.
+            Change one here and it carries through the window, lyrics and queue at once.
+            Use <b>Reset to theme</b> on any color to hand it back.</span>
+        </label>
+
+        <div class="row gap wrap">
+          <button class="btn btn-ghost btn-sm" id="resetColors">Reset all colors to theme</button>
+        </div>
+
+        <!-- Every element's own color override, in one place. Each starts blank
+             and inherits the theme colors above; the ↺ dot hands it back. -->
+        <details class="adv">
+          <summary>Fine-tune individual colors</summary>
+          <label class="field"><span>Title</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="text.title_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.title_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Artist</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="text.artist_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.artist_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Label</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="text.label_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.label_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Card border</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="card.border_color" data-kind="color"><button class="reset-dot" type="button" data-clear="card.border_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Card fill</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="card.fill" data-kind="color"><button class="reset-dot" type="button" data-clear="card.fill" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Art border</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="art.border_color" data-kind="color"><button class="reset-dot" type="button" data-clear="art.border_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Progress bar</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="progress.color" data-kind="color"><button class="reset-dot" type="button" data-clear="progress.color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <label class="field"><span>Decor</span>
+            <span class="color-row"><input class="color wide" type="color" data-np="decor.color" data-kind="color"><button class="reset-dot" type="button" data-clear="decor.color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+          <span class="hint">Blank means "use the theme color above". Set one to override just that element.</span>
+        </details>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Themes from your pictures</span>
+          <span class="hint">Every picture in the app, read for the colors it is
+            actually made of. Click one to dress the whole deck and every window
+            in it.</span>
+          <div class="picture-themes" id="pictureThemes"></div>
+        </label>
+
+        <!-- The picture a theme just put behind a window, and the handful of
+             things you immediately want to do to it. -->
+        <div class="pt-tools" id="ptTools" hidden>
+          <div class="row gap between">
+            <span class="hint">The picture is behind <b id="ptWhere">this window</b>.</span>
+            <button class="btn btn-ghost btn-sm" id="ptClear">Remove it</button>
+          </div>
+          <div class="row gap wrap">
+            <button class="btn btn-ghost btn-sm" id="ptFrame">Frame it…</button>
+            <label class="check"><input type="checkbox" id="ptTint"><span>Two-color it</span></label>
+            <button class="btn btn-ghost btn-sm" id="ptSafe" hidden>Darken to
+              <b class="mono" id="ptSafeVal">0.00</b> for readable text</button>
+          </div>
+          <label class="field">
+            <span>Blur <b class="mono" id="ptBlurOut">0</b>px</span>
+            <input class="range" type="range" min="0" max="40" id="ptBlur">
+          </label>
+          <label class="field">
+            <span>Darken <b class="mono" id="ptDimOut">0.00</b></span>
+            <input class="range" type="range" min="0" max="90" id="ptDim">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Text scale <b class="mono" data-out="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="200"
+                 data-np="scale" data-kind="range" data-div="100" data-out="scale" data-dp="2">
+        </label>
+
+        <label class="field">
+          <span>Corners</span>
+          <div class="segmented small" id="cornerPick">
+            <button data-r="0">Square</button>
+            <button data-r="12">Soft</button>
+            <button data-r="24">Round</button>
+          </div>
+          <span class="hint">Square corners leave no margin at all &mdash; the card fills the window edge to edge.</span>
+        </label>
+
+        <div class="field two">
+          <label><span>Card radius <b class="mono" data-out="card.radius">18</b>px</span>
+            <input class="range" type="range" min="0" max="80"
+                   data-np="card.radius" data-kind="range" data-out="card.radius"></label>
+          <label><span>Card padding</span>
+            <input class="input" type="number" min="0" max="80" data-np="card.padding" data-kind="int"></label>
+        </div>
+
+        <label class="field">
+          <span>Border width</span>
+          <input class="input" type="number" min="0" max="12" data-np="card.border" data-kind="int">
+          <span class="hint">The border's color lives under <b>Fine-tune individual colors</b> above.</span>
+        </label>
+
+        <label class="field">
+          <span>Space around the card</span>
+          <div class="segmented small" data-np="surround.mode" data-kind="seg">
+            <button data-v="solid">Solid color</button>
+            <button data-v="theme">Theme background</button>
+          </div>
+          <span class="hint">A solid color that matches your stream canvas makes the window's
+            outline disappear; <b>Theme background</b> lets the artwork run to the edges instead.</span>
+        </label>
+        <label class="field">
+          <span>Margin color</span>
+          <div class="row gap wrap">
+            <input class="color" type="color" data-np="surround.color" data-kind="color">
+            <div class="swatches" id="surroundSwatches"></div>
+            <button class="btn btn-ghost btn-sm" id="surroundMatch">Match the artwork</button>
+          </div>
+          <span class="hint">Only shows where the card does not reach: rounded corners, and any decor frame
+            the card steps in from.</span>
+        </label>
+
+        <label class="field">
+          <span>Card fill opacity <b class="mono" data-out="card.fill_alpha">1.00</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-np="card.fill_alpha" data-kind="range" data-div="100"
+                 data-out="card.fill_alpha" data-dp="2">
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="card.glow" data-kind="bool"><span>Accent glow</span></label>
+          <label class="check"><input type="checkbox" data-np="equalizer" data-kind="bool"><span>Equalizer</span></label>
+        </div>
+      </div>
+
+      <!-- background -->
+      <!-- Backgrounds for all four surfaces. The editors are generated per
+           target in deck.js so there is exactly one set of controls to maintain,
+           and every target gets all of them. -->
+      <div class="tabpane" data-pane="bg">
+        <label class="field">
+          <span>Background for</span>
+          <div class="segmented small" id="bgTargets" role="group">
+            <button data-t="np" class="on">Now Playing</button>
+            <button data-t="lyrics">Lyrics</button>
+            <button data-t="queue">Queue</button>
+            <button data-t="app">The app</button>
+          </div>
+        </label>
+        <div id="bgEditors"></div>
+      </div>
+
+      <!-- Buttons drawn inside whichever window is selected above. Generated
+           per window in deck.js, same as the background editors. -->
+      <div class="tabpane" data-pane="controls">
+        <p class="hint">Put transport buttons inside the window itself, so you can
+          skip or pause without coming back to this app. They drive whatever is
+          playing — Spotify or your own files — and are hidden until your mouse is
+          over the window, so they stay out of the capture.</p>
+        <div id="controlEditors"></div>
+      </div>
+
+      <!-- text -->
+      <div class="tabpane" data-pane="text">
+        <label class="field">
+          <span>Font</span>
+          <select class="input" id="fontPick" data-np="text.font" data-kind="str"></select>
+        </label>
+
+        <label class="field">
+          <span>Alignment</span>
+          <div class="segmented small" data-np="text.align" data-kind="seg">
+            <button data-v="left">Left</button>
+            <button data-v="center">Center</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Title size <b class="mono" data-out="text.title_size">1.72</b></span>
+          <input class="range" type="range" min="60" max="360"
+                 data-np="text.title_size" data-kind="range" data-div="100"
+                 data-out="text.title_size" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Title weight</span>
+          <select class="input" data-np="text.title_weight" data-kind="int">
+            <option value="400">Regular</option>
+            <option value="600">Semibold</option>
+            <option value="700">Bold</option>
+            <option value="900">Black</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Artist size <b class="mono" data-out="text.artist_size">1.00</b></span>
+          <input class="range" type="range" min="40" max="220"
+                 data-np="text.artist_size" data-kind="range" data-div="100"
+                 data-out="text.artist_size" data-dp="2">
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Label text</span>
+          <input class="input" type="text" maxlength="32" placeholder="NOW PLAYING"
+                 data-np="label.text" data-kind="str">
+        </label>
+        <label class="field">
+          <span>Label size</span>
+          <input class="input" type="number" step="0.02" min="0.3" max="2"
+                 data-np="text.label_size" data-kind="float">
+        </label>
+
+        <label class="field">
+          <span>Text shadow <b class="mono" data-out="text.shadow">0.00</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-np="text.shadow" data-kind="range" data-div="100"
+                 data-out="text.shadow" data-dp="2">
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="label.show" data-kind="bool"><span>Show label</span></label>
+          <label class="check"><input type="checkbox" data-np="text.uppercase" data-kind="bool"><span>UPPERCASE title</span></label>
+          <label class="check"><input type="checkbox" data-np="text.marquee" data-kind="bool"><span>Scroll long titles</span></label>
+          <label class="check"><input type="checkbox" data-np="source_badge" data-kind="bool"><span>Source badge</span></label>
+        </div>
+      </div>
+
+      <!-- art & bar -->
+      <div class="tabpane" data-pane="bits">
+        <label class="check big"><input type="checkbox" data-np="art.show" data-kind="bool"><span>Show album art</span></label>
+        <div class="field two">
+          <label><span>Art radius</span>
+            <input class="input" type="number" min="0" max="200" data-np="art.radius" data-kind="int"></label>
+          <label><span>Art border</span>
+            <input class="input" type="number" min="0" max="12" data-np="art.border" data-kind="int"></label>
+        </div>
+
+        <div class="divider"></div>
+
+        <label class="check big"><input type="checkbox" data-np="progress.show" data-kind="bool"><span>Show progress bar</span></label>
+        <label class="field">
+          <span>Bar height <b class="mono" data-out="progress.height">5</b>px</span>
+          <input class="range" type="range" min="1" max="30"
+                 data-np="progress.height" data-kind="range" data-out="progress.height">
+        </label>
+        <div class="field two">
+          <label><span>Left of the bar</span>
+            <select class="input" data-np="progress.left" data-kind="str">
+              <option value="elapsed">Time played</option>
+              <option value="remaining">Time left</option>
+              <option value="duration">Full length</option>
+              <option value="none">Nothing</option>
+            </select></label>
+          <label><span>Right of the bar</span>
+            <select class="input" data-np="progress.right" data-kind="str">
+              <option value="remaining">Time left</option>
+              <option value="elapsed">Time played</option>
+              <option value="duration">Full length</option>
+              <option value="none">Nothing</option>
+            </select></label>
+        </div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="progress.times" data-kind="bool"><span>Show times</span></label>
+          <label class="check"><input type="checkbox" data-np="progress.glow" data-kind="bool"><span>Bar glow</span></label>
+          <label class="check"><input type="checkbox" data-np="interactive" data-kind="bool"><span>Clickable window</span></label>
+        </div>
+        <p class="hint">Clickable lets you scrub the progress bar right on the window.
+          The lyrics and queue windows have their own switch.</p>
+      </div>
+
+
+      <!-- decor -->
+      <div class="tabpane" data-pane="decor">
+        <p class="hint">Characters repeated around the edge of the window.</p>
+
+        <label class="field">
+          <span>Pattern</span>
+          <select class="input" id="decorBorder" data-np="decor.border" data-kind="str"></select>
+        </label>
+
+        <label class="field">
+          <span>Or type your own</span>
+          <input class="input" type="text" maxlength="40" placeholder="e.g. ✿ ❀ ✾ "
+                 data-np="decor.custom" data-kind="str">
+        </label>
+
+        <label class="field">
+          <span>Sides</span>
+          <div class="segmented small" data-np="decor.sides" data-kind="seg">
+            <button data-v="none">Off</button>
+            <button data-v="tb">Top &amp; bottom</button>
+            <button data-v="all">All round</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Placement</span>
+          <div class="segmented small" data-np="decor.place" data-kind="seg">
+            <button data-v="in">Inside the frame</button>
+            <button data-v="out">Around it</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Depth</span>
+          <div class="segmented small" data-np="decor.layer" data-kind="seg">
+            <button data-v="under">Behind (watermark)</button>
+            <button data-v="over">In front</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Card steps in <b class="mono" data-out="decor.inset">1.00</b></span>
+          <input class="range" type="range" min="0" max="100"
+                 data-np="decor.inset" data-kind="range" data-div="100"
+                 data-out="decor.inset" data-dp="2">
+        </label>
+
+        <label class="field">
+          <span>Soften <b class="mono" data-out="decor.blur">0</b>px</span>
+          <input class="range" type="range" min="0" max="8"
+                 data-np="decor.blur" data-kind="range" data-out="decor.blur">
+        </label>
+
+        <label class="field">
+          <span>Thickness <b class="mono" data-out="decor.size">0.62</b>em</span>
+          <input class="range" type="range" min="20" max="400"
+                 data-np="decor.size" data-kind="range" data-div="100"
+                 data-out="decor.size" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Spacing <b class="mono" data-out="decor.gap">0.50</b></span>
+          <input class="range" type="range" min="0" max="200"
+                 data-np="decor.gap" data-kind="range" data-div="100"
+                 data-out="decor.gap" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Opacity <b class="mono" data-out="decor.opacity">0.85</b></span>
+          <input class="range" type="range" min="5" max="100"
+                 data-np="decor.opacity" data-kind="range" data-div="100"
+                 data-out="decor.opacity" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Color</span>
+          <div class="segmented small" data-np="decor.tint" data-kind="segbool">
+            <button data-v="1">Tinted</button>
+            <button data-v="0">Artwork colors</button>
+          </div>
+          <span class="hint">Tinted redraws the artwork in one color so it stays readable on
+            a dark card; the pale originals turn to gray mush there. The tint color lives under
+            <b>Colors</b> &rarr; <b>Fine-tune individual colors</b>.</span>
+        </label>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>Emoticon next to the label</span>
+          <select class="input" id="kaoPick" data-np="decor.kaomoji" data-kind="str"></select>
+        </label>
+        <label class="field">
+          <span>Or type your own</span>
+          <input class="input" type="text" maxlength="40" placeholder="(◕‿◕)"
+                 data-np="decor.kaomoji" data-kind="str">
+        </label>
+
+        <label class="field">
+          <span>Drift speed <b class="mono" data-out="decor.speed">1.00</b>&times;</span>
+          <input class="range" type="range" min="10" max="500"
+                 data-np="decor.speed" data-kind="range" data-div="100"
+                 data-out="decor.speed" data-dp="2">
+          <span class="hint">With all four sides on, the pattern travels around the
+            window as a loop rather than each pair sliding the same way.</span>
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-np="decor.animate" data-kind="bool"><span>Drift</span></label>
+        </div>
+      </div>
+
+
+      <!-- lyrics: look -->
+      <div class="tabpane" data-pane="lyrics">
+        <p class="hint">A second window that scrolls the words in time with the song.
+          Add it in TikTok Studio as <b>Awesome Music Streaming Deck - Lyrics</b> and drag it wherever you like.
+          Local tracks use a <b>.lrc</b> file next to the song when there is one.</p>
+        <div id="lyInfo" class="hint"></div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-ly="online" data-kind="bool"><span>Look up online (lrclib.net)</span></label>
+          <label class="check"><input type="checkbox" data-ly="follow_theme" data-kind="bool"><span>Use the same background as Now Playing</span></label>
+          <label class="check"><input type="checkbox" data-ly="dim_past" data-kind="bool"><span>Fade sung lines</span></label>
+          <label class="check"><input type="checkbox" data-ly="show_header" data-kind="bool"><span>Song title on top</span></label>
+          <label class="check"><input type="checkbox" data-ly="interactive" data-kind="bool"><span>Click a line to jump</span></label>
+        </div>
+
+        <label class="field">
+          <span>Lines shown <b class="mono" data-lyout="lines">5</b></span>
+          <input class="range" type="range" min="3" max="11" step="2"
+                 data-ly="lines" data-kind="range" data-lyout="lines">
+        </label>
+        <label class="field">
+          <span>Timing nudge <b class="mono" data-lyout="offset">0.0</b>s</span>
+          <input class="range" type="range" min="-30" max="30"
+                 data-ly="offset" data-kind="range" data-div="10" data-lyout="offset" data-dp="1">
+        </label>
+      </div>
+
+      <!-- lyrics: text -->
+      <div class="tabpane" data-pane="lyrics-text">
+        <label class="field">
+          <span>Text size <b class="mono" data-lyout="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="220"
+                 data-ly="scale" data-kind="range" data-div="100" data-lyout="scale" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Alignment</span>
+          <div class="segmented small" data-ly="align" data-kind="seg">
+            <button data-v="center">Center</button>
+            <button data-v="left">Left</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Current line</span>
+          <div class="segmented small" data-ly="highlight" data-kind="seg">
+            <button data-v="accent">Accent color</button>
+            <button data-v="text">Text color</button>
+          </div>
+        </label>
+
+        <div class="divider"></div>
+        <label class="field"><span>Words</span>
+          <span class="color-row"><input class="color wide" type="color" data-ly="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="ly" title="Reset to theme">&#8635;</button></span></label>
+        <label class="field"><span>Faded / sung</span>
+          <span class="color-row"><input class="color wide" type="color" data-ly="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="ly" title="Reset to theme">&#8635;</button></span></label>
+        <label class="field"><span>Highlight</span>
+          <span class="color-row"><input class="color wide" type="color" data-ly="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="ly" title="Reset to theme">&#8635;</button></span></label>
+        <span class="hint">Leave blank to use the Now Playing colors. Set a color to give them their own.</span>
+      </div>
+
+      <!-- lyrics: size -->
+      <div class="tabpane" data-pane="lyrics-size">
+        <label class="field">
+          <span>Shape</span>
+          <div class="row gap wrap" id="lySizePresets">
+            <button class="btn btn-ghost btn-sm" data-w="600" data-h="220">Banner 600×220</button>
+            <button class="btn btn-ghost btn-sm" data-w="420" data-h="520">Tall 420×520</button>
+            <button class="btn btn-ghost btn-sm" data-w="900" data-h="180">Wide 900×180</button>
+          </div>
+          <span class="hint">Or grab a corner of the window itself and stretch it any way you like.</span>
+        </label>
+
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="lyWidth" class="input" type="number" min="200" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="lyHeight" class="input" type="number" min="100" max="2160" step="10"></label>
+        </div>
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="lySnap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+      </div>
+
+
+      <!-- queue: look -->
+      <div class="tabpane" data-pane="queue">
+        <p class="hint">A window showing what Spotify plays next. Add it in TikTok Studio
+          as <b>Awesome Music Streaming Deck - Queue</b>. Needs the Spotify account connected.</p>
+
+        <label class="field">
+          <span>Heading</span>
+          <input class="input" type="text" maxlength="24" placeholder="UP NEXT"
+                 data-q="heading" data-kind="str">
+        </label>
+        <label class="field">
+          <span>Most tracks to show <b class="mono" data-qout="rows">12</b></span>
+          <input class="range" type="range" min="1" max="30"
+                 data-q="rows" data-kind="range" data-qout="rows">
+          <span class="hint">The window shows as many as fit — make it taller for more.
+            This is just the ceiling.</span>
+        </label>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-q="show_header" data-kind="bool"><span>Heading</span></label>
+          <label class="check"><input type="checkbox" data-q="show_now" data-kind="bool"><span>Include current track</span></label>
+          <label class="check"><input type="checkbox" data-q="show_art" data-kind="bool"><span>Album art</span></label>
+          <label class="check"><input type="checkbox" data-q="show_artist" data-kind="bool"><span>Artist</span></label>
+          <label class="check"><input type="checkbox" data-q="show_times" data-kind="bool"><span>Track length</span></label>
+          <label class="check"><input type="checkbox" data-q="follow_theme" data-kind="bool"><span>Use the same background as Now Playing</span></label>
+          <label class="check"><input type="checkbox" data-q="interactive" data-kind="bool"><span>Click a track to play</span></label>
+        </div>
+      </div>
+
+      <!-- queue: text -->
+      <div class="tabpane" data-pane="queue-text">
+        <label class="field">
+          <span>Text size <b class="mono" data-qout="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="220"
+                 data-q="scale" data-kind="range" data-div="100" data-qout="scale" data-dp="2">
+        </label>
+
+        <div class="divider"></div>
+        <label class="field"><span>Track title</span>
+          <span class="color-row"><input class="color wide" type="color" data-q="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="q" title="Reset to theme">&#8635;</button></span></label>
+        <label class="field"><span>Artist / times</span>
+          <span class="color-row"><input class="color wide" type="color" data-q="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="q" title="Reset to theme">&#8635;</button></span></label>
+        <label class="field"><span>Highlight</span>
+          <span class="color-row"><input class="color wide" type="color" data-q="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="q" title="Reset to theme">&#8635;</button></span></label>
+        <span class="hint">Leave blank to use the Now Playing colors. Set a color to give them their own.</span>
+      </div>
+
+      <!-- queue: size -->
+      <div class="tabpane" data-pane="queue-size">
+        <label class="field">
+          <span>Shape</span>
+          <div class="row gap wrap" id="qSizePresets">
+            <button class="btn btn-ghost btn-sm" data-w="360" data-h="560">Portrait 360×560</button>
+            <button class="btn btn-ghost btn-sm" data-w="480" data-h="360">Box 480×360</button>
+            <button class="btn btn-ghost btn-sm" data-w="320" data-h="720">Tall 320×720</button>
+          </div>
+          <span class="hint">Or grab a corner of the window itself and stretch it any way you like.</span>
+        </label>
+
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="qWidth" class="input" type="number" min="200" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="qHeight" class="input" type="number" min="100" max="2160" step="10"></label>
+        </div>
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="qSnap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+      </div>
+
+      <!-- stickers -->
+      <div class="tabpane" data-pane="stickers">
+        <div class="row gap">
+          <button class="btn btn-primary btn-sm" id="stickerAdd">+ Add sticker…</button>
+          <button class="btn btn-ghost btn-sm" id="stickerDelete" disabled>Remove</button>
+        </div>
+        <p class="hint">Drop pictures straight onto the preview, then drag them into
+          place. <b>Animated GIFs and WebPs play</b> — they keep running while you move
+          them, and carry on across track changes.</p>
+
+        <div class="sticker-list" id="stickerList"></div>
+
+        <div id="stickerEdit" class="sticker-edit" hidden>
+          <div class="divider"></div>
+          <label class="field">
+            <span>Size <b class="mono" data-sout="w">20</b>%</span>
+            <input class="range" type="range" min="2" max="100" data-st="w">
+          </label>
+          <label class="field">
+            <span>Rotation <b class="mono" data-sout="rot">0</b>°</span>
+            <input class="range" type="range" min="-180" max="180" data-st="rot">
+          </label>
+          <label class="field">
+            <span>Opacity <b class="mono" data-sout="opacity">1.00</b></span>
+            <input class="range" type="range" min="5" max="100" data-st="opacity" data-div="100" data-dp="2">
+          </label>
+          <div class="field two">
+            <label><span>X %</span><input class="input" type="number" min="-20" max="120" data-st="x"></label>
+            <label><span>Y %</span><input class="input" type="number" min="-20" max="120" data-st="y"></label>
+          </div>
+          <div class="row gap wrap">
+            <button class="btn btn-ghost btn-sm" id="stickerUp">Move up</button>
+            <button class="btn btn-ghost btn-sm" id="stickerDown">Move down</button>
+            <button class="btn btn-ghost btn-sm" id="stickerFront">In front of card</button>
+            <button class="btn btn-ghost btn-sm" id="stickerBack">Behind card</button>
+            <button class="btn btn-ghost btn-sm" id="stickerFlip">Flip</button>
+          </div>
+
+          <label class="field">
+            <span>Color</span>
+            <div class="row gap">
+              <label class="check"><input type="checkbox" id="stickerTint"><span>Tint it</span></label>
+              <input class="color" type="color" id="stickerColor">
+            </div>
+            <span class="hint">A dropped-in picture keeps its own colors. Tinting redraws it
+              as a single-color silhouette, the way the built-in patterns work.</span>
+            <span class="hint warn" id="stickerTintNote" hidden>This one is animated —
+              tinting uses its first frame only, so it will stop moving.</span>
+          </label>
+
+          <label class="field">
+            <span>Swap the picture</span>
+            <div class="asset-picker" id="stickerPicker"></div>
+          </label>
+        </div>
+      </div>
+
+      <!-- window -->
+      <div class="tabpane" data-pane="window">
+        <label class="field">
+          <span>Shape</span>
+          <div class="row gap wrap" id="sizePresets">
+            <button class="btn btn-ghost btn-sm" data-w="760" data-h="190">Horizontal 760×190</button>
+            <button class="btn btn-ghost btn-sm" data-w="1000" data-h="150">Wide strip 1000×150</button>
+            <button class="btn btn-ghost btn-sm" data-w="420" data-h="420">Square 420×420</button>
+            <button class="btn btn-ghost btn-sm" data-w="360" data-h="560">Portrait 360×560</button>
+            <button class="btn btn-ghost btn-sm" data-w="640" data-h="96">Slim 640×96</button>
+          </div>
+          <span class="hint">Or grab the bottom-right corner of the window itself and stretch it any way you like.</span>
+        </label>
+
+        <label class="field">
+          <span>Layout</span>
+          <div class="segmented small" data-np="layout" data-kind="seg">
+            <button data-v="auto">Auto</button>
+            <button data-v="bar">Bar</button>
+            <button data-v="card">Card</button>
+            <button data-v="compact">Compact</button>
+          </div>
+          <span class="hint">Auto follows the window's shape: wide = bar, square = card, thin = strip.
+            Lock it to a fixed layout if you want size to change nothing else.</span>
+        </label>
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="width" class="input" type="number" min="160" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="height" class="input" type="number" min="60" max="2160" step="10"></label>
+        </div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="borderless"><span>No window frame</span></label>
+          <label class="check"><input type="checkbox" id="topmost"><span>Keep above other windows</span></label>
+        </div>
+
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="snap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+
+        <p class="hint">
+          In TikTok Studio: <b>Add source → Window</b>, then pick
+          <b>Awesome Music Streaming Deck - Now Playing</b>. Resizing here changes the real window,
+          so what you capture always matches the preview.
+        </p>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- ============================================ right rail -->
+  <div class="rail">
+
+    <section class="panel player">
+      <div class="now">
+        <div class="now-art">
+          <img id="deckArt" alt="">
+          <div id="deckArtFallback" class="art-empty">♪</div>
+        </div>
+        <div class="now-text">
+          <div id="deckSource" class="eyebrow">Nothing playing</div>
+          <div id="deckTitle" class="now-title">—</div>
+          <div id="deckArtist" class="now-artist"></div>
+        </div>
+      </div>
+      <div class="seek">
+        <input id="seek" class="range" type="range" min="0" max="1000" value="0">
+        <div class="times"><span id="deckElapsed">0:00</span><span id="deckDuration">0:00</span></div>
+      </div>
+      <div class="player-controls">
+        <div class="transport">
+          <button id="shuffle" class="icon" title="Shuffle"></button>
+          <button id="prev" class="icon" title="Previous"></button>
+          <button id="playpause" class="icon icon-big" title="Play / pause (Space)"></button>
+          <button id="next" class="icon" title="Next"></button>
+          <button id="repeat" class="icon" title="Repeat"></button>
+        </div>
+        <div class="volume" title="Volume">
+          <span class="vol-icon" aria-hidden="true"></span>
+          <input id="volume" class="range" type="range" min="0" max="100" value="70"
+                 aria-label="Volume">
+          <span id="volLabel" class="muted small mono">70</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Where your music comes from, and everything Spotify, in one place. -->
+    <section class="panel music">
+      <div class="panel-head">
+        <h2>Where your music comes from</h2>
+        <div class="segmented" id="sourceMode" role="group" aria-label="Where the music comes from">
+          <button data-mode="auto" class="on">Auto</button>
+          <button data-mode="local">My computer</button>
+          <button data-mode="spotify">Spotify</button>
+        </div>
+      </div>
+
+      <div class="music-facts">
+        <div class="row gap between tight">
+          <span class="muted small">Playing on this PC <span class="tag tag-soft">via Windows</span></span>
+          <span id="spotifyPill" class="pill pill-warn">starting&hellip;</span>
+        </div>
+        <div id="spotifyBody" class="spotify-body">
+          <div class="muted small">Looking for a media session&hellip;</div>
+        </div>
+        <p class="hint">Song title, artist and cover already show up with no sign-in &mdash; Windows
+          tells this app what Spotify (or any player) is playing on this PC.</p>
+        <p class="hint" id="spPremiumFact">Skip, pause and seek need Spotify Premium. Reading the
+          queue and full-size album art works on a free account once you connect below.</p>
+      </div>
+
+      <div class="spotify-main" id="spotifyMain" hidden>
       <div class="panel-head">
         <h2>Spotify</h2>
         <div class="row gap">
@@ -130,8 +945,33 @@
         </div>
       </div>
 
-      <!-- shown until the account is connected -->
-      <div id="spSetup" class="sp-setup">
+      <!-- shown once connected -->
+      <div id="spQueueWrap" class="sp-queue-wrap" hidden>
+        <div class="sp-searchbar">
+          <input id="spSearch" class="input" type="search"
+                 placeholder="Search Spotify — click a result to queue it…">
+        </div>
+        <div id="spResults" class="sp-results" hidden></div>
+
+        <div class="sp-list-head">
+          <span id="spQueueCount" class="muted small">Up next</span>
+          <div class="row gap">
+            <button id="spShuffle" class="btn btn-ghost btn-sm icon-btn" title="Shuffle"></button>
+            <button id="spRepeat" class="btn btn-ghost btn-sm icon-btn" title="Repeat"></button>
+          </div>
+        </div>
+        <div id="spQueue" class="sp-queue"></div>
+        <p class="hint sp-note"><b>Play now</b> advances to that track, dropping the ones
+          above it — the same thing Spotify's own app does when you click an item in its queue.
+          Spotify's API has no way to reorder or remove queued items, so a true drag-to-reorder
+          is not possible; everything below the track you pick is kept.</p>
+        <label class="check"><input type="checkbox" id="spUseAccount"><span>Prefer the account when both know a track</span></label>
+      </div>
+
+      <!-- the one guided connect, tucked away until you want it -->
+      <details id="spSetupBox" class="sp-connect">
+        <summary>Connect a Spotify account &mdash; for the queue, full-size art and remote control</summary>
+        <div id="spSetup" class="sp-setup">
         <p class="hint">Awesome Music Streaming Deck already reads the title and artist of whatever Spotify is
           playing on <b>this</b> PC — that needs no login at all. Connecting your account adds
           the things Windows cannot tell us: the <b>queue</b>, the <b>album art</b> at full size,
@@ -215,37 +1055,16 @@
 
         <p class="hint">None of this sends your listening anywhere. The token lives in
           <code>cache/spotify_token.json</code> next to the app and talks only to Spotify.</p>
-      </div>
-
-      <!-- shown once connected -->
-      <div id="spQueueWrap" class="sp-queue-wrap" hidden>
-        <div class="sp-searchbar">
-          <input id="spSearch" class="input" type="search"
-                 placeholder="Search Spotify — click a result to queue it…">
         </div>
-        <div id="spResults" class="sp-results" hidden></div>
-
-        <div class="sp-list-head">
-          <span id="spQueueCount" class="muted small">Up next</span>
-          <div class="row gap">
-            <button id="spShuffle" class="btn btn-ghost btn-sm icon-btn" title="Shuffle"></button>
-            <button id="spRepeat" class="btn btn-ghost btn-sm icon-btn" title="Repeat"></button>
-          </div>
-        </div>
-        <div id="spQueue" class="sp-queue"></div>
-        <p class="hint sp-note"><b>Play now</b> advances to that track, dropping the ones
-          above it — the same thing Spotify's own app does when you click an item in its queue.
-          Spotify's API has no way to reorder or remove queued items, so a true drag-to-reorder
-          is not possible; everything below the track you pick is kept.</p>
-      </div>
+      </details>
 
       <div class="panel-foot">
         <span id="spDisconnectWrap"><button id="spDisconnect2" class="btn btn-ghost btn-sm">Disconnect account</button></span>
         <span id="spQueueErr" class="muted small"></span>
       </div>
-    </section>
+      </div>
 
-    <section class="panel library" id="libraryPanel">
+      <div class="library" id="libraryPanel">
       <div class="panel-head">
         <h2>Library</h2>
         <div class="row gap">
@@ -259,773 +1078,17 @@
         <span id="libCount" class="muted">No folders added yet</span>
         <button id="addFolder" class="btn btn-ghost btn-sm">+ Add music folder</button>
       </div>
-    </section>
-  </div>
-
-  <!-- ============================================ right rail -->
-  <div class="rail">
-
-    <section class="panel player">
-      <div class="now">
-        <div class="now-art">
-          <img id="deckArt" alt="">
-          <div id="deckArtFallback" class="art-empty">♪</div>
-        </div>
-        <div class="now-text">
-          <div id="deckSource" class="eyebrow">Nothing playing</div>
-          <div id="deckTitle" class="now-title">—</div>
-          <div id="deckArtist" class="now-artist"></div>
-        </div>
-      </div>
-      <div class="seek">
-        <input id="seek" class="range" type="range" min="0" max="1000" value="0">
-        <div class="times"><span id="deckElapsed">0:00</span><span id="deckDuration">0:00</span></div>
-      </div>
-      <div class="player-controls">
-        <div class="transport">
-          <button id="shuffle" class="icon" title="Shuffle"></button>
-          <button id="prev" class="icon" title="Previous"></button>
-          <button id="playpause" class="icon icon-big" title="Play / pause (Space)"></button>
-          <button id="next" class="icon" title="Next"></button>
-          <button id="repeat" class="icon" title="Repeat"></button>
-        </div>
-        <div class="volume" title="Volume">
-          <span class="vol-icon" aria-hidden="true"></span>
-          <input id="volume" class="range" type="range" min="0" max="100" value="70"
-                 aria-label="Volume">
-          <span id="volLabel" class="muted small mono">70</span>
-        </div>
       </div>
     </section>
 
-    <!-- Just where the music is coming from. What is playing, and the buttons
-         to drive it, live in the player card above - no need to say it twice. -->
-    <section class="panel spotify">
-      <div class="panel-head tight">
-        <h2>Spotify <span class="tag tag-soft">via Windows</span></h2>
-        <span id="spotifyPill" class="pill pill-warn">starting…</span>
+    <!-- The app's own window: colors, font, density. Collapsed by default;
+         the App appearance… button in the top bar opens it. -->
+    <section class="panel app-appearance" id="appAppearance" hidden>
+      <div class="panel-head">
+        <h2>App appearance</h2>
+        <button id="appLookClose" class="btn btn-ghost btn-sm">Close</button>
       </div>
-      <div id="spotifyBody" class="spotify-body">
-        <div class="muted small">Looking for a media session…</div>
-      </div>
-
-      <div class="sp-account">
-        <div class="row gap between">
-          <span id="spAccStatus" class="muted small">Account: not connected</span>
-          <button id="spAccToggle" class="btn btn-ghost btn-sm">Connect account…</button>
-        </div>
-        <div id="spAccSetup" hidden>
-          <p class="hint">Optional. Lets Awesome Music Streaming Deck see and control Spotify wherever it is playing —
-            phone, web player, speakers. One-time setup:</p>
-          <ol class="hint steps">
-            <li>Open <b>developer.spotify.com/dashboard</b> → <b>Create app</b>.</li>
-            <li>Under Redirect URIs add exactly: <code id="spRedirect">http://127.0.0.1:8713/spotify/callback</code></li>
-            <li>Copy the app's <b>Client ID</b> into the box, press Connect, approve in the browser.</li>
-          </ol>
-          <input id="spClientId" class="input" type="text" placeholder="Client ID" spellcheck="false" autocomplete="off">
-          <div class="row gap wrap">
-            <button id="spConnect" class="btn btn-primary btn-sm">Connect Spotify</button>
-            <button id="spDisconnect" class="btn btn-ghost btn-sm">Disconnect</button>
-            <span id="spPending" class="pill pill-warn" hidden>waiting for approval…</span>
-          </div>
-          <p id="spManual" class="hint" hidden>
-            No approval window? <a id="spManualLink" href="#" target="_blank" rel="noreferrer">Open the
-            approval page here</a> instead.
-          </p>
-          <label class="check"><input type="checkbox" id="spUseAccount"><span>Prefer the account when both know a track</span></label>
-          <p class="hint">Remote control needs Spotify Premium. Friends using your Client ID must be on the
-            app's user list, or they make their own app and paste their own ID.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ---------------------------------------- design -->
-    <section class="panel design">
-      <div class="theme-bar">
-        <span>Theme</span>
-        <select id="fullTheme" class="input">
-          <option value="">— pick a full theme —</option>
-          <option value="midnight">Midnight</option>
-          <option value="minimal">Minimal</option>
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
-          <option value="blossom">Watercolour Blossom</option>
-          <option value="hanami">Hanami</option>
-          <option value="cutecore">Cutecore</option>
-          <option value="bloom">Bloom</option>
-          <option value="sakura">Sakura Night</option>
-          <option value="redmoon">Red Moon</option>
-          <option value="ember">Embers</option>
-          <option value="arcade">Neon Arcade</option>
-          <option value="vapor">Vaporwave</option>
-          <option value="terminal">Terminal</option>
-        </select>
-      </div>
-
-      <!-- data-for says which window a tab belongs to; the rest are hidden. -->
-      <div class="tabs" id="designTabs">
-        <button data-tab="layout" data-for="np" class="on">Theme</button>
-        <button data-tab="window" data-for="np">Size</button>
-        <button data-tab="bg" data-for="all">Background</button>
-        <button data-tab="controls" data-for="all">Controls</button>
-        <button data-tab="text" data-for="np">Text</button>
-        <button data-tab="bits" data-for="np">Art &amp; bar</button>
-        <button data-tab="decor" data-for="np">Decor</button>
-        <button data-tab="stickers" data-for="np">Stickers</button>
-        <button data-tab="lyrics" data-for="lyrics">Settings</button>
-        <button data-tab="queue" data-for="queue">Settings</button>
-        <button data-tab="app" data-for="all">App look</button>
-      </div>
-
-      <!-- layout -->
-      <div class="tabpane on" data-pane="layout">
-        <label class="field">
-          <span>Start from a preset</span>
-          <select id="preset" class="input">
-            <option value="">— choose a preset —</option>
-            <option value="midnight">Midnight glass</option>
-            <option value="ink">Solid black</option>
-            <option value="neon">Neon glow</option>
-            <option value="light">Light</option>
-            <option value="sunset">Sunset gradient</option>
-            <option value="chroma">Chroma green (key it out)</option>
-            <option value="magenta">Chroma magenta</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Layout</span>
-          <div class="segmented small" data-np="layout" data-kind="seg">
-            <button data-v="auto">Auto</button>
-            <button data-v="bar">Bar</button>
-            <button data-v="card">Card</button>
-            <button data-v="compact">Compact</button>
-          </div>
-          <span class="hint">Auto follows the window's shape: wide = bar, square = card, thin = strip.</span>
-        </label>
-
-        <label class="field">
-          <span>Accent</span>
-          <div class="row gap">
-            <input class="color" type="color" data-np="accent" data-kind="color">
-            <div class="swatches" id="swatches"></div>
-          </div>
-        </label>
-
-        <label class="field">
-          <span>Theme colours</span>
-          <div class="field two">
-            <label><span>Text</span>
-              <input class="color wide" type="color" data-np="palette.text" data-kind="color"></label>
-            <label><span>Secondary text</span>
-              <input class="color wide" type="color" data-np="palette.muted" data-kind="color"></label>
-          </div>
-          <label><span>Lines and borders</span>
-            <input class="color wide" type="color" data-np="palette.line" data-kind="color"></label>
-          <span class="hint">Everything inherits these unless you set that thing's own colour.
-            Change one here and it carries through the pop-out, lyrics and queue at once.
-            Use <b>Reset to theme</b> on any colour to hand it back.</span>
-        </label>
-
-        <div class="row gap wrap">
-          <button class="btn btn-ghost btn-sm" id="resetColours">Reset all colours to theme</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>Themes from your pictures</span>
-          <span class="hint">Every picture in the app, read for the colours it is
-            actually made of. Click one to dress the whole deck and every window
-            in it.</span>
-          <div class="picture-themes" id="pictureThemes"></div>
-        </label>
-
-        <!-- The picture a theme just put behind a window, and the handful of
-             things you immediately want to do to it. -->
-        <div class="pt-tools" id="ptTools" hidden>
-          <div class="row gap between">
-            <span class="hint">The picture is behind <b id="ptWhere">the pop-out</b>.</span>
-            <button class="btn btn-ghost btn-sm" id="ptClear">Remove it</button>
-          </div>
-          <div class="row gap wrap">
-            <button class="btn btn-ghost btn-sm" id="ptFrame">Frame it…</button>
-            <label class="check"><input type="checkbox" id="ptTint"><span>Two-colour it</span></label>
-            <button class="btn btn-ghost btn-sm" id="ptSafe" hidden>Darken to
-              <b class="mono" id="ptSafeVal">0.00</b> for readable text</button>
-          </div>
-          <label class="field">
-            <span>Blur <b class="mono" id="ptBlurOut">0</b>px</span>
-            <input class="range" type="range" min="0" max="40" id="ptBlur">
-          </label>
-          <label class="field">
-            <span>Darken <b class="mono" id="ptDimOut">0.00</b></span>
-            <input class="range" type="range" min="0" max="90" id="ptDim">
-          </label>
-        </div>
-
-        <label class="field">
-          <span>Text scale <b class="mono" data-out="scale">1.00</b></span>
-          <input class="range" type="range" min="50" max="200"
-                 data-np="scale" data-kind="range" data-div="100" data-out="scale" data-dp="2">
-        </label>
-
-        <label class="field">
-          <span>Corners</span>
-          <div class="segmented small" id="cornerPick">
-            <button data-r="0">Square</button>
-            <button data-r="12">Soft</button>
-            <button data-r="24">Round</button>
-          </div>
-          <span class="hint">Square corners leave no margin at all &mdash; the card fills the window edge to edge.</span>
-        </label>
-
-        <div class="field two">
-          <label><span>Card radius <b class="mono" data-out="card.radius">18</b>px</span>
-            <input class="range" type="range" min="0" max="80"
-                   data-np="card.radius" data-kind="range" data-out="card.radius"></label>
-          <label><span>Card padding</span>
-            <input class="input" type="number" min="0" max="80" data-np="card.padding" data-kind="int"></label>
-        </div>
-
-        <div class="field two">
-          <label><span>Border width</span>
-            <input class="input" type="number" min="0" max="12" data-np="card.border" data-kind="int"></label>
-          <label><span>Border colour</span>
-            <input class="color wide" type="color" data-np="card.border_color" data-kind="color"></label>
-        </div>
-
-        <label class="field">
-          <span>Around the card</span>
-          <div class="segmented small" data-np="surround.mode" data-kind="seg">
-            <button data-v="solid">Solid colour</button>
-            <button data-v="theme">Theme background</button>
-          </div>
-          <span class="hint">A solid colour that matches your stream canvas makes the window's
-            outline disappear; <b>Theme background</b> lets the artwork run to the edges instead.</span>
-        </label>
-        <label class="field">
-          <span>Margin colour</span>
-          <div class="row gap wrap">
-            <input class="color" type="color" data-np="surround.color" data-kind="color">
-            <div class="swatches" id="surroundSwatches"></div>
-            <button class="btn btn-ghost btn-sm" id="surroundMatch">Match the artwork</button>
-          </div>
-          <span class="hint">Only shows where the card does not reach: rounded corners, and any decor frame
-            the card steps in from.</span>
-        </label>
-
-        <label class="field">
-          <span>Card fill (over the background)</span>
-          <div class="row gap">
-            <input class="color" type="color" data-np="card.fill" data-kind="color">
-            <button class="btn btn-ghost btn-sm" data-clear="card.fill">No fill</button>
-          </div>
-        </label>
-        <label class="field">
-          <span>Card fill opacity <b class="mono" data-out="card.fill_alpha">1.00</b></span>
-          <input class="range" type="range" min="0" max="100"
-                 data-np="card.fill_alpha" data-kind="range" data-div="100"
-                 data-out="card.fill_alpha" data-dp="2">
-        </label>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" data-np="card.glow" data-kind="bool"><span>Accent glow</span></label>
-          <label class="check"><input type="checkbox" data-np="equalizer" data-kind="bool"><span>Equaliser</span></label>
-        </div>
-      </div>
-
-      <!-- background -->
-      <!-- Backgrounds for all four surfaces. The editors are generated per
-           target in deck.js so there is exactly one set of controls to maintain,
-           and every target gets all of them. -->
-      <div class="tabpane" data-pane="bg">
-        <label class="field">
-          <span>Background for</span>
-          <div class="segmented small" id="bgTargets" role="group">
-            <button data-t="np" class="on">Pop-out</button>
-            <button data-t="lyrics">Lyrics</button>
-            <button data-t="queue">Queue</button>
-            <button data-t="app">The app</button>
-          </div>
-        </label>
-        <div id="bgEditors"></div>
-      </div>
-
-      <!-- Buttons drawn inside whichever window is selected above. Generated
-           per window in deck.js, same as the background editors. -->
-      <div class="tabpane" data-pane="controls">
-        <p class="hint">Put transport buttons inside the window itself, so you can
-          skip or pause without coming back to the deck. They drive whatever is
-          playing — Spotify or your own files — and are hidden until your mouse is
-          over the window, so they stay out of the capture.</p>
-        <div id="controlEditors"></div>
-      </div>
-
-      <!-- text -->
-      <div class="tabpane" data-pane="text">
-        <label class="field">
-          <span>Font</span>
-          <select class="input" id="fontPick" data-np="text.font" data-kind="str"></select>
-        </label>
-
-        <label class="field">
-          <span>Alignment</span>
-          <div class="segmented small" data-np="text.align" data-kind="seg">
-            <button data-v="left">Left</button>
-            <button data-v="center">Centre</button>
-          </div>
-        </label>
-
-        <label class="field">
-          <span>Title size <b class="mono" data-out="text.title_size">1.72</b></span>
-          <input class="range" type="range" min="60" max="360"
-                 data-np="text.title_size" data-kind="range" data-div="100"
-                 data-out="text.title_size" data-dp="2">
-        </label>
-        <div class="field two">
-          <label><span>Title weight</span>
-            <select class="input" data-np="text.title_weight" data-kind="int">
-              <option value="400">Regular</option>
-              <option value="600">Semibold</option>
-              <option value="700">Bold</option>
-              <option value="900">Black</option>
-            </select></label>
-          <label><span>Title colour</span>
-            <input class="color wide" type="color" data-np="text.title_color" data-kind="color"></label>
-        </div>
-
-        <label class="field">
-          <span>Artist size <b class="mono" data-out="text.artist_size">1.00</b></span>
-          <input class="range" type="range" min="40" max="220"
-                 data-np="text.artist_size" data-kind="range" data-div="100"
-                 data-out="text.artist_size" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Artist colour</span>
-          <input class="color wide" type="color" data-np="text.artist_color" data-kind="color">
-        </label>
-
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>Label text</span>
-          <input class="input" type="text" maxlength="32" placeholder="NOW PLAYING"
-                 data-np="label.text" data-kind="str">
-        </label>
-        <div class="field two">
-          <label><span>Label size</span>
-            <input class="input" type="number" step="0.02" min="0.3" max="2"
-                   data-np="text.label_size" data-kind="float"></label>
-          <label><span>Label colour</span>
-            <input class="color wide" type="color" data-np="text.label_color" data-kind="color"></label>
-        </div>
-
-        <label class="field">
-          <span>Text shadow <b class="mono" data-out="text.shadow">0.00</b></span>
-          <input class="range" type="range" min="0" max="100"
-                 data-np="text.shadow" data-kind="range" data-div="100"
-                 data-out="text.shadow" data-dp="2">
-        </label>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" data-np="label.show" data-kind="bool"><span>Show label</span></label>
-          <label class="check"><input type="checkbox" data-np="text.uppercase" data-kind="bool"><span>UPPERCASE title</span></label>
-          <label class="check"><input type="checkbox" data-np="text.marquee" data-kind="bool"><span>Scroll long titles</span></label>
-          <label class="check"><input type="checkbox" data-np="source_badge" data-kind="bool"><span>Source badge</span></label>
-        </div>
-      </div>
-
-      <!-- art & bar -->
-      <div class="tabpane" data-pane="bits">
-        <label class="check big"><input type="checkbox" data-np="art.show" data-kind="bool"><span>Show album art</span></label>
-        <div class="field two">
-          <label><span>Art radius</span>
-            <input class="input" type="number" min="0" max="200" data-np="art.radius" data-kind="int"></label>
-          <label><span>Art border</span>
-            <input class="input" type="number" min="0" max="12" data-np="art.border" data-kind="int"></label>
-        </div>
-        <label class="field">
-          <span>Art border colour</span>
-          <input class="color wide" type="color" data-np="art.border_color" data-kind="color">
-        </label>
-
-        <div class="divider"></div>
-
-        <label class="check big"><input type="checkbox" data-np="progress.show" data-kind="bool"><span>Show progress bar</span></label>
-        <label class="field">
-          <span>Bar height <b class="mono" data-out="progress.height">5</b>px</span>
-          <input class="range" type="range" min="1" max="30"
-                 data-np="progress.height" data-kind="range" data-out="progress.height">
-        </label>
-        <label class="field">
-          <span>Bar colour</span>
-          <div class="row gap">
-            <input class="color" type="color" data-np="progress.color" data-kind="color">
-            <button class="btn btn-ghost btn-sm" data-clear="progress.color">Use accent</button>
-          </div>
-        </label>
-        <div class="field two">
-          <label><span>Left of the bar</span>
-            <select class="input" data-np="progress.left" data-kind="str">
-              <option value="elapsed">Time played</option>
-              <option value="remaining">Time left</option>
-              <option value="duration">Full length</option>
-              <option value="none">Nothing</option>
-            </select></label>
-          <label><span>Right of the bar</span>
-            <select class="input" data-np="progress.right" data-kind="str">
-              <option value="remaining">Time left</option>
-              <option value="elapsed">Time played</option>
-              <option value="duration">Full length</option>
-              <option value="none">Nothing</option>
-            </select></label>
-        </div>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" data-np="progress.times" data-kind="bool"><span>Show times</span></label>
-          <label class="check"><input type="checkbox" data-np="progress.glow" data-kind="bool"><span>Bar glow</span></label>
-          <label class="check"><input type="checkbox" data-np="interactive" data-kind="bool"><span>Clickable pop-out</span></label>
-        </div>
-        <p class="hint">Clickable lets you scrub the progress bar right on the pop-out.
-          The lyrics and queue windows have their own switch.</p>
-      </div>
-
-
-      <!-- decor -->
-      <div class="tabpane" data-pane="decor">
-        <p class="hint">Characters repeated around the edge of the pop-out.</p>
-
-        <label class="field">
-          <span>Pattern</span>
-          <select class="input" id="decorBorder" data-np="decor.border" data-kind="str"></select>
-        </label>
-
-        <label class="field">
-          <span>Or type your own</span>
-          <input class="input" type="text" maxlength="40" placeholder="e.g. ✿ ❀ ✾ "
-                 data-np="decor.custom" data-kind="str">
-        </label>
-
-        <label class="field">
-          <span>Sides</span>
-          <div class="segmented small" data-np="decor.sides" data-kind="seg">
-            <button data-v="none">Off</button>
-            <button data-v="tb">Top &amp; bottom</button>
-            <button data-v="all">All round</button>
-          </div>
-        </label>
-
-        <label class="field">
-          <span>Placement</span>
-          <div class="segmented small" data-np="decor.place" data-kind="seg">
-            <button data-v="in">Inside the frame</button>
-            <button data-v="out">Around it</button>
-          </div>
-        </label>
-
-        <label class="field">
-          <span>Depth</span>
-          <div class="segmented small" data-np="decor.layer" data-kind="seg">
-            <button data-v="under">Behind (watermark)</button>
-            <button data-v="over">In front</button>
-          </div>
-        </label>
-
-        <label class="field">
-          <span>Card steps in <b class="mono" data-out="decor.inset">1.00</b></span>
-          <input class="range" type="range" min="0" max="100"
-                 data-np="decor.inset" data-kind="range" data-div="100"
-                 data-out="decor.inset" data-dp="2">
-        </label>
-
-        <label class="field">
-          <span>Soften <b class="mono" data-out="decor.blur">0</b>px</span>
-          <input class="range" type="range" min="0" max="8"
-                 data-np="decor.blur" data-kind="range" data-out="decor.blur">
-        </label>
-
-        <label class="field">
-          <span>Thickness <b class="mono" data-out="decor.size">0.62</b>em</span>
-          <input class="range" type="range" min="20" max="400"
-                 data-np="decor.size" data-kind="range" data-div="100"
-                 data-out="decor.size" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Spacing <b class="mono" data-out="decor.gap">0.50</b></span>
-          <input class="range" type="range" min="0" max="200"
-                 data-np="decor.gap" data-kind="range" data-div="100"
-                 data-out="decor.gap" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Opacity <b class="mono" data-out="decor.opacity">0.85</b></span>
-          <input class="range" type="range" min="5" max="100"
-                 data-np="decor.opacity" data-kind="range" data-div="100"
-                 data-out="decor.opacity" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Colour</span>
-          <div class="segmented small" data-np="decor.tint" data-kind="segbool">
-            <button data-v="1">Tinted</button>
-            <button data-v="0">Artwork colours</button>
-          </div>
-          <div class="row gap">
-            <input class="color" type="color" data-np="decor.color" data-kind="color">
-            <button class="btn btn-ghost btn-sm" data-clear="decor.color">Use accent</button>
-          </div>
-          <span class="hint">Tinted redraws the artwork in one colour so it stays readable on
-            a dark card; the pale originals turn to grey mush there.</span>
-        </label>
-
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>Emoticon next to the label</span>
-          <select class="input" id="kaoPick" data-np="decor.kaomoji" data-kind="str"></select>
-        </label>
-        <label class="field">
-          <span>Or type your own</span>
-          <input class="input" type="text" maxlength="40" placeholder="(◕‿◕)"
-                 data-np="decor.kaomoji" data-kind="str">
-        </label>
-
-        <label class="field">
-          <span>Drift speed <b class="mono" data-out="decor.speed">1.00</b>&times;</span>
-          <input class="range" type="range" min="10" max="500"
-                 data-np="decor.speed" data-kind="range" data-div="100"
-                 data-out="decor.speed" data-dp="2">
-          <span class="hint">With all four sides on, the pattern travels around the
-            window as a loop rather than each pair sliding the same way.</span>
-        </label>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" data-np="decor.animate" data-kind="bool"><span>Drift</span></label>
-        </div>
-      </div>
-
-
-      <!-- lyrics -->
-      <div class="tabpane" data-pane="lyrics">
-        <p class="hint">A second pop-out that scrolls the words in time with the song.
-          Add it in TikTok Studio as <b>Awesome Music Streaming Deck - Lyrics</b> and drag it wherever you like.
-          Local tracks use a <b>.lrc</b> file next to the song when there is one.</p>
-        <div id="lyInfo" class="hint"></div>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" data-ly="online" data-kind="bool"><span>Look up online (lrclib.net)</span></label>
-          <label class="check"><input type="checkbox" data-ly="follow_theme" data-kind="bool"><span>Match the pop-out</span></label>
-          <label class="check"><input type="checkbox" data-ly="dim_past" data-kind="bool"><span>Fade sung lines</span></label>
-          <label class="check"><input type="checkbox" data-ly="show_header" data-kind="bool"><span>Song title on top</span></label>
-          <label class="check"><input type="checkbox" data-ly="interactive" data-kind="bool"><span>Click a line to jump</span></label>
-        </div>
-
-        <label class="field">
-          <span>Text size <b class="mono" data-lyout="scale">1.00</b></span>
-          <input class="range" type="range" min="50" max="220"
-                 data-ly="scale" data-kind="range" data-div="100" data-lyout="scale" data-dp="2">
-        </label>
-        <label class="field">
-          <span>Lines shown <b class="mono" data-lyout="lines">5</b></span>
-          <input class="range" type="range" min="3" max="11" step="2"
-                 data-ly="lines" data-kind="range" data-lyout="lines">
-        </label>
-        <label class="field">
-          <span>Alignment</span>
-          <div class="segmented small" data-ly="align" data-kind="seg">
-            <button data-v="center">Centre</button>
-            <button data-v="left">Left</button>
-          </div>
-        </label>
-        <label class="field">
-          <span>Current line</span>
-          <div class="segmented small" data-ly="highlight" data-kind="seg">
-            <button data-v="accent">Accent colour</button>
-            <button data-v="text">Text colour</button>
-          </div>
-        </label>
-        <label class="field">
-          <span>Timing nudge <b class="mono" data-lyout="offset">0.0</b>s</span>
-          <input class="range" type="range" min="-30" max="30"
-                 data-ly="offset" data-kind="range" data-div="10" data-lyout="offset" data-dp="1">
-        </label>
-
-        
-
-
-        <div class="field two">
-          <label><span>Width</span>
-            <input id="lyWidth" class="input" type="number" min="200" max="3840" step="10"></label>
-          <label><span>Height</span>
-            <input id="lyHeight" class="input" type="number" min="100" max="2160" step="10"></label>
-        </div>
-        <label class="field">
-          <span>Snap to</span>
-          <div class="row gap wrap" id="lySnap">
-            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
-            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
-            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
-            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
-          </div>
-        </label>
-      </div>
-
-
-      <!-- queue window -->
-      <div class="tabpane" data-pane="queue">
-        <p class="hint">A pop-out showing what Spotify plays next. Add it in TikTok Studio
-          as <b>Awesome Music Streaming Deck - Queue</b>. Needs the Spotify account connected.</p>
-
-        <label class="field">
-          <span>Heading</span>
-          <input class="input" type="text" maxlength="24" placeholder="UP NEXT"
-                 data-q="heading" data-kind="str">
-        </label>
-        <label class="field">
-          <span>Most tracks to show <b class="mono" data-qout="rows">12</b></span>
-          <input class="range" type="range" min="1" max="30"
-                 data-q="rows" data-kind="range" data-qout="rows">
-          <span class="hint">The window shows as many as fit — make it taller for more.
-            This is just the ceiling.</span>
-        </label>
-        <label class="field">
-          <span>Text size <b class="mono" data-qout="scale">1.00</b></span>
-          <input class="range" type="range" min="50" max="220"
-                 data-q="scale" data-kind="range" data-div="100" data-qout="scale" data-dp="2">
-        </label>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" data-q="show_header" data-kind="bool"><span>Heading</span></label>
-          <label class="check"><input type="checkbox" data-q="show_now" data-kind="bool"><span>Include current track</span></label>
-          <label class="check"><input type="checkbox" data-q="show_art" data-kind="bool"><span>Album art</span></label>
-          <label class="check"><input type="checkbox" data-q="show_artist" data-kind="bool"><span>Artist</span></label>
-          <label class="check"><input type="checkbox" data-q="show_times" data-kind="bool"><span>Track length</span></label>
-          <label class="check"><input type="checkbox" data-q="follow_theme" data-kind="bool"><span>Match the pop-out</span></label>
-          <label class="check"><input type="checkbox" data-q="interactive" data-kind="bool"><span>Click a track to play</span></label>
-        </div>
-
-
-        
-
-
-        <div class="field two">
-          <label><span>Width</span>
-            <input id="qWidth" class="input" type="number" min="200" max="3840" step="10"></label>
-          <label><span>Height</span>
-            <input id="qHeight" class="input" type="number" min="100" max="2160" step="10"></label>
-        </div>
-        <label class="field">
-          <span>Snap to</span>
-          <div class="row gap wrap" id="qSnap">
-            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
-            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
-            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
-            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
-          </div>
-        </label>
-      </div>
-
-      <!-- stickers -->
-      <div class="tabpane" data-pane="stickers">
-        <div class="row gap">
-          <button class="btn btn-primary btn-sm" id="stickerAdd">+ Add sticker…</button>
-          <button class="btn btn-ghost btn-sm" id="stickerDelete" disabled>Remove</button>
-        </div>
-        <p class="hint">Drop pictures straight onto the preview, then drag them into
-          place. <b>Animated GIFs and WebPs play</b> — they keep running while you move
-          them, and carry on across track changes.</p>
-
-        <div class="sticker-list" id="stickerList"></div>
-
-        <div id="stickerEdit" class="sticker-edit" hidden>
-          <div class="divider"></div>
-          <label class="field">
-            <span>Size <b class="mono" data-sout="w">20</b>%</span>
-            <input class="range" type="range" min="2" max="100" data-st="w">
-          </label>
-          <label class="field">
-            <span>Rotation <b class="mono" data-sout="rot">0</b>°</span>
-            <input class="range" type="range" min="-180" max="180" data-st="rot">
-          </label>
-          <label class="field">
-            <span>Opacity <b class="mono" data-sout="opacity">1.00</b></span>
-            <input class="range" type="range" min="5" max="100" data-st="opacity" data-div="100" data-dp="2">
-          </label>
-          <div class="field two">
-            <label><span>X %</span><input class="input" type="number" min="-20" max="120" data-st="x"></label>
-            <label><span>Y %</span><input class="input" type="number" min="-20" max="120" data-st="y"></label>
-          </div>
-          <div class="row gap wrap">
-            <button class="btn btn-ghost btn-sm" id="stickerUp">Move up</button>
-            <button class="btn btn-ghost btn-sm" id="stickerDown">Move down</button>
-            <button class="btn btn-ghost btn-sm" id="stickerFront">In front of card</button>
-            <button class="btn btn-ghost btn-sm" id="stickerBack">Behind card</button>
-            <button class="btn btn-ghost btn-sm" id="stickerFlip">Flip</button>
-          </div>
-
-          <label class="field">
-            <span>Colour</span>
-            <div class="row gap">
-              <label class="check"><input type="checkbox" id="stickerTint"><span>Tint it</span></label>
-              <input class="color" type="color" id="stickerColor">
-            </div>
-            <span class="hint">A dropped-in picture keeps its own colours. Tinting redraws it
-              as a single-colour silhouette, the way the built-in patterns work.</span>
-            <span class="hint warn" id="stickerTintNote" hidden>This one is animated —
-              tinting uses its first frame only, so it will stop moving.</span>
-          </label>
-
-          <label class="field">
-            <span>Swap the picture</span>
-            <div class="asset-picker" id="stickerPicker"></div>
-          </label>
-        </div>
-      </div>
-
-      <!-- window -->
-      <div class="tabpane" data-pane="window">
-        <label class="field">
-          <span>Shape</span>
-          <div class="row gap wrap" id="sizePresets">
-            <button class="btn btn-ghost btn-sm" data-w="760" data-h="190">Horizontal 760×190</button>
-            <button class="btn btn-ghost btn-sm" data-w="1000" data-h="150">Wide strip 1000×150</button>
-            <button class="btn btn-ghost btn-sm" data-w="420" data-h="420">Square 420×420</button>
-            <button class="btn btn-ghost btn-sm" data-w="360" data-h="560">Portrait 360×560</button>
-            <button class="btn btn-ghost btn-sm" data-w="640" data-h="96">Slim 640×96</button>
-          </div>
-          <span class="hint">Or grab the bottom-right corner of the window itself and stretch it any way you like.</span>
-        </label>
-
-        <div class="field two">
-          <label><span>Width</span>
-            <input id="width" class="input" type="number" min="160" max="3840" step="10"></label>
-          <label><span>Height</span>
-            <input id="height" class="input" type="number" min="60" max="2160" step="10"></label>
-        </div>
-
-        <div class="checks">
-          <label class="check"><input type="checkbox" id="borderless"><span>Borderless</span></label>
-          <label class="check"><input type="checkbox" id="topmost"><span>Always on top</span></label>
-        </div>
-
-        <label class="field">
-          <span>Snap to</span>
-          <div class="row gap wrap" id="snap">
-            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
-            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
-            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
-            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
-          </div>
-        </label>
-
-        <p class="hint">
-          In TikTok Studio: <b>Add source → Window</b>, then pick
-          <b>Awesome Music Streaming Deck - Now Playing</b>. Resizing here changes the real window,
-          so what you capture always matches the preview.
-        </p>
-      </div>
-
-      <!-- app look -->
-      <div class="tabpane" data-pane="app">
+      <div class="app-appearance-body">
         <label class="field">
           <span>App preset</span>
           <select id="uiPreset" class="input">
@@ -1082,7 +1145,7 @@
 
         <div class="checks">
           <label class="check"><input type="checkbox" data-ui="glow" data-kind="bool"><span>Accent glow</span></label>
-          <label class="check"><input type="checkbox" data-ui="follow_np" data-kind="bool"><span>Match the pop-out's colours</span></label>
+          <label class="check"><input type="checkbox" data-ui="follow_np" data-kind="bool"><span>Use the Now Playing window's colors</span></label>
         </div>
 
         <div class="divider"></div>
@@ -1143,7 +1206,7 @@
       <span id="framerReadout" class="muted small mono"></span>
       <span id="framerCrop" class="hint">The dimmed part is cropped away.</span>
       <div class="row gap">
-        <button id="framerCentre" class="btn btn-ghost btn-sm">Reset</button>
+        <button id="framerCenter" class="btn btn-ghost btn-sm">Reset</button>
         <button id="framerApply" class="btn btn-primary btn-sm">Use this framing</button>
       </div>
     </div>

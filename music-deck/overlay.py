@@ -94,12 +94,14 @@ class Overlay:
             from hostwin import viewport_rect
             vp = viewport_rect(self.host.child) if self.host.child else None
             return {"open": True, "hosted": True, "rect": self.host.rect(),
+                    "minimized": self.host.minimized(),
                     "viewport": [self.metrics.get("inner_w"), self.metrics.get("inner_h")],
                     "viewport_rect": vp}
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
-            return {"open": True, "hosted": False, "rect": winwin.get_rect(hwnd)}
-        return {"open": False, "hosted": False, "rect": None}
+            return {"open": True, "hosted": False, "minimized": False,
+                    "rect": winwin.get_rect(hwnd)}
+        return {"open": False, "hosted": False, "minimized": False, "rect": None}
 
     # ------------------------------------------------------------- open/close
 
@@ -310,6 +312,65 @@ class Overlay:
         w = max(min_w, min(max_w, rect["w"] + int(dw)))
         h = max(min_h, min(max_h, rect["h"] + int(dh)))
         return self.apply(width=w, height=h)
+
+    def resize_edge(self, edge, dx, dy, min_w=160, min_h=60, max_w=3840, max_h=2160):
+        """Drag any edge or corner; the opposite edge stays put.
+
+        `edge` is a substring of the eight compass codes (t b l r tl tr bl br);
+        `dx`/`dy` are accumulated screen-pixel deltas since the drag began.
+        """
+        rect = self.status().get("rect")
+        if not rect:
+            return None
+        x, y, w, h = rect["x"], rect["y"], rect["w"], rect["h"]
+        dx, dy, edge = int(dx), int(dy), edge or ""
+
+        def clamp_w(v):
+            return max(min_w, min(max_w, v))
+
+        def clamp_h(v):
+            return max(min_h, min(max_h, v))
+
+        if "l" in edge:
+            new_w = clamp_w(w - dx)
+            x += w - new_w
+            w = new_w
+        elif "r" in edge:
+            w = clamp_w(w + dx)
+        if "t" in edge:
+            new_h = clamp_h(h - dy)
+            y += h - new_h
+            h = new_h
+        elif "b" in edge:
+            h = clamp_h(h + dy)
+        return self._set_bounds(x, y, w, h)
+
+    def _set_bounds(self, x, y, w, h):
+        """Move and size the window in one shot; returns the new rect."""
+        if self.host and self.host.alive():
+            return self.host.set_bounds(int(x), int(y), int(w), int(h))
+        hwnd = winwin.find_window(self.page_title)
+        if hwnd:
+            hx, hy = self.insets or (16, 80)
+            winwin.move_resize(hwnd, int(x), int(y), int(w) + hx, int(h) + hy)
+            return winwin.get_rect(hwnd)
+        return None
+
+    def minimize(self):
+        if self.host and self.host.alive():
+            return self.host.minimize()
+        hwnd = winwin.find_window(self.page_title)
+        if hwnd:
+            return winwin.minimize(hwnd)
+        return False
+
+    def restore(self):
+        if self.host and self.host.alive():
+            return self.host.restore()
+        hwnd = winwin.find_window(self.page_title)
+        if hwnd:
+            return winwin.restore(hwnd)
+        return False
 
     def nudge(self, dx, dy):
         if self.host and self.host.alive():
