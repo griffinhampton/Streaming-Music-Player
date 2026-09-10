@@ -54,12 +54,18 @@ jobs:
         # dropper and antivirus engines flag it constantly. See ANTIVIRUS.md.
         # The artwork folder is deliberately not in the repository, so this
         # builds without it - exactly as a fresh clone would.
+        #
+        # Every file argument is absolute on purpose. PyInstaller resolves a
+        # relative --add-data source against the spec file's directory, and
+        # the spec lives in ../build - so a bare "web;web" is looked up as
+        # build/web and the build dies before it starts. build.bat sidesteps
+        # the same trap with %~dp0 paths; this is the CI equivalent.
         run: |
           pyinstaller --noconfirm --clean --onedir --noconsole `
-            --name "$env:APP_NAME" --icon music-deck.ico `
-            --version-file version.txt `
-            --add-data "web;web" --add-data "smtc.ps1;." `
-            --add-data "music-deck.ico;." `
+            --name "$env:APP_NAME" --icon "$PWD\music-deck.ico" `
+            --version-file "$PWD\version.txt" `
+            --add-data "$PWD\web;web" --add-data "$PWD\smtc.ps1;." `
+            --add-data "$PWD\music-deck.ico;." `
             --hidden-import tkinter --hidden-import tkinter.filedialog `
             --hidden-import tkinter.messagebox `
             --distpath ../dist --workpath ../build --specpath ../build `
@@ -89,9 +95,19 @@ jobs:
           }
 
       - name: Installer
-        # Inno Setup ships on the windows-latest image.
+        # Inno Setup ships on the windows-latest image. If an image update ever
+        # drops it, say so and carry on: the folder build is the deliverable,
+        # the installer is the nicety, and a missing nicety must not turn the
+        # whole build red.
+        shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q music-deck/installer.iss
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) {
+            & $iscc /Q music-deck/installer.iss
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          } else {
+            Write-Warning "Inno Setup not found on this runner - no installer built this time"
+          }
 
       - name: Checksums
         shell: pwsh
