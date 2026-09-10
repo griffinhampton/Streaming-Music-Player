@@ -1,13 +1,13 @@
 /* Queue window.
 
-   Shows what Spotify will play next. It takes its look from the pop-out's
-   design (over server-sent events) and polls the queue itself, since the queue
-   is a Spotify call rather than part of the shared state. */
+   Shows what Spotify will play next. Its look, the queue itself and what is
+   playing all arrive on the same server-sent state broadcast; this window
+   never asks Spotify for anything. */
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 const API = '/api/queue/window';
 
-let lastPlaying = false, lastTrackKey = null, lastConnected = null;
+let lastPlaying = false;
 
 const el = {
   stage: document.getElementById('stage'),
@@ -203,30 +203,36 @@ function wireRowClicks() {
       body: JSON.stringify({ uri: row.dataset.uri, index: +row.dataset.i }),
     }).then((r) => r.json()).then(() => {
       row.classList.remove('busy');
-      lastKey = '';
-      setTimeout(poll, 900);
+      // The server drops its cached queue on the write and broadcasts the
+      // fresh one; there is nothing to ask for here.
     }).catch(() => row.classList.remove('busy'));
   });
 }
 
-let pollTimer = null;
-/* Spotify rate-limits on total call volume, and this window plus the deck both
-   asking every four seconds is a lot of calls over a long stream. When Spotify
-   says wait, wait - asking again inside its window is what makes a short limit
-   into a long one. */
-let quietUntil = 0;
-function poll() {
+/* The queue rides the same state broadcast as everything else. The server owns
+   it, refreshes it on its own thread when a track changes or someone presses a
+   button, and never asks Spotify inside a rate-limit window - so this window
+   never asks Spotify for anything. */
+let lastQueueVersion = -1, lastQueue = null, lastNowRow = null;
+function followQueue(q, now) {
   if (PREVIEW) { render({ ...DEMO, connected: true }); return; }
-  if (Date.now() < quietUntil) return;
-  fetch('/api/spotify/queue').then((r) => r.json()).then((d) => {
-    if (!d.ok && d.retry_in) {
-      quietUntil = Date.now() + d.retry_in * 1000;
-      render({ queue: [], connected: true, note: d.reason });
-      return;
-    }
-    render(d.ok ? { now: d.now, queue: d.queue, connected: true }
-                : { queue: [], connected: d.reason !== 'not connected' });
-  }).catch(() => {});
+  if (!q) return;
+  // The "now" row is the track Windows says is playing - true even while the
+  // list itself is waiting out a limit.
+  const nowRow = now && now.title
+    ? { title: now.title, artist: now.artist, art: now.art_url || '', duration: now.duration }
+    : q.now;
+  if (q.version === lastQueueVersion && JSON.stringify(nowRow) === JSON.stringify(lastNowRow)) return;
+  lastQueueVersion = q.version;
+  lastNowRow = nowRow;
+  let list = q.queue || [];
+  // Waiting out a limit, the list can be one track behind the real player:
+  // drop its head if it is the track now playing.
+  if (nowRow && list.length && list[0].title === nowRow.title && list[0].artist === nowRow.artist) list = list.slice(1);
+  lastQueue = (q.ok || list.length)
+    ? { now: nowRow, queue: list, connected: true, note: q.retry_in ? q.reason : '' }
+    : { queue: [], connected: q.reason !== 'not connected', note: q.retry_in ? q.reason : '' };
+  render(lastQueue);
 }
 
 /* ------------------------------------------------------------- transport */
@@ -241,7 +247,7 @@ function connect() {
       const data = JSON.parse(e.data);
       applyDesign(data.nowplaying, data.queue_cfg);
       followPlaying(data.now);
-      followAccount(((data.spotify_status || {}).account) || {});
+      followQueue(data.spotify_queue, data.now);
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -270,7 +276,8 @@ if (!PREVIEW) {
 window.addEventListener('resize', () => {
   sizeRoot();
   lastKey = '';            // force a repaint so the row count is recomputed
-  poll();
+  if (PREVIEW) render({ ...DEMO, connected: true });
+  else if (lastQueue) render(lastQueue);
   if (!PREVIEW) reportWindowMetrics(API);
 });
 
@@ -279,35 +286,12 @@ fetch('/api/state').then((r) => r.json())
 
 wireRowClicks();
 connect();
-poll();
-/* Same as the deck: the state broadcast tells us when the track changed, for
-   free, so the timer is only a safety net for things we cannot see. */
-pollTimer = setInterval(poll, 120000);
+if (PREVIEW) render({ ...DEMO, connected: true });
 
-/* Which way round the play/pause icon goes, and when the list is stale. Both
-   ride connect()'s stream above rather than a second subscription: that
-   payload already carries `now`. */
-/* Connecting a Spotify account is the moment this window can finally show
-   something, and it is a deliberate act - so react to it at once rather than
-   waiting for the safety-net poll, which is two minutes wide on purpose. */
-function followAccount(acc) {
-  const now = !!acc.connected;
-  if (now === lastConnected) return;
-  lastConnected = now;
-  if (!now) return;
-  quietUntil = 0;              // a fresh connection deserves a fresh try
-  lastTrackKey = null;
-  setTimeout(poll, 400);
-}
-
+/* Which way round the play/pause icon goes. Rides connect()'s stream above
+   rather than a second subscription: that payload already carries `now`. */
 function followPlaying(now) {
   now = now || {};
-  // A new track means the queue moved on. This is how the list keeps up.
-  const key = [now.title, now.artist].join('|');
-  if (key !== lastTrackKey) {
-    lastTrackKey = key;
-    setTimeout(poll, 700);
-  }
   if (!!now.playing === lastPlaying) return;
   lastPlaying = !!now.playing;
   renderTransport(el.transport, (opts || {}).controls, lastPlaying,

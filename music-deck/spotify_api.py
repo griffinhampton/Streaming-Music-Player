@@ -64,6 +64,10 @@ class SpotifyAccount:
         self._devices_at = 0.0
         self._last_track = None
         self._bridge_track = None
+        # Bumped whenever a fresh list lands, so a front end can tell "new
+        # data" from "the same data again" without comparing the whole thing.
+        self._queue_version = 0
+        self._devices_version = 0
         self._error = ""
         self._backoff_until = 0.0
         # Set by the server: True while the Windows bridge is already telling
@@ -249,6 +253,17 @@ class SpotifyAccount:
         if track != self._last_track:
             self._last_track = track
             self._queue_cache = None
+        # Every Spotify read happens here, on this thread, so the state
+        # broadcast never waits on the network. The queue is re-read when
+        # something invalidated it (a write, a track change), when the last
+        # read failed, or past the long safety TTL.
+        now = time.time()
+        q = self._queue_cache
+        if q is None or not q.get("ok") or now - self._queue_at > self.QUEUE_TTL:
+            self._fetch_queue()
+        d = self._devices_cache
+        if d is None or not d.get("ok") or now - self._devices_at > self.DEVICES_TTL:
+            self._fetch_devices()
 
     def note_track(self, key):
         """Windows just reported a different track.
@@ -435,33 +450,25 @@ class SpotifyAccount:
                 "duration": round(float(item.get("duration_ms") or 0) / 1000, 1)}
 
     STALE_AFTER = 90.0    # a /me/player payload older than this is not "now"
-    QUEUE_TTL = 55.0      # seconds a fetched queue is reused before asking again
-    DEVICES_TTL = 120.0   # devices change rarely
-    ERROR_TTL = 10.0      # a failed read is not retried faster than this
+    # Refreshes are event-driven (a write, a track change); these are only the
+    # safety net that catches changes made in Spotify's own app, so they can
+    # be long. The poller retries a failed read on its next pass regardless.
+    QUEUE_TTL = 180.0     # seconds before the queue is re-read unprompted
+    DEVICES_TTL = 300.0   # devices change rarely, and switching one is a write
 
-    def queue(self):
-        """What Spotify will play next.
+    def _fetch_queue(self):
+        """Ask Spotify what plays next. Poller thread only.
 
         Note: the Web API can read this queue and append to it, but there is no
         endpoint to reorder or remove items - only playlist tracks can be moved.
-
-        Served from cache within QUEUE_TTL: however many front ends ask, Spotify
-        is asked at most once per window. A write or a track change drops the
-        cache so the next read is fresh instead of waiting the TTL out.
         """
         now = time.time()
-        if self._queue_cache is not None:
-            ttl = self.QUEUE_TTL if self._queue_cache.get("ok") else self.ERROR_TTL
-            if now - self._queue_at < ttl:
-                return self._queue_cache
         try:
             data = self._api("/me/player/queue") or {}
         except Cooling:
-            result = {"ok": False, "reason": self.cooling_reason(),
-                      "retry_in": round(self.cooling_for(), 1)}
+            result = {"ok": False, "reason": self.cooling_reason()}
         except urllib.error.HTTPError as exc:
-            result = {"ok": False, "reason": self._explain(exc),
-                      "retry_in": round(self.cooling_for(), 1)}
+            result = {"ok": False, "reason": self._explain(exc)}
         except Exception as exc:
             result = {"ok": False, "reason": str(exc)[:80]}
         else:
@@ -470,20 +477,57 @@ class SpotifyAccount:
                 "now": self._track(data.get("currently_playing")),
                 "queue": [t for t in (self._track(i) for i in (data.get("queue") or [])[:30]) if t],
             }
-        self._queue_cache, self._queue_at = result, now
-        return result
+        # A failed read keeps the last good list on screen - labelled by its
+        # age - rather than blanking the overlay mid-stream.
+        if result["ok"] or self._queue_cache is None or not self._queue_cache.get("ok"):
+            self._queue_cache = result
+            self._queue_version += 1
+        else:
+            self._queue_cache["reason"] = result.get("reason", "")
+        self._queue_at = now
 
-    def devices(self):
+    def peek_queue(self):
+        """The queue as the state broadcast carries it. Never touches the
+        network: the poller keeps this fresh, here it is only read."""
+        if not self.connected():
+            return {"ok": False, "reason": "not connected", "queue": [],
+                    "version": self._queue_version, "retry_in": 0, "age": 0}
+        cooling = self.cooling_for()
+        cached = self._queue_cache
+        if cached is None:
+            return {"ok": False, "reason": self.cooling_reason() if cooling else "loading",
+                    "queue": [], "version": self._queue_version,
+                    "retry_in": round(cooling, 1), "age": 0}
+        out = dict(cached)
+        out["version"] = self._queue_version
+        out["retry_in"] = round(cooling, 1)
+        out["age"] = round(time.time() - self._queue_at)
+        if cooling:
+            out["reason"] = self.cooling_reason()
+        return out
+
+    def queue(self):
+        """HTTP view of the queue: the cached answer, plus a nudge to the
+        poller if it is old. Front ends read the broadcast instead; this stays
+        for scripts and the curious."""
+        if self._queue_cache is None or time.time() - self._queue_at > self.QUEUE_TTL:
+            self._poke.set()
+        return self.peek_queue()
+
+    def refresh(self):
+        """The Refresh button: forget the cached queue and devices and wake
+        the poller. One event, at most two calls, none inside a cooling window."""
+        self._queue_cache = None
+        self._devices_cache = None
+        self._poke.set()
+
+    def _fetch_devices(self):
+        """Poller thread only."""
         now = time.time()
-        if self._devices_cache is not None:
-            ttl = self.DEVICES_TTL if self._devices_cache.get("ok") else self.ERROR_TTL
-            if now - self._devices_at < ttl:
-                return self._devices_cache
         try:
             data = self._api("/me/player/devices") or {}
         except Cooling:
-            result = {"ok": False, "reason": self.cooling_reason(),
-                      "retry_in": round(self.cooling_for(), 1), "devices": []}
+            result = {"ok": False, "reason": self.cooling_reason(), "devices": []}
         except Exception as exc:
             result = {"ok": False, "reason": str(exc)[:80], "devices": []}
         else:
@@ -491,8 +535,23 @@ class SpotifyAccount:
                 {"id": d.get("id"), "name": d.get("name", ""), "type": d.get("type", ""),
                  "active": bool(d.get("is_active")), "volume": d.get("volume_percent")}
                 for d in (data.get("devices") or [])]}
-        self._devices_cache, self._devices_at = result, now
-        return result
+        if result["ok"] or self._devices_cache is None or not self._devices_cache.get("ok"):
+            self._devices_cache = result
+            self._devices_version += 1
+        self._devices_at = now
+
+    def peek_devices(self):
+        """Devices as the state broadcast carries them. No network."""
+        if not self.connected() or self._devices_cache is None:
+            return {"ok": False, "devices": [], "version": self._devices_version}
+        out = dict(self._devices_cache)
+        out["version"] = self._devices_version
+        return out
+
+    def devices(self):
+        if self._devices_cache is None or time.time() - self._devices_at > self.DEVICES_TTL:
+            self._poke.set()
+        return self.peek_devices()
 
     def search(self, query, limit=10):
         query = (query or "").strip()

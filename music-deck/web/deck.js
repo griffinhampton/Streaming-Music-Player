@@ -2433,27 +2433,51 @@ $('npToggle').addEventListener('click', () => {
       $('npToggle').disabled = false;
       if (res.hosted === false && res.reason) toast('Opened, but not borderless: ' + res.reason);
       else if (!res.ok) toast(res.reason || 'Could not open the window');
-      setTimeout(pollWindow, 800);
     });
   }
 });
 
 function paintWindowStatus() { paintCardState('np', npOpen); }
 
-function pollWindow() {
-  fetch('/api/window/status').then((r) => r.json()).then((s) => {
-    if (s.open !== npOpen) { npOpen = s.open; paintWindowStatus(); }
+/* The three windows' state rides the broadcast - open or closed, and the real
+   size if someone stretched a window by hand - so the cards and the size boxes
+   stay honest without asking three times a second. */
+function syncWindows(state) {
+  if (!CONFIG) return;
+  const w = state.windows || {};
+  const one = (s, cfg, wId, hId, win, setOpen, relayout) => {
+    if (!s) return;
+    setOpen(!!s.open);
     // Someone stretched the real window: keep the deck and preview honest.
-    if (s.open && s.rect && CONFIG &&
-        (s.rect.w !== CONFIG.nowplaying.width || s.rect.h !== CONFIG.nowplaying.height)) {
-      CONFIG.nowplaying.width = s.rect.w;
-      CONFIG.nowplaying.height = s.rect.h;
-      if (document.activeElement !== $('width')) $('width').value = s.rect.w;
-      if (document.activeElement !== $('height')) $('height').value = s.rect.h;
-      layoutPreview();
+    if (s.open && s.rect && cfg && (s.rect.w !== cfg.width || s.rect.h !== cfg.height)) {
+      cfg.width = s.rect.w;
+      cfg.height = s.rect.h;
+      if (document.activeElement !== $(wId)) $(wId).value = s.rect.w;
+      if (document.activeElement !== $(hId)) $(hId).value = s.rect.h;
+      if (relayout) layoutPreview();
     }
-    paintCardState('np', s.open, s.rect);
-  }).catch(() => {});
+    paintCardState(win, s.open, s.rect);
+  };
+  one(w.np, CONFIG.nowplaying, 'width', 'height', 'np',
+      (o) => { if (o !== npOpen) { npOpen = o; paintWindowStatus(); } }, true);
+  one(w.lyrics, CONFIG.lyrics, 'lyWidth', 'lyHeight', 'lyrics',
+      (o) => { if (o !== lyOpen) { lyOpen = o; paintLyStatus(); } }, selectedWin === 'lyrics');
+  one(w.queue, CONFIG.queue, 'qWidth', 'qHeight', 'queue',
+      (o) => { if (o !== qOpen) { qOpen = o; paintQStatus(); } }, selectedWin === 'queue');
+}
+
+/* The lyrics situation, in one line, from the same broadcast. */
+function paintLyricsInfo(state) {
+  const d = state.lyrics_info || {};
+  const from = d.source === 'file' ? 'a .lrc file' : d.source === 'lrclib' ? 'lrclib.net' : '';
+  const text = {
+    synced: `Synced lyrics from ${from} · ${d.lines || 0} lines`,
+    plain: `Unsynced lyrics from ${from} — they glide through in proportion to the song`,
+    instrumental: 'Instrumental track',
+    loading: 'Looking for lyrics…',
+    none: d.reason === 'nothing playing' ? 'Nothing playing' : 'No lyrics found for this track',
+  }[d.status] || '';
+  if ($('lyInfo').textContent !== text) $('lyInfo').textContent = text;
 }
 
 function applySize(w, h) {
@@ -2518,35 +2542,8 @@ $('lyToggle').addEventListener('click', () => {
   post('/api/lyrics/window/open').then((res) => {
     $('lyToggle').disabled = false;
     if (!res.ok) toast(res.reason || 'Could not open the lyrics window');
-    setTimeout(pollLyrics, 800);
   });
 });
-
-function pollLyrics() {
-  fetch('/api/lyrics/window/status').then((r) => r.json()).then((s) => {
-    if (s.open !== lyOpen) { lyOpen = s.open; paintLyStatus(); }
-    if (s.open && s.rect && CONFIG.lyrics &&
-        (s.rect.w !== CONFIG.lyrics.width || s.rect.h !== CONFIG.lyrics.height)) {
-      CONFIG.lyrics.width = s.rect.w;
-      CONFIG.lyrics.height = s.rect.h;
-      if (document.activeElement !== $('lyWidth')) $('lyWidth').value = s.rect.w;
-      if (document.activeElement !== $('lyHeight')) $('lyHeight').value = s.rect.h;
-      if (selectedWin === 'lyrics') layoutPreview();
-    }
-    paintCardState('lyrics', s.open, s.rect);
-  }).catch(() => {});
-  fetch('/api/lyrics').then((r) => r.json()).then((d) => {
-    const n = d.lines ? d.lines.length : 0;
-    const from = d.source === 'file' ? 'a .lrc file' : d.source === 'lrclib' ? 'lrclib.net' : '';
-    $('lyInfo').textContent = {
-      synced: `Synced lyrics from ${from} · ${n} lines`,
-      plain: `Unsynced lyrics from ${from} — they glide through in proportion to the song`,
-      instrumental: 'Instrumental track',
-      loading: 'Looking for lyrics…',
-      none: d.reason === 'nothing playing' ? 'Nothing playing' : 'No lyrics found for this track',
-    }[d.status] || '';
-  }).catch(() => {});
-}
 
 ['lyWidth', 'lyHeight'].forEach((id) => $(id).addEventListener('change', () => {
   const w = +$('lyWidth').value, h = +$('lyHeight').value;
@@ -2570,7 +2567,6 @@ $('lySnap').addEventListener('click', (e) => {
     .then((r) => { if (!r.ok) toast('Open the lyrics window first'); });
 });
 
-setInterval(pollLyrics, 3000);
 
 /* ------------------------------------------------------------- queue window */
 
@@ -2588,24 +2584,8 @@ $('qToggle').addEventListener('click', () => {
   post('/api/queue/window/open').then((res) => {
     $('qToggle').disabled = false;
     if (!res.ok) toast(res.reason || 'Could not open the queue window');
-    setTimeout(pollQueueWindow, 800);
   });
 });
-
-function pollQueueWindow() {
-  fetch('/api/queue/window/status').then((r) => r.json()).then((s) => {
-    if (s.open !== qOpen) { qOpen = s.open; paintQStatus(); }
-    if (s.open && s.rect && CONFIG.queue &&
-        (s.rect.w !== CONFIG.queue.width || s.rect.h !== CONFIG.queue.height)) {
-      CONFIG.queue.width = s.rect.w;
-      CONFIG.queue.height = s.rect.h;
-      if (document.activeElement !== $('qWidth')) $('qWidth').value = s.rect.w;
-      if (document.activeElement !== $('qHeight')) $('qHeight').value = s.rect.h;
-      if (selectedWin === 'queue') layoutPreview();
-    }
-    paintCardState('queue', s.open, s.rect);
-  }).catch(() => {});
-}
 
 ['qWidth', 'qHeight'].forEach((id) => $(id).addEventListener('change', () => {
   const w = +$('qWidth').value, h = +$('qHeight').value;
@@ -2629,7 +2609,6 @@ $('qSnap').addEventListener('click', (e) => {
     .then((r) => { if (!r.ok) toast('Open the queue window first'); });
 });
 
-setInterval(pollQueueWindow, 3000);
 
 /* ------------------------------------------------------------- keyboard */
 
@@ -2693,7 +2672,11 @@ function paintSpotify(state) {
   paintSpotifyAccount(acc, state.spotify_account || null);
   paintSourcePanels(state);
   paintCard(state.now);
-  queueFollowsTrack(state);
+  lastTrueNow = state.now || null;
+  paintSpotifyQueue(state.spotify_queue, false, lastTrueNow);
+  paintSpotifyDevices(state.spotify_devices);
+  syncWindows(state);
+  paintLyricsInfo(state);
   if (acc.connected && spWaiting) {
     spWaiting = false;
     $('spPending2').hidden = true;
@@ -2744,7 +2727,7 @@ function paintSourcePanels(state) {
 
   $('spotifyMain').hidden = !spotify;
   $('libraryPanel').hidden = spotify;
-  if (spotify) refreshSpotifyPanel();
+  if (spotify && lastQueueView) paintSpotifyQueue(lastQueueView, true, lastTrueNow);
 }
 
 let spConnected = false;
@@ -2767,47 +2750,57 @@ function spRow(t, i, opts = {}) {
     </div>`;
 }
 
-function refreshSpotifyPanel() {
-  if (spHolding()) return;
-  fetch('/api/spotify/queue').then((r) => r.json()).then((d) => {
-    $('spQueueErr').textContent = d.ok ? '' : (d.reason || '');
-    if (!d.ok) {
-      if (d.retry_in) spHold(d.retry_in);
-      return;
-    }
-    spQuietUntil = 0;
-    const rows = [];
-    if (d.now) rows.push(spRow(d.now, 0, { now: true }));
-    (d.queue || []).forEach((t, i) => rows.push(spRow(t, i, {
-      actions: [{ act: 'play', label: 'Play now' }], index: i,
-    })));
-    $('spQueue').innerHTML = rows.length ? rows.join('')
-      : '<div class="empty">Nothing queued. Start something in Spotify, or search above.</div>';
-    $('spQueueCount').textContent = (d.queue || []).length
-      ? `Up next · ${d.queue.length}` : 'Up next';
-  }).catch(() => {});
+/* Everything in this panel is painted from the state broadcast. The server
+   owns the queue and the devices: it refreshes them on its own thread when a
+   track changes or a button is pressed, and never inside a rate-limit window.
+   Nothing here asks Spotify for anything. */
+let lastQueueVersion = -1, lastQueueView = null, lastTrueNow = null;
+function paintSpotifyQueue(q, force, trueNow) {
+  if (!q) return;
+  lastQueueView = q;
+  // The wait, counted down where the error goes, so a deliberate hold does not
+  // read as "broken". This line is cheap to rewrite every tick; the rows below
+  // are only rebuilt when the server says the list actually changed.
+  const err = $('spQueueErr');
+  err.textContent = q.retry_in
+    ? `Spotify is rate limiting this app — back in ${humanWait(q.retry_in)}`
+      + (q.age > 120 ? ` · showing the list from ${humanWait(q.age)} ago` : '')
+    : (q.ok || q.reason === 'loading' ? '' : (q.reason || ''));
+  if (!force && q.version === lastQueueVersion) return;
+  lastQueueVersion = q.version;
 
-  refreshDevices();
+  // The "now" row is whatever Windows says is playing - true even while the
+  // list itself is waiting out a limit - and the list's head is dropped if it
+  // is that same track, which it is when the list is one behind.
+  const nowRow = trueNow && trueNow.title
+    ? { title: trueNow.title, artist: trueNow.artist, art: trueNow.art_url || '', duration: trueNow.duration }
+    : q.now;
+  let list = q.queue || [];
+  if (nowRow && list.length && list[0].title === nowRow.title && list[0].artist === nowRow.artist) list = list.slice(1);
+
+  const rows = [];
+  if (nowRow) rows.push(spRow(nowRow, 0, { now: true }));
+  list.forEach((t, i) => rows.push(spRow(t, i, {
+    actions: [{ act: 'play', label: 'Play now' }], index: i,
+  })));
+  $('spQueue').innerHTML = rows.length ? rows.join('')
+    : (q.reason === 'loading'
+      ? '<div class="empty">Fetching the queue…</div>'
+      : '<div class="empty">Nothing queued. Start something in Spotify, or search above.</div>');
+  $('spQueueCount').textContent = list.length ? `Up next · ${list.length}` : 'Up next';
 }
 
-/* The device list changes when you pick up your phone, not every four seconds. */
-let devicesAt = 0;
-function refreshDevices(force) {
-  if (spHolding()) return;
-  if (!force && Date.now() - devicesAt < 120000) return;
-  devicesAt = Date.now();
-  fetch('/api/spotify/devices').then((r) => r.json()).then((d) => {
-    if (!d.ok) {
-      if (d.retry_in) spHold(d.retry_in);
-      return;
-    }
-    const sel = $('spDevice');
-    const active = (d.devices.find((x) => x.active) || {}).id || '';
-    sel.innerHTML = d.devices.length
-      ? d.devices.map((x) => `<option value="${esc(x.id)}" ${x.active ? 'selected' : ''}>${esc(x.name)} · ${esc(x.type)}</option>`).join('')
-      : '<option value="">no devices</option>';
-    sel.dataset.active = active;
-  }).catch(() => {});
+let lastDevicesVersion = -1;
+function paintSpotifyDevices(d) {
+  if (!d || d.version === lastDevicesVersion) return;
+  lastDevicesVersion = d.version;
+  const sel = $('spDevice');
+  const list = d.devices || [];
+  const active = (list.find((x) => x.active) || {}).id || '';
+  sel.innerHTML = list.length
+    ? list.map((x) => `<option value="${esc(x.id)}" ${x.active ? 'selected' : ''}>${esc(x.name)} · ${esc(x.type)}</option>`).join('')
+    : '<option value="">no devices</option>';
+  sel.dataset.active = active;
 }
 
 function paintSpotifyAccount(acc, sp) {
@@ -2833,20 +2826,17 @@ function paintSpotifyAccount(acc, sp) {
     $('spRepeat').classList.toggle('on', spRepeatMode !== 'off');
     $('spRepeat').innerHTML = svgIcon(spRepeatMode === 'track' ? 'repeatOne' : 'repeat');
   }
-  // Just connected. That is a deliberate act with an obvious intent, so show
-  // the result immediately instead of waiting for a poll: drop any rate-limit
-  // hold left over from before, bring the Spotify panel up even in Auto mode
-  // where nothing is playing yet to switch it, and fetch straight away.
+  // Just connected. That is a deliberate act with an obvious intent, so bring
+  // the Spotify panel up even in Auto mode where nothing is playing yet to
+  // switch it, and ask the server to refresh now - the answer arrives on the
+  // broadcast like everything else.
   if (spConnected && !wasConnected) {
-    spQuietUntil = 0;
-    devicesAt = 0;
     autoShowsSpotify = true;
     if ($('spotifyMain').hidden) {
       $('spotifyMain').hidden = false;
       $('libraryPanel').hidden = true;
     }
-    refreshSpotifyPanel();
-    refreshDevices(true);
+    post('/api/spotify/refresh');
     toast('Spotify connected');
   }
 }
@@ -2879,7 +2869,6 @@ function spAct(act, uri, index) {
     toast(act !== 'play' ? 'Added to the queue'
       : res.skipped ? `Playing — skipped ${res.skipped} track${res.skipped === 1 ? '' : 's'}`
       : 'Playing');
-    setTimeout(refreshSpotifyPanel, 900);
   });
 }
 
@@ -2894,13 +2883,12 @@ $('spQueue').addEventListener('click', (e) => {
   if (btn) spAct(btn.dataset.act, btn.dataset.uri, btn.dataset.i);
 });
 
-$('spQueueRefresh').addEventListener('click', refreshSpotifyPanel);
+$('spQueueRefresh').addEventListener('click', () => post('/api/spotify/refresh'));
 $('spDevice').addEventListener('change', () => {
   const id = $('spDevice').value;
   if (!id || id === $('spDevice').dataset.active) return;
   post('/api/spotify/transfer', { device_id: id }).then((res) => {
     toast(res.ok ? 'Moved playback' : (res.reason || 'Could not move playback'));
-    setTimeout(refreshSpotifyPanel, 900);
   });
 });
 $('spShuffle').addEventListener('click', () => {
@@ -2932,27 +2920,6 @@ $('spConnect2').addEventListener('click', () => {
   });
 });
 
-/* Keep the queue fresh whenever the panel is on screen - including in Auto
-   mode, where Spotify's queue is showing because Spotify is what is playing.
-
-   When Spotify asks us to wait, we wait. Carrying on knocking during a
-   Retry-After window is what makes a brief rate limit last all afternoon. */
-let spQuietUntil = 0;
-function spHold(seconds) {
-  spQuietUntil = Math.max(spQuietUntil, Date.now() + (seconds || 5) * 1000);
-}
-const spHolding = () => Date.now() < spQuietUntil;
-
-/* The queue only changes when the track changes or someone adds something,
-   and we learn about track changes for free from the Windows bridge. So this
-   is a safety net for what we cannot see, not the main way it stays fresh -
-   queueFollowsTrack() below does that, at no cost to the rate limit. */
-setInterval(() => {
-  if (!CONFIG || !spConnected) return;
-  if ($('spotifyMain').hidden || spHolding()) return;
-  refreshSpotifyPanel();
-}, 120000);
-
 /* Count the wait down where the error message goes, so it is obvious the app
    is deliberately holding off rather than broken. */
 function humanWait(seconds) {
@@ -2962,25 +2929,6 @@ function humanWait(seconds) {
   return `${seconds}s`;
 }
 
-setInterval(() => {
-  if (!spHolding()) return;
-  const left = (spQuietUntil - Date.now()) / 1000;
-  $('spQueueErr').textContent =
-    `Spotify is rate limiting this app — retrying in ${humanWait(left)}`;
-  if (left <= 1) setTimeout(() => { if (!spHolding()) refreshSpotifyPanel(); }, 1200);
-}, 1000);
-
-/* A track change means the queue moved on; refresh without waiting for the timer. */
-let lastQueueTrack = '';
-function queueFollowsTrack(state) {
-  const now = state.now || {};
-  const key = [now.source, now.title, now.artist].join('|');
-  if (key === lastQueueTrack) return;
-  lastQueueTrack = key;
-  if (spConnected && !$('spotifyMain').hidden && !spHolding()) {
-    setTimeout(refreshSpotifyPanel, 600);
-  }
-}
 
 /* --------------------------------------------------- onboarding & app look */
 
@@ -3092,9 +3040,6 @@ fetch('/api/config').then((r) => r.json()).then((cfg) => {
   paintSourcePanels();
   updateUndoButtons();
   loadSavedThemes();
-  pollWindow();
-  pollLyrics();
-  pollQueueWindow();
   return loadAssets().then(loadLibrary);
 });
 
@@ -3105,4 +3050,3 @@ new ResizeObserver(layoutPreview).observe($('previewStage'));
 const events = new EventSource('/api/events');
 events.onmessage = (e) => { try { paintSpotify(JSON.parse(e.data)); } catch (_) {} };
 
-setInterval(pollWindow, 2500);

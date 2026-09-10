@@ -801,6 +801,34 @@ class Hub:
         if "track_id" in data:
             self.local["track_id"] = data["track_id"]
 
+    _lyr_key = None
+    _lyr_info = None
+
+    def _lyrics_info(self, now):
+        """A one-line summary of the lyrics situation for the deck.
+
+        Recomputed only when the track changes or while a lookup is still
+        landing: LYRICS.get dedupes in-flight lookups, and this runs a few
+        times a second inside the broadcast.
+        """
+        if not now:
+            self._lyr_key, self._lyr_info = None, {"status": "none", "reason": "nothing playing"}
+            return self._lyr_info
+        key = (now.get("title"), now.get("artist"), now.get("duration"))
+        if key != self._lyr_key or (self._lyr_info or {}).get("status") == "loading":
+            track_path = None
+            if now.get("source") == "local" and self.local.get("track_id"):
+                track = LIBRARY.get(self.local["track_id"])
+                track_path = track["path"] if track else None
+            res = LYRICS.get(now.get("title", ""), now.get("artist", ""),
+                             now.get("album", ""), now.get("duration", 0),
+                             path=track_path,
+                             online=bool(CONFIG.get("lyrics", {}).get("online", True)))
+            self._lyr_key = key
+            self._lyr_info = {"status": res.get("status"), "source": res.get("source", ""),
+                              "lines": len(res.get("lines") or []), "reason": res.get("reason", "")}
+        return self._lyr_info
+
     def snapshot(self):
         spotify = BRIDGE.get()
         # Tell the account poller whether it is even needed right now. Reading
@@ -911,6 +939,15 @@ class Hub:
                 "shuffle": account.get("shuffle", False),
                 "repeat": account.get("repeat", "off"),
             } if account.get("connected") else None,
+            # The queue, the devices, the three windows' state and the lyrics
+            # situation ride this broadcast too, so the deck and the queue
+            # window read one model instead of each polling for it. Every one
+            # of these is a cached, local read - nothing here waits on a network.
+            "spotify_queue": SPOTIFY.peek_queue(),
+            "spotify_devices": SPOTIFY.peek_devices(),
+            "windows": {"np": OVERLAY.status(), "lyrics": LYRICS_WIN.status(),
+                        "queue": QUEUE_WIN.status()},
+            "lyrics_info": self._lyrics_info(now),
             "nowplaying": CONFIG["nowplaying"],
             "lyrics_cfg": CONFIG.get("lyrics", {}),
             "queue_cfg": CONFIG.get("queue", {}),
@@ -1530,6 +1567,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/spotify/toggle":
             return self._json(SPOTIFY.set_toggle(data.get("what", ""), data.get("value")))
+
+        if path == "/api/spotify/refresh":
+            # The Refresh button. An event for the poller, not a call to
+            # Spotify from here: the broadcast carries the answer when it lands.
+            SPOTIFY.refresh()
+            return self._json({"ok": True})
 
         if path.startswith("/api/spotify/"):
             return self._json(self._spotify_command(path.split("/")[-1]))
