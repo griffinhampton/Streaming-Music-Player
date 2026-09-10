@@ -1400,9 +1400,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/spotify/devices":
             return self._json(SPOTIFY.devices())
 
-        if path == "/api/spotify/search":
-            return self._json(SPOTIFY.search((query.get("q") or [""])[0]))
-
         if path == "/api/lyrics/window/status":
             return self._json(LYRICS_WIN.status())
 
@@ -1520,16 +1517,6 @@ class Handler(BaseHTTPRequestHandler):
             SPOTIFY.disconnect()
             HUB.broadcast()
             return self._json({"ok": True})
-
-        if path == "/api/spotify/enqueue":
-            return self._json(SPOTIFY.enqueue(data.get("uri", "")))
-
-        if path == "/api/spotify/playuri":
-            # From the queue: advance to it. From a search result: start it and
-            # keep the queue running behind.
-            if data.get("index") is not None:
-                return self._json(SPOTIFY.skip_to(data.get("uri", ""), data.get("index")))
-            return self._json(SPOTIFY.play_to_front(data.get("uri", "")))
 
         if path == "/api/seek":
             # Whichever source is on screen; the pop-outs do not need to know.

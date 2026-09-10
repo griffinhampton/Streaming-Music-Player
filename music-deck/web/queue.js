@@ -167,12 +167,9 @@ function render(data) {
 
   el.stage.dataset.state = 'ok';
   let n = 0;
-  let qi = -1;
   el.rows.innerHTML = items.map((t) => {
     const label = t.now ? '♪' : String(++n);
-    if (!t.now) qi++;
-    const addr = t.now ? '' : ` data-uri="${esc(t.uri || '')}" data-i="${qi}"`;
-    return `<div class="row ${t.now ? 'now' : ''}"${addr}>
+    return `<div class="row ${t.now ? 'now' : ''}">
         <div class="n">${label}</div>
         ${t.art ? `<img src="${esc(t.art)}" alt="" loading="lazy">` : '<img alt="">'}
         <div class="meta">
@@ -187,26 +184,6 @@ function render(data) {
   el.count.textContent = total
     ? (shown < total + (showNow && data.now ? 1 : 0) ? `${shown} of ${total}` : `${total} queued`)
     : '';
-}
-
-/* Click a row to play that track. Spotify has no reorder endpoint, so this
-   advances to it - the same as clicking an item in Spotify's own queue. */
-function wireRowClicks() {
-  el.rows.addEventListener('pointerdown', (e) => {
-    if (PREVIEW || (opts && opts.interactive === false)) return;
-    const row = e.target.closest('.row');
-    if (!row || row.dataset.uri === undefined) return;
-    e.stopPropagation();
-    row.classList.add('busy');
-    fetch('/api/spotify/playuri', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uri: row.dataset.uri, index: +row.dataset.i }),
-    }).then((r) => r.json()).then(() => {
-      row.classList.remove('busy');
-      // The server drops its cached queue on the write and broadcasts the
-      // fresh one; there is nothing to ask for here.
-    }).catch(() => row.classList.remove('busy'));
-  });
 }
 
 /* The queue rides the same state broadcast as everything else. The server owns
@@ -284,7 +261,6 @@ window.addEventListener('resize', () => {
 fetch('/api/state').then((r) => r.json())
   .then((d) => applyDesign(d.nowplaying, d.queue_cfg)).catch(() => {});
 
-wireRowClicks();
 connect();
 if (PREVIEW) render({ ...DEMO, connected: true });
 

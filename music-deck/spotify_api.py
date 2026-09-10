@@ -48,6 +48,7 @@ class Cooling(Exception):
 class SpotifyAccount:
     def __init__(self, cache_dir, redirect_uri):
         self.token_path = os.path.join(cache_dir, "spotify_token.json")
+        self.queue_path = os.path.join(cache_dir, "spotify_queue.json")
         self.redirect_uri = redirect_uri
         self.client_id = ""
         self._token = self._load()
@@ -62,12 +63,17 @@ class SpotifyAccount:
         self._queue_at = 0.0
         self._devices_cache = None
         self._devices_at = 0.0
-        self._last_track = None
         self._bridge_track = None
         # Bumped whenever a fresh list lands, so a front end can tell "new
         # data" from "the same data again" without comparing the whole thing.
         self._queue_version = 0
         self._devices_version = 0
+        # Set by events - a track change the cached order cannot explain,
+        # connect, Refresh, a playback-mode write - and cleared once Spotify
+        # has answered. Nothing sets them on a timer.
+        self._want_reconcile = False
+        self._want_devices = False
+        self._load_queue()
         self._error = ""
         self._backoff_until = 0.0
         # Set by the server: True while the Windows bridge is already telling
@@ -187,6 +193,8 @@ class SpotifyAccount:
             self._save()
         self._error = ""
         self._raw = None
+        self._want_reconcile = True
+        self._want_devices = True
         self._poke.set()
         return True, ""
 
@@ -199,6 +207,13 @@ class SpotifyAccount:
             pass
         self._raw = None
         self._error = ""
+        # The saved order belongs to that login.
+        self._queue_cache = None
+        self._devices_cache = None
+        try:
+            os.remove(self.queue_path)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------- polling
 
@@ -227,55 +242,92 @@ class SpotifyAccount:
                 except Exception as exc:
                     self._error = f"Could not reach Spotify: {str(exc)[:80]}"
                     self._backoff_until = time.time() + 10
-            # Everything here is a /me/* endpoint, and those trip Spotify's
-            # limiter far sooner than the headline number - a burst of ten can
-            # be enough. Windows already reports the playing track for free, so
-            # the background poll only needs to notice a phone or speaker taking
-            # over: at most once a minute. A button press or a track change
-            # pokes us awake immediately either way.
-            self._poke.wait(60)
+            # Nothing here runs on a timer. The loop sleeps until an event asks
+            # for a read: a track change the cached order cannot explain,
+            # connect, Refresh, or a playback-mode write. If that request
+            # arrived inside a rate-limit window it is held, and the sleep ends
+            # exactly when the window does, so the answer lands then rather
+            # than at the next song.
+            timeout = None
+            if self._want_reconcile:
+                left = self.cooling_for()
+                timeout = left + 0.5 if left > 0 else None
+            self._poke.wait(timeout)
             self._poke.clear()
 
     def _poll(self):
+        """Ask Spotify - only ever because an event said to.
+
+        note_track() asks when a track change cannot be explained by the
+        cached order; connect, Refresh and the playback-mode writes ask
+        because they change what Spotify would answer. Nothing asks on a
+        timer. With nothing cached at all (a first run) one read is allowed,
+        since there is nothing else to show. Every read goes through _api,
+        the one place that notices a 429 and records how long to wait.
+        """
         if not self._access_token():
             return                            # nothing to poll with yet
-        # Through _api like everything else: it is the one place that notices a
-        # 429 and records how long Spotify wants us to wait. A hand-rolled
-        # request here would be the single biggest source of calls quietly
-        # exempting itself from that.
+        if not self._want_reconcile and self._queue_cache is not None:
+            return                            # nobody asked; the cache stands
         self._raw = self._api("/me/player?additional_types=track,episode")  # None = idle
         self._fetched_at = time.time()
         self._error = ""
-        # A new track means a new queue: drop the cached one so the next read
-        # is fresh rather than waiting out the TTL.
-        item = (self._raw or {}).get("item") or {}
-        track = item.get("uri") or item.get("id")
-        if track != self._last_track:
-            self._last_track = track
-            self._queue_cache = None
-        # Every Spotify read happens here, on this thread, so the state
-        # broadcast never waits on the network. The queue is re-read when
-        # something invalidated it (a write, a track change), when the last
-        # read failed, or past the long safety TTL.
-        now = time.time()
-        q = self._queue_cache
-        if q is None or not q.get("ok") or now - self._queue_at > self.QUEUE_TTL:
-            self._fetch_queue()
-        d = self._devices_cache
-        if d is None or not d.get("ok") or now - self._devices_at > self.DEVICES_TTL:
+        self._fetch_queue()
+        # The request is answered only once a good list is in hand; a failed
+        # read leaves it pending, and the loop retries when a cooling window
+        # ends or the next event arrives.
+        self._want_reconcile = not (self._queue_cache or {}).get("ok", False)
+        if self._want_devices or self._devices_cache is None:
             self._fetch_devices()
+            self._want_devices = not (self._devices_cache or {}).get("ok", False)
 
     def note_track(self, key):
-        """Windows just reported a different track.
+        """Windows just reported a different track. Free and immediate.
 
-        That signal is free and immediate, so use it: forget the cached queue
-        and wake the poller now, rather than waiting up to a minute for the
-        next scheduled poll to notice the song moved on.
+        The cached order is the whole point of the cache: if the new track is
+        the head of what Spotify last said plays next, the queue simply
+        advanced - pop it and say nothing to Spotify at all. Ask only when
+        the order cannot explain the change (something added or reordered in
+        Spotify's own app, shuffle, a skip back) or when the list is nearly
+        spent, which is when anything appended since would otherwise stay
+        invisible.
         """
-        if key and key != self._bridge_track:
-            self._bridge_track = key
-            self._queue_cache = None
-            self._poke.set()
+        if not key or key == self._bridge_track:
+            return
+        self._bridge_track = key
+        q = self._queue_cache
+        if q and q.get("ok"):
+            if q.get("now") and self._same_track(q["now"], key):
+                return                        # still the same song; nothing moved
+            items = q.get("queue") or []
+            if items and self._same_track(items[0], key):
+                q["now"] = items[0]
+                q["queue"] = items[1:]
+                self._queue_version += 1
+                self._save_queue()
+                if len(q["queue"]) > 2:
+                    return                    # explained, at a cost of zero calls
+        self._want_reconcile = True
+        self._poke.set()
+
+    @staticmethod
+    def _same_track(item, key):
+        """Does a cached queue item match a (title, artist) pair from Windows?
+
+        Both strings come from Spotify, so the title normally matches exactly;
+        artists can be formatted differently ("A, B" against "A"), so the
+        first artist on either side is enough. A wrong "no" only costs one
+        reconcile; a wrong "yes" would show the wrong list, so the title must
+        match outright.
+        """
+        norm = lambda s: " ".join(str(s or "").lower().split())
+        if not norm(item.get("title")) or norm(item.get("title")) != norm(key[0]):
+            return False
+        a1, a2 = norm(item.get("artist")), norm(key[1] if len(key) > 1 else "")
+        if not a1 or not a2:
+            return True
+        first = lambda a: a.split(",")[0].strip()
+        return a1 == a2 or first(a1) in a2 or first(a2) in a1
 
     def get(self):
         """Current playback as the deck understands it."""
@@ -417,11 +469,6 @@ class SpotifyAccount:
                     pass
                 self._backoff_until = time.time() + max(2, wait)
             raise
-        if method != "GET":
-            # A write (queue a track, skip, move playback) changes what is
-            # next and where; forget the cached answers so the next read asks.
-            self._queue_cache = None
-            self._devices_cache = None
         # The control endpoints answer 204 with an empty or non-JSON body, so a
         # parse failure here means "it worked, there was nothing to say".
         if not raw.strip():
@@ -450,11 +497,32 @@ class SpotifyAccount:
                 "duration": round(float(item.get("duration_ms") or 0) / 1000, 1)}
 
     STALE_AFTER = 90.0    # a /me/player payload older than this is not "now"
-    # Refreshes are event-driven (a write, a track change); these are only the
-    # safety net that catches changes made in Spotify's own app, so they can
-    # be long. The poller retries a failed read on its next pass regardless.
-    QUEUE_TTL = 180.0     # seconds before the queue is re-read unprompted
-    DEVICES_TTL = 300.0   # devices change rarely, and switching one is a write
+
+    def _save_queue(self):
+        """Keep the last good order on disk, so a restart shows it at once
+        instead of asking Spotify for something it already told us."""
+        q = self._queue_cache
+        if not q or not q.get("ok"):
+            return
+        try:
+            with open(self.queue_path, "w", encoding="utf-8") as f:
+                json.dump({"saved_at": self._queue_at, "now": q.get("now"),
+                           "queue": q.get("queue") or []}, f)
+        except Exception:
+            pass
+
+    def _load_queue(self):
+        """The order saved by the last run, if any. The first track change
+        reconciles it: a pop if the song simply advanced, one read if not."""
+        try:
+            with open(self.queue_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d.get("queue"), list):
+                self._queue_cache = {"ok": True, "now": d.get("now"), "queue": d["queue"]}
+                self._queue_at = float(d.get("saved_at") or 0)
+                self._queue_version += 1
+        except Exception:
+            pass
 
     def _fetch_queue(self):
         """Ask Spotify what plays next. Poller thread only.
@@ -485,6 +553,7 @@ class SpotifyAccount:
         else:
             self._queue_cache["reason"] = result.get("reason", "")
         self._queue_at = now
+        self._save_queue()
 
     def peek_queue(self):
         """The queue as the state broadcast carries it. Never touches the
@@ -507,18 +576,15 @@ class SpotifyAccount:
         return out
 
     def queue(self):
-        """HTTP view of the queue: the cached answer, plus a nudge to the
-        poller if it is old. Front ends read the broadcast instead; this stays
-        for scripts and the curious."""
-        if self._queue_cache is None or time.time() - self._queue_at > self.QUEUE_TTL:
-            self._poke.set()
+        """HTTP view of the queue: the cached answer. Front ends read the
+        broadcast instead; this stays for scripts and the curious."""
         return self.peek_queue()
 
     def refresh(self):
-        """The Refresh button: forget the cached queue and devices and wake
-        the poller. One event, at most two calls, none inside a cooling window."""
-        self._queue_cache = None
-        self._devices_cache = None
+        """The Refresh button: ask Spotify for the order and the devices again.
+        One event, at most three calls, none inside a cooling window."""
+        self._want_reconcile = True
+        self._want_devices = True
         self._poke.set()
 
     def _fetch_devices(self):
@@ -549,150 +615,7 @@ class SpotifyAccount:
         return out
 
     def devices(self):
-        if self._devices_cache is None or time.time() - self._devices_at > self.DEVICES_TTL:
-            self._poke.set()
         return self.peek_devices()
-
-    def search(self, query, limit=10):
-        query = (query or "").strip()
-        if not query:
-            return {"ok": True, "results": []}
-        # The docs allow 50, but the live API rejects anything over 10 here
-        # with "Invalid limit", so stay inside what it actually accepts.
-        qs = urllib.parse.urlencode({"q": query, "type": "track", "limit": max(1, min(limit, 10))})
-        try:
-            data = self._api("/search?" + qs) or {}
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc), "results": []}
-        except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80], "results": []}
-        items = ((data.get("tracks") or {}).get("items")) or []
-        return {"ok": True, "results": [t for t in (self._track(i) for i in items) if t]}
-
-    def enqueue(self, uri):
-        if not uri:
-            return {"ok": False, "reason": "no track given"}
-        try:
-            self._api("/me/player/queue?" + urllib.parse.urlencode({"uri": uri}), "POST")
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc)}
-        except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80]}
-        self._poke.set()
-        return {"ok": True}
-
-    def play_uri(self, uri):
-        """Jump straight to something, instead of waiting for the queue."""
-        body = {"uris": [uri]} if uri and ":track:" in uri else {"context_uri": uri}
-        try:
-            self._api("/me/player/play", "PUT", body)
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc)}
-        except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80]}
-        self._backoff_until = 0
-        self._poke.set()
-        return {"ok": True}
-
-    def play_to_front(self, uri):
-        """Play a track now and keep the rest of the queue behind it.
-
-        Spotify has no endpoint to reorder a queue, but /play takes an explicit
-        list of track URIs - so hand it the chosen track followed by everything
-        currently queued. That is the same result as dragging it to the top.
-
-        Playing a bare track URI instead replaces the whole context with one
-        song, which leaves Spotify nothing to play afterwards: it just repeats.
-        """
-        if not uri:
-            return {"ok": False, "reason": "no track given"}
-
-        queue, dropped = [], 0
-        try:
-            data = self._api("/me/player/queue") or {}
-            for item in (data.get("queue") or []):
-                u = item.get("uri") or ""
-                if u.startswith("spotify:track:"):
-                    queue.append(u)
-                elif u:
-                    dropped += 1        # podcasts cannot ride in a uris list
-        except Exception:
-            pass
-
-        if not uri.startswith("spotify:track:"):
-            return self.play_uri(uri)   # albums, playlists: play as a context
-
-        # Spotify caps the list; keep well inside it and drop any duplicate.
-        uris = ([uri] + [u for u in queue if u != uri])[:90]
-        try:
-            self._api("/me/player/play", "PUT", {"uris": uris})
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc)}
-        except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80]}
-        self._backoff_until = 0
-        self._poke.set()
-        return {"ok": True, "kept": len(uris) - 1, "dropped": dropped}
-
-    def skip_to(self, uri, index=None):
-        """Play a track that is already queued, the way Spotify's own app does.
-
-        There is no reorder or remove endpoint, so the only way to reach a
-        queued track is to advance to it. Tracks ahead of it are consumed -
-        exactly what happens when you click an item in Spotify's own queue.
-
-        Rebuilding the context with a uris list was the alternative, but items
-        added by hand stay in the queue regardless, so that duplicated them.
-        """
-        if index is None:
-            try:
-                data = self._api("/me/player/queue") or {}
-                uris = [i.get("uri") for i in (data.get("queue") or [])]
-                index = uris.index(uri)
-            except Exception:
-                return {"ok": False, "reason": "that track is no longer queued"}
-        index = max(0, int(index))
-        if index > 40:
-            return {"ok": False, "reason": "that is too far down the queue to skip to"}
-
-        # Firing next N times back to back does not work: Spotify applies them
-        # asynchronously, so past a couple of hops the skips overtake its own
-        # state and land somewhere else entirely. Step once, wait for the track
-        # to actually change, then decide again.
-        try:
-            for step in range(index + 1):
-                before = self._current_uri()
-                self._api("/me/player/next", "POST")
-                changed = self._await_change(before)
-                if self._current_uri() == uri:
-                    break                      # arrived early; stop skipping
-                if not changed:
-                    return {"ok": False, "skipped": step,
-                            "reason": "Spotify stopped responding to skips"}
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc)}
-        except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80]}
-        self._backoff_until = 0
-        self._poke.set()
-        return {"ok": True, "skipped": index}
-
-    def _current_uri(self):
-        try:
-            data = self._api("/me/player/currently-playing") or {}
-            return (data.get("item") or {}).get("uri")
-        except Exception:
-            return None
-
-    def _await_change(self, before, timeout=2.5):
-        """Wait until Spotify reports a different track, or give up."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            time.sleep(0.18)
-            now = self._current_uri()
-            if now and now != before:
-                return True
-        return False
 
     def seek(self, seconds):
         try:
@@ -723,6 +646,9 @@ class SpotifyAccount:
             return {"ok": False, "reason": self._explain(exc)}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:80]}
+        # Playback moved: both the device list and where things stand changed.
+        self._want_reconcile = True
+        self._want_devices = True
         self._poke.set()
         return {"ok": True}
 
@@ -743,6 +669,8 @@ class SpotifyAccount:
             return {"ok": False, "reason": self._explain(exc)}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:80]}
+        # Shuffle or repeat changed the order Spotify will play; ask again.
+        self._want_reconcile = True
         self._poke.set()
         return {"ok": True}
 

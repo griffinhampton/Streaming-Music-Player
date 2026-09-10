@@ -708,7 +708,7 @@
           <label class="check"><input type="checkbox" data-q="show_artist" data-kind="bool"><span>Artist</span></label>
           <label class="check"><input type="checkbox" data-q="show_times" data-kind="bool"><span>Track length</span></label>
           <label class="check"><input type="checkbox" data-q="follow_theme" data-kind="bool"><span>Use the same background as Now Playing</span></label>
-          <label class="check"><input type="checkbox" data-q="interactive" data-kind="bool"><span>Click a track to play</span></label>
+          <label class="check"><input type="checkbox" data-q="interactive" data-kind="bool"><span>Buttons work in the window</span></label>
         </div>
       </div>
 
@@ -948,12 +948,6 @@
 
       <!-- shown once connected -->
       <div id="spQueueWrap" class="sp-queue-wrap" hidden>
-        <div class="sp-searchbar">
-          <input id="spSearch" class="input" type="search"
-                 placeholder="Search Spotify — click a result to queue it…">
-        </div>
-        <div id="spResults" class="sp-results" hidden></div>
-
         <div class="sp-list-head">
           <span id="spQueueCount" class="muted small">Up next</span>
           <div class="row gap">
@@ -962,10 +956,8 @@
           </div>
         </div>
         <div id="spQueue" class="sp-queue"></div>
-        <p class="hint sp-note"><b>Play now</b> advances to that track, dropping the ones
-          above it — the same thing Spotify's own app does when you click an item in its queue.
-          Spotify's API has no way to reorder or remove queued items, so a true drag-to-reorder
-          is not possible; everything below the track you pick is kept.</p>
+        <p class="hint sp-note">What Spotify will play next, in order. This app only reads it:
+          add or reorder tracks in Spotify itself and the list here follows.</p>
         <label class="check"><input type="checkbox" id="spUseAccount"><span>Prefer the account when both know a track</span></label>
       </div>
 

@@ -2736,17 +2736,13 @@ let spRepeatMode = 'off';
 let spShuffleOn = false;
 
 function spRow(t, i, opts = {}) {
-  const idx = opts.index === undefined ? '' : ` data-i="${opts.index}"`;
-  const acts = (opts.actions || []).map((a) =>
-    `<button class="btn btn-ghost btn-sm" data-act="${a.act}" data-uri="${esc(t.uri)}"${idx}>${a.label}</button>`).join('');
-  return `<div class="sp-row ${opts.now ? 'now' : ''}" data-uri="${esc(t.uri)}">
+  return `<div class="sp-row ${opts.now ? 'now' : ''}">
       <div class="n">${opts.now ? '♪' : (i + 1)}</div>
       ${t.art ? `<img src="${esc(t.art)}" alt="" loading="lazy">` : '<img alt="">'}
       <div class="meta">
         <div class="t">${esc(t.title)}</div>
         <div class="a">${esc(t.artist)}</div>
       </div>
-      <div class="acts">${acts}</div>
     </div>`;
 }
 
@@ -2780,9 +2776,7 @@ function paintSpotifyQueue(q, force, trueNow) {
 
   const rows = [];
   if (nowRow) rows.push(spRow(nowRow, 0, { now: true }));
-  list.forEach((t, i) => rows.push(spRow(t, i, {
-    actions: [{ act: 'play', label: 'Play now' }], index: i,
-  })));
+  list.forEach((t, i) => rows.push(spRow(t, i)));
   $('spQueue').innerHTML = rows.length ? rows.join('')
     : (q.reason === 'loading'
       ? '<div class="empty">Fetching the queue…</div>'
@@ -2842,47 +2836,6 @@ function paintSpotifyAccount(acc, sp) {
 }
 
 /* search -> click a result to queue it */
-let spSearchTimer = null;
-$('spSearch').addEventListener('input', () => {
-  clearTimeout(spSearchTimer);
-  const q = $('spSearch').value.trim();
-  if (!q) { $('spResults').hidden = true; return; }
-  spSearchTimer = setTimeout(() => {
-    fetch('/api/spotify/search?q=' + encodeURIComponent(q)).then((r) => r.json()).then((d) => {
-      if (!d.ok) { toast(d.reason || 'Search failed'); return; }
-      $('spResults').hidden = false;
-      $('spResults').innerHTML = d.results.length
-        ? d.results.map((t, i) => spRow(t, i, {
-            actions: [{ act: 'queue', label: '+ Queue' }, { act: 'play', label: 'Play now' }],
-          })).join('')
-        : '<div class="empty">Nothing found.</div>';
-    }).catch(() => {});
-  }, 350);
-});
-
-function spAct(act, uri, index) {
-  const url = act === 'play' ? '/api/spotify/playuri' : '/api/spotify/enqueue';
-  const body = { uri };
-  if (act === 'play' && index !== undefined && index !== '') body.index = +index;
-  post(url, body).then((res) => {
-    if (!res.ok) { toast(res.reason || 'Spotify refused that'); return; }
-    toast(act !== 'play' ? 'Added to the queue'
-      : res.skipped ? `Playing — skipped ${res.skipped} track${res.skipped === 1 ? '' : 's'}`
-      : 'Playing');
-  });
-}
-
-$('spResults').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-act]');
-  if (btn) { spAct(btn.dataset.act, btn.dataset.uri, btn.dataset.i); return; }
-  const row = e.target.closest('.sp-row');
-  if (row) spAct('queue', row.dataset.uri);       // clicking a result queues it
-});
-$('spQueue').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-act]');
-  if (btn) spAct(btn.dataset.act, btn.dataset.uri, btn.dataset.i);
-});
-
 $('spQueueRefresh').addEventListener('click', () => post('/api/spotify/refresh'));
 $('spDevice').addEventListener('change', () => {
   const id = $('spDevice').value;
