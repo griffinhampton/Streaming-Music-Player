@@ -68,6 +68,11 @@ FINAL_BEAM = 5                 # beam width for finished lines; 1 = greedy
 # (no live words) is 1.7%.
 THREADS = 2                    # CPU threads for Whisper; 0 = pick from the machine
 LIVE_PARTIALS = True           # default for re-reading the phrase while it is spoken
+# Real conversation barely pauses, so every re-read covers a long stretch and
+# costs more than the test recording's short sentences: measured live at 9%
+# of the CPU with a fixed one-second pace. Instead the live line may use this
+# many cores on average - a read that took longer pushes the next one out.
+LIVE_BUDGET_CORES = 0.45
 _window = {"full": False}      # set while a stuck read is retried at 30 s
 
 
@@ -210,6 +215,7 @@ class WhisperListener:
         # Live words: re-read the phrase while it is spoken. Off, a line is
         # read once, when you pause - about a third of the CPU.
         self.live = LIVE_PARTIALS if live is None else bool(live)
+        self._partial_every = PARTIAL_EVERY_S     # stretched to stay inside the budget
 
     def set_words(self, words):
         """Takes effect from the next read; no restart, no reload."""
@@ -361,7 +367,7 @@ class WhisperListener:
             # the audio is drained, so the captions never fall behind.
             # Without live words a phrase is only read when it ends - or, if it
             # runs on, often enough to commit its finished sentences.
-            every = PARTIAL_EVERY_S if self.live else COMMIT_AFTER_S
+            every = self._partial_every if self.live else COMMIT_AFTER_S
             if speaking and utt and since_partial * BLOCK_S >= every and q.empty():
                 since_partial = 0
                 utt = self._live(utt)
@@ -375,7 +381,12 @@ class WhisperListener:
         dur = audio.size / RATE
         long = dur >= COMMIT_AFTER_S
         # Word timings are only needed to find where to cut a long phrase.
+        started = time.monotonic()
         segs = self._decode(audio, final=False, words=long)
+        spent = time.monotonic() - started
+        # Keep live words inside their CPU budget: the next re-read waits
+        # until this one's cost, spread over the wait, fits it.
+        self._partial_every = max(PARTIAL_EVERY_S, spent * self.threads / LIVE_BUDGET_CORES)
         if long:
             words = [w for s in segs for w in (s.words or [])]
             ends = [i for i, w in enumerate(words[:-1])

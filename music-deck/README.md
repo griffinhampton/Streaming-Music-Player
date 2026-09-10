@@ -50,6 +50,13 @@ stream with; the level meter next to the status shows it's hearing you.
 Captions stay off until you start them, and the deck remembers the choice
 across restarts.
 
+Captions are the one part of the app that works hard, so they keep to a
+budget: while you talk, the live line updates about once a second and uses
+at most about half of one CPU core on average, however long you talk
+without a pause - a long run of talk just updates a little less often.
+Turn off **Show words while I'm still talking** (Listening tab) and each line
+appears once you pause instead, for a fraction of that.
+
 ## Your own fonts
 
 Every **Font** menu has an **Add font…** button, and font files dropped
