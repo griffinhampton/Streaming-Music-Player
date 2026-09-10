@@ -47,6 +47,48 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 /* ------------------------------------------------------------- design */
 
+let artMode = false;
+let lastArtUrl = '';
+const ART_KEYS = new Set(['--accent', '--on-accent', '--title-color', '--artist-color', '--card-border-color']);
+let artPaintedFor = '';     // the art url the card background currently shows
+
+/* Use the album art as the card's own background, and pull readable text and
+   accent colours out of it. Runs when the mode is switched on and again on
+   every track change, since the art - and therefore the whole look - changes
+   with the song. */
+function paintArtBackground() {
+  if (!artMode) return;
+  const url = (lastArtUrl || '').split('&k=')[0];
+  const layer = el.stage.classList.contains('surround') ? el.cardBg : el.bgImage;
+  if (!url) { layer.style.backgroundImage = ''; return; }
+  layer.style.backgroundImage = `url("${lastArtUrl}")`;
+  layer.style.backgroundSize = 'cover';
+  layer.style.backgroundPosition = 'center';
+  layer.style.backgroundRepeat = 'no-repeat';
+  el.stage.classList.add('has-bg-image');
+
+  if (url === artPaintedFor || typeof paletteForUrl !== 'function') return;
+  artPaintedFor = url;
+  // Key by the stable part of the url, not the cache-busted full one.
+  paletteForUrl(lastArtUrl, url).then((th) => {
+    if (!th || !artMode) return;
+    const set = (k, v) => el.stage.style.setProperty(k, v);
+    // The colours palette.js derives are guaranteed readable on th.bg. So make
+    // the veil BE th.bg, darkened by exactly the amount it worked out the
+    // worst patch of this cover needs - then the same text stays legible over
+    // any album, bright or dark, without a per-cover fiddle.
+    set('--bg', th.bg);
+    el.bgDim.style.background = th.bg;
+    const wanted = Math.max((design.bg || {}).dim ?? 0, th.veil ?? 0.45);
+    el.bgDim.style.opacity = String(wanted);
+    set('--title-color', th.text);
+    set('--artist-color', th.muted);
+    set('--accent', th.accent);
+    set('--on-accent', readableOn(th.accent));
+    set('--card-border-color', th.line);
+  });
+}
+
 function applyDesign(np) {
   if (!np) return;
   if (design && JSON.stringify(np) === JSON.stringify(design)) return;
@@ -85,7 +127,10 @@ function applyDesign(np) {
   const TEXT = pal.text || '#f4f4f8';
   const MUTED = pal.muted || '#9a9aa8';
   const LINE = pal.line || '#2a2a3a';
-  const set = (k, v) => s.style.setProperty(k, v);
+  // In album-art mode the cover supplies accent and text colours (paintArt
+  // Background sets them per track); everything else still comes from here.
+  const artOwns = (np.bg || {}).mode === 'art';
+  const set = (k, v) => { if (!(artOwns && ART_KEYS.has(k))) s.style.setProperty(k, v); };
 
   set('--accent', accent);
   set('--on-accent', readableOn(accent));
@@ -115,18 +160,28 @@ function applyDesign(np) {
     ? `0 ${(0.05 * sh).toFixed(3)}em ${(0.22 * sh).toFixed(3)}em rgba(0,0,0,${Math.min(0.9, sh)})`
     : 'none');
 
-  // Background: solid, gradient, a dropped-in image, or generated artwork -
-  // on the whole window, or inside the card with a flat colour around it.
+  // Background: solid, gradient, a dropped-in image, generated artwork, or the
+  // album art itself - on the whole window, or inside the card with a flat
+  // colour around it.
   const sur = np.surround || {};
   const surround = sur.mode === 'solid';
   s.classList.toggle('surround', surround);
-  if (surround) {
+  artMode = bg.mode === 'art';
+  s.classList.toggle('art-bg', artMode);
+  if (artMode) {
+    // The picture is the cover, painted when the track changes; here we only
+    // need the veil that keeps the text off it.
+    set('--surround', sur.color || '#000000');
+    el.bgDim.style.opacity = String(bg.dim ?? 0.45);
+    paintArtBackground();          // repaint now in case the mode just changed
+  } else if (surround) {
     set('--surround', sur.color || '#000000');
     applyBackgroundInside(s, el.cardBg, bg);
+    el.bgDim.style.opacity = String(bg.dim ?? 0);
   } else {
     applyBackground(s, el.bgImage, bg, set);
+    el.bgDim.style.opacity = String(bg.dim ?? 0);
   }
-  el.bgDim.style.opacity = String(bg.dim ?? 0);
 
   // Inside the card the strips hug its inner edge and are clipped by its
   // rounded corners; outside, they sit in the margin around it.
@@ -313,9 +368,12 @@ function render(now) {
       el.art.onload = () => el.stage.classList.remove('no-art-image');
       el.art.src = now.art_url + (now.art_url.includes('?') ? '&' : '?') +
                    'k=' + encodeURIComponent(key.slice(0, 40));
+      lastArtUrl = el.art.src;
     } else {
       el.art.removeAttribute('src');
+      lastArtUrl = '';
     }
+    paintArtBackground();       // the cover changed, so the card art does too
 
     el.stage.classList.remove('changing');
     void el.stage.offsetWidth;   // restart the entrance animation

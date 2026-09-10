@@ -37,11 +37,19 @@ let design = null;     // the pop-out's design (colours, font, background)
 let opts = null;       // this window's own settings
 let clock = { position: 0, duration: 0, playing: false, at: performance.now() };
 let trackKey = '';
+let lastNow = null;     // so the header can refresh when its setting changes
 let lyrics = { status: 'idle', lines: [] };
 let active = -1;
 let pollTimer = null;
 
 /* ------------------------------------------------------------- styling */
+
+/* The song title above the words. Painted from the last-known track, so it
+   also appears the instant you turn it on - not only when the song changes. */
+function paintHeader() {
+  el.header.textContent = (opts && opts.show_header && lastNow)
+    ? [lastNow.title, lastNow.artist].filter(Boolean).join(' — ') : '';
+}
 
 function applyDesign(np, cfg) {
   const changed = JSON.stringify(np) !== JSON.stringify(design) ||
@@ -90,6 +98,7 @@ function applyDesign(np, cfg) {
     el.bgDim.style.opacity = String(own.dim ?? 0);
   }
 
+  paintHeader();
   s.classList.toggle('align-left', opts.align === 'left');
   s.classList.toggle('interactive', !PREVIEW && opts.interactive !== false);
   // Same buttons as the pop-out, so a Next button works the same
@@ -243,16 +252,17 @@ function onState(now) {
     if (trackKey !== '') {
       trackKey = '';
       setLyrics({ status: 'none', reason: 'nothing playing', lines: [] });
-      el.header.textContent = '';
+      lastNow = null;
+      paintHeader();
     }
     clock = { position: 0, duration: 0, playing: false, at: performance.now() };
     return;
   }
+  lastNow = now;
   const key = [now.source, now.title, now.artist].join('|');
   if (key !== trackKey) {
     trackKey = key;
-    el.header.textContent = (opts && opts.show_header)
-      ? [now.title, now.artist].filter(Boolean).join(' — ') : '';
+    paintHeader();
     setLyrics({ status: 'loading', lines: [] });
     fetchLyrics();
   }

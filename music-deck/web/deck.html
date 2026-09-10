@@ -228,8 +228,8 @@
         <div class="sp-list-head">
           <span id="spQueueCount" class="muted small">Up next</span>
           <div class="row gap">
-            <button id="spShuffle" class="btn btn-ghost btn-sm" title="Shuffle">🔀</button>
-            <button id="spRepeat" class="btn btn-ghost btn-sm" title="Repeat">🔁</button>
+            <button id="spShuffle" class="btn btn-ghost btn-sm icon-btn" title="Shuffle"></button>
+            <button id="spRepeat" class="btn btn-ghost btn-sm icon-btn" title="Repeat"></button>
           </div>
         </div>
         <div id="spQueue" class="sp-queue"></div>
@@ -283,14 +283,14 @@
       </div>
       <div class="player-controls">
         <div class="transport">
-          <button id="shuffle" class="icon" title="Shuffle">🔀</button>
-          <button id="prev" class="icon" title="Previous">⏮</button>
-          <button id="playpause" class="icon icon-big" title="Play / pause (Space)">▶</button>
-          <button id="next" class="icon" title="Next">⏭</button>
-          <button id="repeat" class="icon" title="Repeat">🔁</button>
+          <button id="shuffle" class="icon" title="Shuffle"></button>
+          <button id="prev" class="icon" title="Previous"></button>
+          <button id="playpause" class="icon icon-big" title="Play / pause (Space)"></button>
+          <button id="next" class="icon" title="Next"></button>
+          <button id="repeat" class="icon" title="Repeat"></button>
         </div>
         <div class="volume" title="Volume">
-          <span class="vol-icon" aria-hidden="true">🔊</span>
+          <span class="vol-icon" aria-hidden="true"></span>
           <input id="volume" class="range" type="range" min="0" max="100" value="70"
                  aria-label="Volume">
           <span id="volLabel" class="muted small mono">70</span>
@@ -955,8 +955,8 @@
             <label><span>Y %</span><input class="input" type="number" min="-20" max="120" data-st="y"></label>
           </div>
           <div class="row gap wrap">
-            <button class="btn btn-ghost btn-sm" id="stickerUp">↑ Move up</button>
-            <button class="btn btn-ghost btn-sm" id="stickerDown">↓ Move down</button>
+            <button class="btn btn-ghost btn-sm" id="stickerUp">Move up</button>
+            <button class="btn btn-ghost btn-sm" id="stickerDown">Move down</button>
             <button class="btn btn-ghost btn-sm" id="stickerFront">In front of card</button>
             <button class="btn btn-ghost btn-sm" id="stickerBack">Behind card</button>
             <button class="btn btn-ghost btn-sm" id="stickerFlip">Flip</button>
@@ -1155,6 +1155,7 @@
 
 <script src="scenes.js"></script>
 <script src="decor.js"></script>
+<script src="icons.js"></script>
 <script src="palette.js"></script>
 <script src="framer.js"></script>
 <script src="deck.js"></script>

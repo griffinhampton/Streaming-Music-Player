@@ -67,7 +67,7 @@ class MediaBridge:
             flags = subprocess.CREATE_NO_WINDOW
         return subprocess.Popen(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-File", SCRIPT, ART_DIR, CMD_FILE],
+             "-File", SCRIPT, ART_DIR, CMD_FILE, "400", str(os.getpid())],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
             text=True, encoding="utf-8", errors="replace",
             bufsize=1, creationflags=flags,

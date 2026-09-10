@@ -337,6 +337,8 @@ function bgEditorHTML(t) {
   // shows through - so there is no second colour control competing with it.
   const modes = [['solid', isApp ? 'None' : 'Solid'], ['gradient', 'Gradient'],
                  ['scene', 'Artwork'], ['image', 'Image']];
+  // Only the pop-out has a cover to use as its own background.
+  if (t.key === 'np') modes.push(['art', 'Album art']);
 
   return `
     ${window_ ? `<p class="hint">Used when this window is not matching the pop-out.
@@ -351,6 +353,16 @@ function bgEditorHTML(t) {
         ${modes.map(([v, l]) => `<button data-v="${v}">${l}</button>`).join('')}
       </div>
     </label>
+    <div class="bg-when" data-when="art">
+      <p class="hint">The cover of whatever is playing becomes the background, and
+        the text and accent colours are taken from it so they stay readable as the
+        art changes. Darken it below if the words get lost.</p>
+      <label class="field">
+        <span>Darken <b class="mono" ${O('dim')}>0.45</b></span>
+        <input class="range" type="range" min="0" max="90" data-div="100" data-dp="2"
+               ${D('dim')} data-kind="range" ${O('dim')}>
+      </label>
+    </div>
 
     <div class="bg-when" data-when="solid gradient">
     <div class="field two">
@@ -548,8 +560,9 @@ function applyPictureTheme(assetId, targetKey) {
       'card.border_color': '', 'progress.color': '', 'decor.color': '',
       'surround.color': th.surround,
       'bg.color': th.bg, 'bg.color2': th.panel,
-      // With the picture left alone, the shadow is what keeps the text off it.
-      'text.shadow': 0.5,
+      // No automatic shadow: the darkening veil already guarantees the text
+      // clears the picture, and a shadow nobody asked for is a shadow nobody
+      // can find the switch for. The slider is in the Text tab if you want one.
     });
 
     // The picture goes behind whichever surface you were pointing at, exactly
@@ -1180,6 +1193,20 @@ function applyTheme(name) {
   }
   saveUi(ui);
   saveNp(np);
+
+  // A theme is meant to dress the whole rig, not just the pop-out. The other
+  // two windows read the palette live from the pop-out already, but their
+  // background is their own - so translate the theme's background onto each and
+  // point them back at it, or picking a theme would change their text colour
+  // while leaving a stale picture behind (which is exactly what looked broken).
+  const ownBg = {};
+  for (const [k, v] of Object.entries(np)) {
+    if (k.startsWith('bg.')) ownBg['bg_own.' + k.slice(3)] = v;
+  }
+  ownBg.follow_theme = false;      // show their own copy of the theme's look
+  saveLy(ownBg);
+  saveQ(ownBg);
+
   CONFIG.theme = name;
   post('/api/config', { theme: name });
   syncControls();
@@ -1944,8 +1971,8 @@ function report() {
   });
 }
 
-audio.addEventListener('play', () => { $('playpause').textContent = '⏸'; report(); });
-audio.addEventListener('pause', () => { $('playpause').textContent = '▶'; report(); });
+audio.addEventListener('play', () => { $('playpause').innerHTML = svgIcon('pause'); report(); });
+audio.addEventListener('pause', () => { $('playpause').innerHTML = svgIcon('play'); report(); });
 audio.addEventListener('ended', () => nextTrack(true));
 audio.addEventListener('loadedmetadata', () => {
   $('deckDuration').textContent = fmt(audio.duration);
@@ -2029,7 +2056,7 @@ function paintCard(now) {
     }
   }
 
-  $('playpause').textContent = now.playing ? '⏸' : '▶';
+  $('playpause').innerHTML = svgIcon(now.playing ? 'pause' : 'play');
   // Only re-seat the clock on a real jump, so the bar does not stutter.
   const drift = Math.abs(cardClock.position - (now.position || 0));
   if (drift > 1.2 || cardClock.playing !== !!now.playing ||
@@ -2095,7 +2122,7 @@ $('shuffle').addEventListener('click', () => {
 $('repeat').addEventListener('click', () => {
   repeat = repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off';
   $('repeat').classList.toggle('on', repeat !== 'off');
-  $('repeat').textContent = repeat === 'one' ? '🔂' : '🔁';
+  $('repeat').innerHTML = svgIcon(repeat === 'one' ? 'repeatOne' : 'repeat');
   toast('Repeat: ' + repeat);
 });
 $('volume').addEventListener('input', () => {
@@ -2645,7 +2672,7 @@ function paintSpotifyAccount(acc, sp) {
     spRepeatMode = sp.repeat || 'off';
     $('spShuffle').classList.toggle('on', spShuffleOn);
     $('spRepeat').classList.toggle('on', spRepeatMode !== 'off');
-    $('spRepeat').textContent = spRepeatMode === 'track' ? '🔂' : '🔁';
+    $('spRepeat').innerHTML = svgIcon(spRepeatMode === 'track' ? 'repeatOne' : 'repeat');
   }
   // Just connected. That is a deliberate act with an obvious intent, so show
   // the result immediately instead of waiting for a poll: drop any rate-limit
@@ -2812,6 +2839,20 @@ $('fullTheme').addEventListener('change', () => {
 });
 
 fillFonts();
+// Paint the SVG glyphs into the static control buttons once. The toggling
+// ones (play/pause, repeat) are set from svgIcon() wherever they change.
+$('shuffle').innerHTML = svgIcon('shuffle');
+$('prev').innerHTML = svgIcon('prev');
+$('next').innerHTML = svgIcon('next');
+$('playpause').innerHTML = svgIcon('play');
+$('repeat').innerHTML = svgIcon('repeat');
+$('spShuffle').innerHTML = svgIcon('shuffle');
+$('spRepeat').innerHTML = svgIcon('repeat');
+const volIcon = document.querySelector('.vol-icon');
+if (volIcon) volIcon.innerHTML = svgIcon('volume');
+$('stickerUp').insertAdjacentHTML('afterbegin', svgIcon('up'));
+$('stickerDown').insertAdjacentHTML('afterbegin', svgIcon('down'));
+
 fillDecorPickers();
 // The background editors are generated markup, so they have to exist before
 // bindControls() scans the page for data-* controls.

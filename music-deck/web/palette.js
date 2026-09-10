@@ -242,20 +242,31 @@ function themeFromColors(colors) {
   };
 }
 
-/** Derive (and remember) the theme for one asset. */
+/** Derive (and remember) the theme for one stored asset. */
 function paletteFor(assetId) {
-  // `in`, not truthiness: a picture we could not read caches as null, and that
-  // is an answer worth remembering rather than retrying on every render.
-  if (assetId in PALETTES) return Promise.resolve(PALETTES[assetId]);
+  return paletteForUrl('/asset/' + encodeURIComponent(assetId), assetId);
+}
+
+/**
+ * The same, for any same-origin image URL - album art lives at /smtc/art or
+ * /spotify/art, not under /asset/. `key` is what the result is cached under, so
+ * a caller can dedupe by track rather than by cache-busted URL.
+ *
+ * `in`, not truthiness: an image we could not read caches as null, and that is
+ * an answer worth remembering rather than retrying on every render.
+ */
+function paletteForUrl(url, key) {
+  const id = key || url;
+  if (id in PALETTES) return Promise.resolve(PALETTES[id]);
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       let out = null;
       try { out = themeFromColors(extractColors(img)); } catch (_) { out = null; }
-      PALETTES[assetId] = out;
+      PALETTES[id] = out;
       resolve(out);
     };
-    img.onerror = () => { PALETTES[assetId] = null; resolve(null); };
-    img.src = '/asset/' + encodeURIComponent(assetId);
+    img.onerror = () => { PALETTES[id] = null; resolve(null); };
+    img.src = url;
   });
 }

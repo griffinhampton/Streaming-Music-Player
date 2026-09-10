@@ -515,3 +515,8 @@ html, body {
 .stage.decor-in.decor-bottom .info, .stage.decor-in.decor-bottom .art-wrap { margin-bottom: calc(var(--decor-px, 0px) * .55); }
 .stage.decor-in.decor-left  .card { padding-left: calc(var(--card-pad) + var(--decor-px, 0px) * .7); }
 .stage.decor-in.decor-right .card { padding-right: calc(var(--card-pad) + var(--decor-px, 0px) * .7); }
+
+/* Album art as the card's own background: the cover, blurred just enough that
+   text sits comfortably on it, with the veil doing the real contrast work. */
+.stage.art-bg .bg-image,
+.stage.art-bg.surround .card-bg { filter: blur(1px); }

@@ -148,10 +148,18 @@ def viewport_rect(chrome_hwnd):
 class HostWindow:
     """Frameless window that owns the Chrome overlay window."""
 
+    _seq = 0
+
     def __init__(self, title):
         self.title = title
         self.hwnd = None
         self.child = None
+        # A window class per instance: a shared class only ever keeps the first
+        # window's message handler, so every window's close, resize and paint
+        # would run against that one instance's child. This is what kept
+        # closing one window from taking another's Chrome down with it.
+        HostWindow._seq += 1
+        self._class = "%s.%d" % (CLASS_NAME, HostWindow._seq)
         self._offset = (0, 0)       # where Chrome sits relative to our client area
         self._child_size = (0, 0)
         self._ready = threading.Event()
@@ -208,7 +216,7 @@ class HostWindow:
         wc.hInstance = hinst
         wc.hCursor = user32.LoadCursorW(None, 32512)   # IDC_ARROW
         wc.hbrBackground = gdi32.CreateSolidBrush(0x000000)
-        wc.lpszClassName = CLASS_NAME
+        wc.lpszClassName = self._class
         # The host window is a bare popup with no frame, but Windows still uses
         # its icon in the taskbar and in Alt-Tab, and TikTok Studio shows it in
         # the window picker - so it is worth setting properly.
@@ -218,7 +226,7 @@ class HostWindow:
         user32.RegisterClassExW(ctypes.byref(wc))      # harmless if already there
 
         self.hwnd = user32.CreateWindowExW(
-            WS_EX_APPWINDOW, CLASS_NAME, self.title,
+            WS_EX_APPWINDOW, self._class, self.title,
             WS_POPUP | WS_VISIBLE | WS_CLIPCHILDREN,
             int(x), int(y), int(w), int(h),
             None, None, hinst, None)

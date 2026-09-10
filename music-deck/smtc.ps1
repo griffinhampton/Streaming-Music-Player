@@ -13,7 +13,8 @@
 param(
     [string]$ArtDir = "$PSScriptRoot\cache\art",
     [string]$CmdFile = "$PSScriptRoot\cache\command.txt",
-    [int]$IntervalMs = 400
+    [int]$IntervalMs = 400,
+    [int]$ParentPid = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -145,6 +146,12 @@ function Invoke-Command-File($session) {
 $statusNames = @{ 0 = 'Closed'; 1 = 'Opened'; 2 = 'Changing'; 3 = 'Stopped'; 4 = 'Playing'; 5 = 'Paused' }
 
 while ($true) {
+    # If the app that started us is gone - crashed, force-quit, whatever - go
+    # too. Otherwise we orphan, keep polling forever, and hold the install
+    # folder open so the next update cannot replace it.
+    if ($ParentPid -gt 0 -and -not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) {
+        break
+    }
     try {
         $session = $null
         $preferred = $null

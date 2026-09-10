@@ -890,3 +890,19 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   color: #fff; pointer-events: none;
 }
 .hint.warn { color: var(--warn); }
+
+
+/* -------------------------------------------------- SVG glyphs in buttons */
+
+/* Round transport buttons in the player card. */
+.icon .glyph { width: 52%; height: 52%; display: block; }
+.icon-big .glyph { width: 46%; height: 46%; }
+.vol-icon { display: inline-flex; width: 1em; height: 1em; opacity: .7; }
+.vol-icon .glyph { width: 100%; height: 100%; }
+
+/* Small square icon buttons (shuffle/repeat in the Spotify panel) and the
+   move-up/down sticker buttons, where the glyph sits beside a word. */
+.icon-btn .glyph { width: 1.1em; height: 1.1em; display: block; }
+#stickerUp .glyph, #stickerDown .glyph {
+  width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 4px;
+}
