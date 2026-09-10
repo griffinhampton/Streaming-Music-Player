@@ -823,13 +823,23 @@ class Hub:
             }
 
         account = SPOTIFY.get()
-        spotify_view = None
-        if account.get("has") and CONFIG["spotify"].get("use_account", True):
+        # Two sources know what is playing. Windows (the SMTC bridge) reports
+        # it for free, in real time, for anything playing on this PC. The
+        # Spotify account only knows what its last poll said - once a minute at
+        # best, and frozen entirely inside a rate-limit window - so its view
+        # can be minutes old. The account leads only while it is fresh (it is
+        # the one that knows the device name and has full-size art); the moment
+        # it goes stale, Windows takes over. A stale account view is kept as a
+        # last resort for playback on a phone or speaker, where Windows sees
+        # nothing - get() has already dropped its "playing" claim by then.
+        use_account = CONFIG["spotify"].get("use_account", True)
+        account_view = None
+        if account.get("has") and use_account:
             art = ""
             if account.get("art"):
                 art = "/spotify/art?u=" + urllib.parse.quote(account["art"], safe="")
             device = account.get("device") or ""
-            spotify_view = {
+            account_view = {
                 "source": "spotify",
                 "source_label": f"Spotify \u00b7 {device}" if device else "Spotify",
                 "title": account["title"],
@@ -840,9 +850,13 @@ class Hub:
                 "position": account["position"],
                 "duration": account["duration"],
             }
-        elif spotify.get("has"):
+        bridge_view = None
+        if spotify.get("has"):
+            # A track change seen here is the free, immediate signal that the
+            # queue moved on - let the account poller know instead of waiting.
+            SPOTIFY.note_track((spotify.get("title"), spotify.get("artist")))
             art = f"/smtc/art?t={spotify['art_token']}" if spotify.get("has_art") else ""
-            spotify_view = {
+            bridge_view = {
                 "source": spotify.get("source", "system"),
                 "source_label": spotify.get("app", "Spotify"),
                 "title": spotify["title"],
@@ -853,6 +867,10 @@ class Hub:
                 "position": spotify["position"],
                 "duration": spotify["duration"],
             }
+        if account_view and not account.get("stale"):
+            spotify_view = account_view
+        else:
+            spotify_view = bridge_view or account_view
 
         mode = CONFIG.get("source_mode", "auto")
         if mode == "local":

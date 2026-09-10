@@ -55,6 +55,15 @@ class SpotifyAccount:
         self._lock = threading.Lock()
         self._raw = None              # last /me/player payload
         self._fetched_at = 0.0
+        # Passive reads are cached so a burst of front-end requests - the deck
+        # panel and the queue window asking at once, or the several triggers
+        # that fire on a track change - costs Spotify one call, not several.
+        self._queue_cache = None
+        self._queue_at = 0.0
+        self._devices_cache = None
+        self._devices_at = 0.0
+        self._last_track = None
+        self._bridge_track = None
         self._error = ""
         self._backoff_until = 0.0
         # Set by the server: True while the Windows bridge is already telling
@@ -105,11 +114,26 @@ class SpotifyAccount:
                 return None
             if time.time() < tok.get("expires_at", 0):
                 return tok["access_token"]
-            fresh = self._post_token({
-                "grant_type": "refresh_token",
-                "refresh_token": tok["refresh_token"],
-                "client_id": self.client_id,
-            })
+            try:
+                fresh = self._post_token({
+                    "grant_type": "refresh_token",
+                    "refresh_token": tok["refresh_token"],
+                    "client_id": self.client_id,
+                })
+            except urllib.error.HTTPError as exc:
+                # A revoked or expired refresh token comes back 400
+                # (invalid_grant) or 401. Either way the saved login is dead and
+                # the only fix is signing in again - say so, and clear it, rather
+                # than surfacing a raw "Spotify error 400" every minute.
+                if exc.code in (400, 401):
+                    self._token = None
+                    try:
+                        os.remove(self.token_path)
+                    except Exception:
+                        pass
+                    self._error = "Your Spotify sign-in has expired - press Connect to sign in again."
+                    return None
+                raise
             fresh.setdefault("refresh_token", tok["refresh_token"])
             self._token = fresh
             self._save()
@@ -201,14 +225,11 @@ class SpotifyAccount:
                     self._backoff_until = time.time() + 10
             # Everything here is a /me/* endpoint, and those trip Spotify's
             # limiter far sooner than the headline number - a burst of ten can
-            # be enough. So lean on the free source wherever possible: when
-            # Windows is already reporting the track playing on this PC, the
-            # only thing this poll adds is noticing a phone or speaker taking
-            # over, which is worth 30 seconds of latency, not 2.5. Any button
-            # press pokes us awake immediately either way.
-            covered = self.bridge_has
-            playing = bool(self._raw and self._raw.get("is_playing"))
-            self._poke.wait(30 if covered else (10 if playing else 25))
+            # be enough. Windows already reports the playing track for free, so
+            # the background poll only needs to notice a phone or speaker taking
+            # over: at most once a minute. A button press or a track change
+            # pokes us awake immediately either way.
+            self._poke.wait(60)
             self._poke.clear()
 
     def _poll(self):
@@ -221,6 +242,25 @@ class SpotifyAccount:
         self._raw = self._api("/me/player?additional_types=track,episode")  # None = idle
         self._fetched_at = time.time()
         self._error = ""
+        # A new track means a new queue: drop the cached one so the next read
+        # is fresh rather than waiting out the TTL.
+        item = (self._raw or {}).get("item") or {}
+        track = item.get("uri") or item.get("id")
+        if track != self._last_track:
+            self._last_track = track
+            self._queue_cache = None
+
+    def note_track(self, key):
+        """Windows just reported a different track.
+
+        That signal is free and immediate, so use it: forget the cached queue
+        and wake the poller now, rather than waiting up to a minute for the
+        next scheduled poll to notice the song moved on.
+        """
+        if key and key != self._bridge_track:
+            self._bridge_track = key
+            self._queue_cache = None
+            self._poke.set()
 
     def get(self):
         """Current playback as the deck understands it."""
@@ -247,10 +287,18 @@ class SpotifyAccount:
         if images:
             art = sorted(images, key=lambda im: abs((im.get("width") or 300) - 300))[0].get("url", "")
 
-        playing = bool(raw.get("is_playing"))
+        # Honest about age. The poll runs once a minute and stops entirely
+        # inside a rate-limit window, so this payload can be minutes old: a
+        # track that ended long ago must not be reported as still playing with
+        # a progress bar marching forward. Past STALE_AFTER (or while cooling)
+        # the playing claim is dropped and position frozen; snapshot() then
+        # defers to Windows, which knows what is actually playing right now.
+        age = time.time() - self._fetched_at
+        fresh = age < self.STALE_AFTER and not self.cooling_for()
+        playing = bool(raw.get("is_playing")) and fresh
         position = float(raw.get("progress_ms") or 0) / 1000
         if playing:
-            position += max(0.0, time.time() - self._fetched_at)
+            position += max(0.0, age)
         duration = float(item.get("duration_ms") or 0) / 1000
         if duration:
             position = min(position, duration)
@@ -266,7 +314,7 @@ class SpotifyAccount:
             "art": art,
             "shuffle": bool(raw.get("shuffle_state")),
             "repeat": raw.get("repeat_state", "off"),
-            "stale": time.time() - self._fetched_at > 15,
+            "stale": not fresh,
         })
         return base
 
@@ -354,6 +402,11 @@ class SpotifyAccount:
                     pass
                 self._backoff_until = time.time() + max(2, wait)
             raise
+        if method != "GET":
+            # A write (queue a track, skip, move playback) changes what is
+            # next and where; forget the cached answers so the next read asks.
+            self._queue_cache = None
+            self._devices_cache = None
         # The control endpoints answer 204 with an empty or non-JSON body, so a
         # parse failure here means "it worked, there was nothing to say".
         if not raw.strip():
@@ -381,40 +434,65 @@ class SpotifyAccount:
                 "artist": who, "art": art,
                 "duration": round(float(item.get("duration_ms") or 0) / 1000, 1)}
 
+    STALE_AFTER = 90.0    # a /me/player payload older than this is not "now"
+    QUEUE_TTL = 55.0      # seconds a fetched queue is reused before asking again
+    DEVICES_TTL = 120.0   # devices change rarely
+    ERROR_TTL = 10.0      # a failed read is not retried faster than this
+
     def queue(self):
         """What Spotify will play next.
 
         Note: the Web API can read this queue and append to it, but there is no
         endpoint to reorder or remove items - only playlist tracks can be moved.
+
+        Served from cache within QUEUE_TTL: however many front ends ask, Spotify
+        is asked at most once per window. A write or a track change drops the
+        cache so the next read is fresh instead of waiting the TTL out.
         """
+        now = time.time()
+        if self._queue_cache is not None:
+            ttl = self.QUEUE_TTL if self._queue_cache.get("ok") else self.ERROR_TTL
+            if now - self._queue_at < ttl:
+                return self._queue_cache
         try:
             data = self._api("/me/player/queue") or {}
         except Cooling:
-            return {"ok": False, "reason": self.cooling_reason(),
-                    "retry_in": round(self.cooling_for(), 1)}
+            result = {"ok": False, "reason": self.cooling_reason(),
+                      "retry_in": round(self.cooling_for(), 1)}
         except urllib.error.HTTPError as exc:
-            return {"ok": False, "reason": self._explain(exc),
-                    "retry_in": round(self.cooling_for(), 1)}
+            result = {"ok": False, "reason": self._explain(exc),
+                      "retry_in": round(self.cooling_for(), 1)}
         except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80]}
-        return {
-            "ok": True,
-            "now": self._track(data.get("currently_playing")),
-            "queue": [t for t in (self._track(i) for i in (data.get("queue") or [])[:30]) if t],
-        }
+            result = {"ok": False, "reason": str(exc)[:80]}
+        else:
+            result = {
+                "ok": True,
+                "now": self._track(data.get("currently_playing")),
+                "queue": [t for t in (self._track(i) for i in (data.get("queue") or [])[:30]) if t],
+            }
+        self._queue_cache, self._queue_at = result, now
+        return result
 
     def devices(self):
+        now = time.time()
+        if self._devices_cache is not None:
+            ttl = self.DEVICES_TTL if self._devices_cache.get("ok") else self.ERROR_TTL
+            if now - self._devices_at < ttl:
+                return self._devices_cache
         try:
             data = self._api("/me/player/devices") or {}
         except Cooling:
-            return {"ok": False, "reason": self.cooling_reason(),
-                    "retry_in": round(self.cooling_for(), 1), "devices": []}
+            result = {"ok": False, "reason": self.cooling_reason(),
+                      "retry_in": round(self.cooling_for(), 1), "devices": []}
         except Exception as exc:
-            return {"ok": False, "reason": str(exc)[:80], "devices": []}
-        return {"ok": True, "devices": [
-            {"id": d.get("id"), "name": d.get("name", ""), "type": d.get("type", ""),
-             "active": bool(d.get("is_active")), "volume": d.get("volume_percent")}
-            for d in (data.get("devices") or [])]}
+            result = {"ok": False, "reason": str(exc)[:80], "devices": []}
+        else:
+            result = {"ok": True, "devices": [
+                {"id": d.get("id"), "name": d.get("name", ""), "type": d.get("type", ""),
+                 "active": bool(d.get("is_active")), "volume": d.get("volume_percent")}
+                for d in (data.get("devices") or [])]}
+        self._devices_cache, self._devices_at = result, now
+        return result
 
     def search(self, query, limit=10):
         query = (query or "").strip()
