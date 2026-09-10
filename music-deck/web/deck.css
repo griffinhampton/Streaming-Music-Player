@@ -170,9 +170,6 @@ select.input option { background: var(--panel); color: var(--fg); }
 }
 .color.wide { width: 100%; }
 
-/* Sliders must read clearly on ANY theme colour: a solid track (not a faint
-   tint that vanishes on light/coloured panels) and a thumb ringed in the panel
-   colour so it stands out even when the accent matches the background. */
 .range { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; cursor: pointer; }
 /* Nothing here may depend on the accent contrasting with the panel - it often
    does not (a pale accent on a light theme). Every edge is the text color
