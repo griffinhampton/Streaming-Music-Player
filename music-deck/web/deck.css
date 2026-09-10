@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - control room.
+/* Awesome Streaming Deck - control room.
 
    Black and minimal out of the box. Every color, the radius, the font and the
    spacing come from CSS variables that deck.js writes from your config, so the
@@ -111,6 +111,38 @@ h2 {
 .pill-on   { color: var(--good); border-color: color-mix(in srgb, var(--good) 32%, var(--line)); }
 .pill-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 32%, var(--line)); }
 .pill-bad  { color: var(--bad);  border-color: color-mix(in srgb, var(--bad) 32%, var(--line)); }
+
+/* Captions: the microphone button and, beside it, what the listener is doing.
+   The dot is the state at a glance; the words say why. */
+.cap-mic { align-items: center; }
+.cap-state {
+  display: inline-flex; align-items: center; gap: .5em;
+  min-height: 2.2em; padding: .3em .8em;
+  border-radius: 999px;
+  font-size: .9em; font-weight: 600; line-height: 1.3;
+  color: var(--label);
+  background: color-mix(in srgb, var(--fg) 6%, var(--panel));
+  border: 1px solid var(--line-strong);
+  max-width: 100%;
+}
+.cap-state::before {
+  content: ""; flex: 0 0 auto;
+  width: .6em; height: .6em; border-radius: 50%;
+  background: currentColor;
+}
+.cap-state[data-tone="good"] { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
+.cap-state[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.cap-state[data-tone="bad"]  { color: var(--bad);  border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.cap-state[data-tone="wait"]::before { animation: cap-pulse 1s ease-in-out infinite; }
+@keyframes cap-pulse { 50% { opacity: .2; } }
+.cap-last {
+  font-size: .95em; line-height: 1.45; font-style: italic;
+  color: color-mix(in srgb, var(--fg) 78%, var(--dim));
+  overflow-wrap: anywhere;
+  padding: .5em .8em;
+  border-left: 3px solid var(--line-strong);
+}
+.cap-last:empty { display: none; }
 
 /* ---------------------------------------------------------------- controls */
 

@@ -1,5 +1,5 @@
 """
-Awesome Music Streaming Deck - a local-only now-playing rig for streaming.
+Awesome Streaming Deck - a local-only now-playing rig for streaming.
 
 Runs a small HTTP server bound to 127.0.0.1 (nothing is reachable from your
 network, let alone the internet) and serves two windows:
@@ -33,6 +33,7 @@ from spotify_api import SpotifyAccount
 import tags
 import winwin
 from smtc import MediaBridge
+from captions import CaptionBridge
 
 import paths
 
@@ -42,7 +43,7 @@ ASSETS = os.path.join(CACHE, "assets")
 CONFIG_PATH = paths.data("config.json")
 LIBRARY_CACHE = os.path.join(CACHE, "library.json")
 
-DECK_TITLE = "Awesome Music Streaming Deck"
+DECK_TITLE = "Awesome Streaming Deck"
 
 DEFAULT_CONFIG = {
     "port": 8713,
@@ -156,6 +157,28 @@ DEFAULT_CONFIG = {
                 "angle": 135,
                 "strength": 1.0,     # 0 leaves the picture alone
             },
+            "scene": {"id": "", "c1": "", "c2": "", "c3": "",
+                      "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
+        },
+    },
+    "captions": {
+        "enabled": False,            # listen on launch; off until you press Start
+        "width": 900, "height": 200, "x": 120, "y": 780,
+        "borderless": True,
+        "topmost": True,
+        "scale": 1.0,                # text size
+        "lines": 2,                  # finished lines kept above the live one
+        "hold": 6.0,                 # seconds a finished line stays before fading
+        "align": "center",           # center | left
+        "follow_theme": True,        # background from the pop-out
+        "bg": "#0f0f17",             # used when not following the theme
+        "colors": {"text": "", "muted": "", "accent": ""},   # "" = inherit Now Playing
+        "bg_own": {              # used when follow_theme is off
+            "mode": "solid", "color": "#0f0f17", "color2": "#241a3d", "angle": 135,
+            "image": "", "fit": "cover", "dim": 0.0, "blur": 0,
+            "pos_x": 50, "pos_y": 50,
+            "zoom": 1.0,
+            "tint": {"on": False, "c1": "", "c2": "", "angle": 135, "strength": 1.0},
             "scene": {"id": "", "c1": "", "c2": "", "c3": "",
                       "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
         },
@@ -588,6 +611,7 @@ class Library:
 
 LIBRARY = Library()
 BRIDGE = MediaBridge()
+CAPTIONS = CaptionBridge()
 
 
 # ================================================================= assets
@@ -946,11 +970,15 @@ class Hub:
             "spotify_queue": SPOTIFY.peek_queue(),
             "spotify_devices": SPOTIFY.peek_devices(),
             "windows": {"np": OVERLAY.status(), "lyrics": LYRICS_WIN.status(),
-                        "queue": QUEUE_WIN.status()},
+                        "queue": QUEUE_WIN.status(), "captions": CAPTIONS_WIN.status()},
             "lyrics_info": self._lyrics_info(now),
+            # What the microphone is hearing, for the captions window and the
+            # deck's status line. A cached read; the helper does the listening.
+            "captions": CAPTIONS.get(),
             "nowplaying": CONFIG["nowplaying"],
             "lyrics_cfg": CONFIG.get("lyrics", {}),
             "queue_cfg": CONFIG.get("queue", {}),
+            "captions_cfg": CONFIG.get("captions", {}),
             "server_time": time.time(),
         }
 
@@ -1024,12 +1052,14 @@ font-family:Segoe UI,system-ui,sans-serif"><div style="text-align:center;max-wid
 
 # ================================================================= windows
 
-OVERLAY = overlay_mod.Overlay(CACHE, "np", "Awesome Music Streaming Deck - Now Playing",
-                              "Awesome Music Streaming Deck - Now Playing (source)")
-LYRICS_WIN = overlay_mod.Overlay(CACHE, "lyrics", "Awesome Music Streaming Deck - Lyrics",
-                                 "Awesome Music Streaming Deck - Lyrics (source)")
-QUEUE_WIN = overlay_mod.Overlay(CACHE, "queue", "Awesome Music Streaming Deck - Queue",
-                                "Awesome Music Streaming Deck - Queue (source)")
+OVERLAY = overlay_mod.Overlay(CACHE, "np", "Awesome Streaming Deck - Now Playing",
+                              "Awesome Streaming Deck - Now Playing (source)")
+LYRICS_WIN = overlay_mod.Overlay(CACHE, "lyrics", "Awesome Streaming Deck - Lyrics",
+                                 "Awesome Streaming Deck - Lyrics (source)")
+QUEUE_WIN = overlay_mod.Overlay(CACHE, "queue", "Awesome Streaming Deck - Queue",
+                                "Awesome Streaming Deck - Queue (source)")
+CAPTIONS_WIN = overlay_mod.Overlay(CACHE, "captions", "Awesome Streaming Deck - Captions",
+                                   "Awesome Streaming Deck - Captions (source)")
 LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
@@ -1177,7 +1207,7 @@ class QuietServer(ThreadingHTTPServer):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "MusicDeck"
+    server_version = "StreamingDeck"
 
     def log_message(self, *_args):
         pass  # the console is for status, not a request log
@@ -1345,7 +1375,7 @@ class Handler(BaseHTTPRequestHandler):
                 HUB.broadcast()
                 return self._send(200, _callback_page(
                     "Spotify connected",
-                    "Awesome Music Streaming Deck can see your playback now. This window closes itself.",
+                    "Awesome Streaming Deck can see your playback now. This window closes itself.",
                     done=True), "text/html")
             return self._send(200, _callback_page("That did not work", reason), "text/html")
 
@@ -1405,6 +1435,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/queue/window/status":
             return self._json(QUEUE_WIN.status())
+
+        if path == "/api/captions/window/status":
+            return self._json(CAPTIONS_WIN.status())
 
         if path == "/api/lyrics":
             now = HUB.snapshot()["now"]
@@ -1602,13 +1635,32 @@ class Handler(BaseHTTPRequestHandler):
                              key=lambda t: t.get("updated", 0), reverse=True)
             return self._json({"ok": removed, "themes": ordered})
 
-        m = re.match(r"^/api/(window|lyrics/window|queue/window)/([a-z]+)$", path)
+        if path in ("/api/captions/start", "/api/captions/stop", "/api/captions/clear"):
+            # The microphone is only ever opened on purpose, from here. Start
+            # and stop are remembered, so a deck left listening comes back
+            # listening; nothing else touches the microphone.
+            what = path.rsplit("/", 1)[1]
+            if what == "start":
+                CAPTIONS.start()
+            elif what == "stop":
+                CAPTIONS.stop()
+            else:
+                CAPTIONS.clear()
+            if what != "clear":
+                CONFIG.setdefault("captions", {})["enabled"] = (what == "start")
+                save_config(CONFIG)
+            HUB.broadcast()
+            return self._json({"ok": True, "captions": CAPTIONS.get()})
+
+        m = re.match(r"^/api/(window|lyrics/window|queue/window|captions/window)/([a-z]+)$", path)
         if m:
             which, action = m.groups()
             if which == "window":
                 target = (OVERLAY, CONFIG["nowplaying"], "nowplaying.html")
             elif which == "lyrics/window":
                 target = (LYRICS_WIN, CONFIG["lyrics"], "lyrics.html")
+            elif which == "captions/window":
+                target = (CAPTIONS_WIN, CONFIG["captions"], "captions.html")
             else:
                 target = (QUEUE_WIN, CONFIG["queue"], "queue.html")
             return self._json(window_action(*target, action, data))
@@ -1621,7 +1673,9 @@ class Handler(BaseHTTPRequestHandler):
                 OVERLAY.close()      # otherwise the reparented Chrome window is orphaned
                 LYRICS_WIN.close()
                 QUEUE_WIN.close()
+                CAPTIONS_WIN.close()
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
+                CAPTIONS.stop()      # likewise the one holding the microphone
                 time.sleep(0.4)
                 os._exit(0)
             threading.Thread(target=shutdown, daemon=True).start()
@@ -1648,7 +1702,7 @@ def main():
         httpd = QuietServer(("127.0.0.1", port), Handler)
     except OSError:
         # Already running: double-clicking again should just bring the deck up.
-        print(f"\n  Port {port} is busy - Awesome Music Streaming Deck is already running; opening the deck.\n")
+        print(f"\n  Port {port} is busy - Awesome Streaming Deck is already running; opening the deck.\n")
         launch_deck(f"http://127.0.0.1:{port}/deck.html")
         return
 
@@ -1656,13 +1710,16 @@ def main():
 
     BRIDGE.start()
     SPOTIFY.start()
+    # The microphone is opened only if captions were left on last time.
+    if CONFIG.get("captions", {}).get("enabled"):
+        CAPTIONS.start()
     threading.Thread(target=_pump, daemon=True).start()
     if CONFIG["music_dirs"]:
         threading.Thread(target=lambda: LIBRARY.scan(CONFIG["music_dirs"]),
                          daemon=True).start()
 
     base = f"http://127.0.0.1:{port}"
-    print("\n  Awesome Music Streaming Deck")
+    print("\n  Awesome Streaming Deck")
     print("  " + "-" * 46)
     print(f"  Deck         {base}/deck.html")
     print(f"  Now Playing  {base}/nowplaying.html")
@@ -1679,6 +1736,7 @@ def main():
         pass
     finally:
         BRIDGE.stop()
+        CAPTIONS.stop()
 
 
 if __name__ == "__main__":

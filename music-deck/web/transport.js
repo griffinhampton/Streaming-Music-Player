@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - transport buttons inside a pop-out window.
+/* Awesome Streaming Deck - transport buttons inside a pop-out window.
 
    Shared by all three windows so a Next button behaves the same wherever you
    put it. The buttons drive whatever is playing through /api/transport, which

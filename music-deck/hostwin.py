@@ -99,7 +99,7 @@ _set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
 _set_long.restype = ctypes.c_ssize_t
 _set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
 
-CLASS_NAME = "MusicDeckOverlayHost"
+CLASS_NAME = "StreamingDeckOverlayHost"
 
 WM_SETICON = 0x0080
 ICON_SMALL, ICON_BIG = 0, 1

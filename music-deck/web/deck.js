@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - control room.
+/* Awesome Streaming Deck - control room.
 
    Design controls are declarative: any element carrying data-np="a.b.c" or
    data-ui="x" is wired up automatically from its data-kind, so adding a new
@@ -127,6 +127,21 @@ function saveLy(patch) {
   }, 180);
 }
 
+let capTimer = null, capPending = {};
+function saveCap(patch) {
+  beginEdit();
+  CONFIG.captions = CONFIG.captions || {};
+  Object.entries(patch).forEach(([k, v]) => setPath(CONFIG.captions, k, v));
+  Object.assign(capPending, patch);
+  clearTimeout(capTimer);
+  capTimer = setTimeout(() => {
+    const body = {};
+    for (const [path, val] of Object.entries(capPending)) deepMerge(body, patchFor(path, val));
+    capPending = {};
+    post('/api/config', { captions: body });
+  }, 180);
+}
+
 let qTimer = null, qPending = {};
 function saveQ(patch) {
   beginEdit();
@@ -177,7 +192,8 @@ function applySnapshot(str) {
   // Drop any half-second of debounced patches still in flight, or they would
   // land on top of the snapshot we are restoring and undo the undo.
   clearTimeout(npTimer); clearTimeout(uiTimer); clearTimeout(lyTimer); clearTimeout(qTimer);
-  npPending = {}; uiPending = {}; lyPending = {}; qPending = {};
+  clearTimeout(capTimer);
+  npPending = {}; uiPending = {}; lyPending = {}; qPending = {}; capPending = {};
   CONFIG = JSON.parse(str);
   CONFIG.lyrics = CONFIG.lyrics || {};
   CONFIG.queue = CONFIG.queue || {};
@@ -224,12 +240,13 @@ function updateUndoButtons() {
 let SAVED_THEMES = [];
 
 function captureLook() {
-  const ly = CONFIG.lyrics || {}, q = CONFIG.queue || {};
+  const ly = CONFIG.lyrics || {}, q = CONFIG.queue || {}, cp = CONFIG.captions || {};
   return {
     nowplaying: CONFIG.nowplaying,
     ui: CONFIG.ui,
-    lyrics: { colors: ly.colors, bg_own: ly.bg_own, bg: ly.bg, follow_theme: ly.follow_theme },
-    queue:  { colors: q.colors,  bg_own: q.bg_own,  bg: q.bg,  follow_theme: q.follow_theme },
+    lyrics:   { colors: ly.colors, bg_own: ly.bg_own, bg: ly.bg, follow_theme: ly.follow_theme },
+    queue:    { colors: q.colors,  bg_own: q.bg_own,  bg: q.bg,  follow_theme: q.follow_theme },
+    captions: { colors: cp.colors, bg_own: cp.bg_own, bg: cp.bg, follow_theme: cp.follow_theme },
   };
 }
 
@@ -469,6 +486,8 @@ const BG_TARGETS = [
     root: () => CONFIG.lyrics || {}, save: (p) => saveLy(p) },
   { key: 'queue',  attr: 'q',  out: 'q',  prefix: 'bg_own',    what: 'the queue window',
     root: () => CONFIG.queue || {},  save: (p) => saveQ(p) },
+  { key: 'captions', attr: 'cap', out: 'cap', prefix: 'bg_own', what: 'the captions window',
+    root: () => CONFIG.captions || {}, save: (p) => saveCap(p) },
   { key: 'app',    attr: 'ui', out: 'u',  prefix: 'wallpaper', what: 'the app window',
     root: () => CONFIG.ui,           save: (p) => saveUi(p) },
 ];
@@ -476,7 +495,7 @@ const bgTarget = (key) => BG_TARGETS.find((t) => t.key === key) || BG_TARGETS[0]
 
 /* The same windows the backgrounds use, minus the app - which has no transport
    to drive. Declared here rather than above because it reads BG_TARGETS. */
-const CONTROL_TARGETS = BG_TARGETS.filter((t) => t.key !== 'app');
+const CONTROL_TARGETS = BG_TARGETS.filter((t) => t.key !== 'app' && t.key !== 'captions');
 let bgTargetKey = 'np';
 
 /** The background block for one target, whatever it is called in that config. */
@@ -487,7 +506,7 @@ function bgEditorHTML(t) {
   const D = (path) => `data-${a}="${p}.${path}"`;         // the control itself
   const O = (path) => `data-${o}out="${p}.${path}"`;      // its live readout
   const isApp = t.key === 'app';
-  const window_ = t.key === 'lyrics' || t.key === 'queue';
+  const window_ = t.key === 'lyrics' || t.key === 'queue' || t.key === 'captions';
 
   // For the app, "solid" means no wallpaper at all - its own background color
   // shows through - so there is no second color control competing with it.
@@ -1362,6 +1381,7 @@ function applyTheme(name) {
   ownBg.follow_theme = false;      // show their own copy of the theme's look
   saveLy(ownBg);
   saveQ(ownBg);
+  saveCap(ownBg);
 
   CONFIG.theme = name;
   post('/api/config', { theme: name });
@@ -1383,6 +1403,7 @@ function healWindows() {
   }
   if (lyOpen) post('/api/lyrics/window/heal');
   if (qOpen) post('/api/queue/window/heal');
+  if (capOpen) post('/api/captions/window/heal');
 }
 
 function renderAppDecor() {
@@ -1441,11 +1462,12 @@ const SCOPES = [
   { attr: 'ui', out: 'u',  root: () => CONFIG.ui,         save: (p) => saveUi(p) },
   { attr: 'ly', out: 'ly', root: () => CONFIG.lyrics || {}, save: (p) => saveLy(p) },
   { attr: 'q',  out: 'q',  root: () => CONFIG.queue || {},  save: (p) => saveQ(p) },
+  { attr: 'cap', out: 'cap', root: () => CONFIG.captions || {}, save: (p) => saveCap(p) },
 ];
 const scopeOf = (node) => SCOPES.find((sc) => node.hasAttribute('data-' + sc.attr));
 
 function bindControls() {
-  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q]').forEach((node) => {
+  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q],[data-cap]').forEach((node) => {
     const scope = scopeOf(node);
     const path = node.dataset[scope.attr];
     const kind = node.dataset.kind || 'str';
@@ -1472,7 +1494,7 @@ function bindControls() {
     });
   });
 
-  const SAVE_BY_SCOPE = { np: saveNp, ui: saveUi, ly: saveLy, q: saveQ };
+  const SAVE_BY_SCOPE = { np: saveNp, ui: saveUi, ly: saveLy, q: saveQ, cap: saveCap };
   document.querySelectorAll('[data-clear]').forEach((btn) => {
     btn.addEventListener('click', () => {
       (SAVE_BY_SCOPE[btn.dataset.scope || 'np'])({ [btn.dataset.clear]: '' });
@@ -1482,7 +1504,7 @@ function bindControls() {
 }
 
 function syncControls() {
-  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q]').forEach((node) => {
+  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q],[data-cap]').forEach((node) => {
     const scope = scopeOf(node);
     const path = node.dataset[scope.attr];
     const kind = node.dataset.kind || 'str';
@@ -1511,6 +1533,9 @@ function syncControls() {
   const qc = CONFIG.queue || {};
   if (qc.width) $('qWidth').value = qc.width;
   if (qc.height) $('qHeight').value = qc.height;
+  const cp = CONFIG.captions || {};
+  if (cp.width) $('capWidth').value = cp.width;
+  if (cp.height) $('capHeight').value = cp.height;
 
   $('width').value = CONFIG.nowplaying.width;
   $('height').value = CONFIG.nowplaying.height;
@@ -1572,6 +1597,7 @@ function pushPreview() {
       nowplaying: CONFIG.nowplaying,
       lyrics_cfg: CONFIG.lyrics,
       queue_cfg: CONFIG.queue,
+      captions_cfg: CONFIG.captions,
     }, '*');
   } catch (_) { /* iframe still loading */ }
   layoutPreview();
@@ -2347,6 +2373,11 @@ const WINDOWS = {
     title: 'This is what the queue window looks like',
     cfg: () => (CONFIG || {}).queue,
   },
+  captions: {
+    page: 'captions.html', size: 'capSize', label: 'Captions',
+    title: 'This is what the captions window looks like',
+    cfg: () => (CONFIG || {}).captions,
+  },
 };
 let selectedWin = 'np';
 
@@ -2366,7 +2397,11 @@ function selectWindow(id) {
 
   // Only offer settings that apply to the window in hand.
   const tabs = [...document.querySelectorAll('#designTabs button')];
-  tabs.forEach((b) => { b.hidden = !(b.dataset.for === 'all' || b.dataset.for === id); });
+  // data-for lists the windows a tab applies to ("all" for every one).
+  tabs.forEach((b) => {
+    const fors = (b.dataset.for || '').split(' ');
+    b.hidden = !(fors.includes('all') || fors.includes(id));
+  });
   const active = tabs.find((b) => b.classList.contains('on'));
   if (!active || active.hidden) {
     const first = tabs.find((b) => !b.hidden);
@@ -2464,6 +2499,8 @@ function syncWindows(state) {
       (o) => { if (o !== lyOpen) { lyOpen = o; paintLyStatus(); } }, selectedWin === 'lyrics');
   one(w.queue, CONFIG.queue, 'qWidth', 'qHeight', 'queue',
       (o) => { if (o !== qOpen) { qOpen = o; paintQStatus(); } }, selectedWin === 'queue');
+  one(w.captions, CONFIG.captions, 'capWidth', 'capHeight', 'captions',
+      (o) => { if (o !== capOpen) { capOpen = o; paintCapStatus(); } }, selectedWin === 'captions');
 }
 
 /* The lyrics situation, in one line, from the same broadcast. */
@@ -2516,12 +2553,12 @@ $('previewReload').addEventListener('click', () => {
 });
 
 $('quitBtn').addEventListener('click', () => {
-  if (!confirm('Stop Awesome Music Streaming Deck? The on-screen window closes too.')) return;
+  if (!confirm('Stop Awesome Streaming Deck? The on-screen window closes too.')) return;
   post('/api/window/close')
     .then(() => post('/api/quit'))
     .then(() => {
       document.body.innerHTML =
-        '<div class="empty" style="padding:90px 20px"><b>Awesome Music Streaming Deck has stopped.</b><br>' +
+        '<div class="empty" style="padding:90px 20px"><b>Awesome Streaming Deck has stopped.</b><br>' +
         'You can close this window.</div>';
     });
 });
@@ -2567,6 +2604,90 @@ $('lySnap').addEventListener('click', (e) => {
     .then((r) => { if (!r.ok) toast('Open the lyrics window first'); });
 });
 
+
+/* ------------------------------------------------------------- captions window */
+
+let capOpen = false;
+
+function paintCapStatus() { paintCardState('captions', capOpen); }
+
+$('capToggle').addEventListener('click', () => {
+  if (capOpen) {
+    post('/api/captions/window/close').then(() => { capOpen = false; paintCapStatus(); });
+    return;
+  }
+  $('capToggle').disabled = true;
+  $('capToggle').textContent = 'Opening…';
+  post('/api/captions/window/open').then((res) => {
+    $('capToggle').disabled = false;
+    if (!res.ok) toast(res.reason || 'Could not open the captions window');
+  });
+});
+
+['capWidth', 'capHeight'].forEach((id) => $(id).addEventListener('change', () => {
+  const w = +$('capWidth').value, h = +$('capHeight').value;
+  saveCap({ width: w, height: h });
+  post('/api/captions/window/apply', { width: w, height: h });
+}));
+
+$('capSizePresets').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-w]');
+  if (!btn) return;
+  const w = +btn.dataset.w, h = +btn.dataset.h;
+  $('capWidth').value = w; $('capHeight').value = h;
+  saveCap({ width: w, height: h });
+  post('/api/captions/window/apply', { width: w, height: h });
+  if (selectedWin === 'captions') layoutPreview();
+});
+
+$('capSnap').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-c]');
+  if (btn) post('/api/captions/window/snap', { corner: btn.dataset.c })
+    .then((r) => { if (!r.ok) toast('Open the captions window first'); });
+});
+
+/* The microphone itself: one Start/Stop button, and a status line that says
+   what the listener is doing, so "nothing is showing up" always has a reason
+   next to it - starting, no audio arriving, no speech pack installed. */
+let capState = null;
+let capBusy = false;
+
+function paintCaptions(c) {
+  if (!c) return;
+  capState = c;
+  const btn = $('capMic'), pill = $('capState');
+  const on = !!c.on;
+  if (!capBusy) btn.textContent = on ? 'Stop listening' : 'Start listening';
+  btn.classList.toggle('btn-primary', !on);
+  btn.classList.toggle('btn-ghost', on);
+
+  let text = 'Off', tone = 'off';
+  if (on && c.state === 'starting') { text = 'Starting…'; tone = 'wait'; }
+  else if (on && c.state === 'unavailable') { text = c.error || 'Not available'; tone = 'bad'; }
+  else if (on && c.audio === 'speech') { text = 'Hearing you'; tone = 'good'; }
+  else if (on && c.audio === 'stopped') { text = 'Listening, but no sound is arriving from the microphone'; tone = 'warn'; }
+  else if (on) { text = 'Listening'; tone = 'good'; }
+  pill.textContent = text;
+  pill.dataset.tone = tone;
+
+  // The latest thing heard, so you can check the microphone without opening
+  // the window - and see when it mishears you.
+  const last = (c.lines && c.lines.length) ? c.lines[c.lines.length - 1].text : '';
+  $('capLast').textContent = on ? (c.partial || last || '') : '';
+}
+
+$('capMic').addEventListener('click', () => {
+  const on = !!(capState && capState.on);
+  capBusy = true;
+  $('capMic').disabled = true;
+  $('capMic').textContent = on ? 'Stopping…' : 'Starting…';
+  post(on ? '/api/captions/stop' : '/api/captions/start').then((r) => {
+    capBusy = false;
+    $('capMic').disabled = false;
+    if (r && r.captions) paintCaptions(r.captions);
+    else toast('Could not reach the deck');
+  });
+});
 
 /* ------------------------------------------------------------- queue window */
 
@@ -2677,6 +2798,7 @@ function paintSpotify(state) {
   paintSpotifyDevices(state.spotify_devices);
   syncWindows(state);
   paintLyricsInfo(state);
+  paintCaptions(state.captions);
   if (acc.connected && spWaiting) {
     spWaiting = false;
     $('spPending2').hidden = true;
@@ -2868,8 +2990,8 @@ $('spConnect2').addEventListener('click', () => {
     $('spPending2').hidden = false;
     $('spManualLink2').href = res.url;
     $('spManual2').hidden = !!res.windowed;
-    toast(res.windowed ? 'Approve Awesome Music Streaming Deck in the window that just opened'
-                       : 'Approve Awesome Music Streaming Deck in your browser');
+    toast(res.windowed ? 'Approve Awesome Streaming Deck in the window that just opened'
+                       : 'Approve Awesome Streaming Deck in your browser');
   });
 });
 

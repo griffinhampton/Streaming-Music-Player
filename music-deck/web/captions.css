@@ -1,0 +1,196 @@
+/* Captions window.
+
+   What is being said into the microphone, as text, the way closed captions
+   sit on a broadcast: finished lines stack up from the bottom, the phrase
+   still being spoken sits under them, and a line fades away once it has had
+   its moment. Colors, font and background follow the pop-out's design by
+   default so the windows look like one set. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+/* Images would otherwise start a native drag, which swallows the pointer and
+   makes those parts of the window impossible to drag by. */
+img { -webkit-user-drag: none; user-drag: none; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0f0f17;
+  user-select: none;
+  cursor: default;
+}
+
+.stage {
+  --accent: #8b5cf6;
+  --bg: #0f0f17;
+  --fg: #f4f4f8;
+  --dim: rgba(244,244,248,.55);
+  --font: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --card-radius: 18px;
+  --card-fill: transparent;
+  --card-border: 0px;
+  --card-border-color: transparent;
+  --text-shadow: 0 .04em .18em rgba(0,0,0,.65);
+
+  position: relative;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+}
+
+.bg-image {
+  position: absolute; inset: 0;
+  background-position: center; background-repeat: no-repeat; background-size: cover;
+  display: none;
+}
+.stage.has-bg-image .bg-image { display: block; }
+.bg-dim { position: absolute; inset: 0; background: var(--bg, #000); opacity: 0; pointer-events: none; }
+
+.card {
+  position: relative;
+  z-index: 3;
+  width: 100%; height: 100%;
+  padding: .7em 1em;
+  display: flex; flex-direction: column;
+  background: var(--card-fill);
+  border: var(--card-border) solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+}
+
+.card > * { position: relative; z-index: 1; }
+.card > .card-bg {
+  position: absolute; inset: 0; z-index: 0;
+  display: none;
+  background-position: center;
+}
+.card-bg::after { content: ""; position: absolute; inset: 0; background: var(--card-fill); }
+.card > .card-bg::before {
+  content: ""; position: absolute; inset: 0;
+  background: var(--bg, #000); opacity: var(--bg-dim, 0); pointer-events: none;
+}
+.stage.surround { background: var(--surround, #000); }
+.stage.surround .card { background: transparent; }
+.stage.surround .card > .card-bg { display: block; }
+.stage.surround .bg-image { display: none; }
+
+/* Finished lines gather at the bottom, the live phrase beneath them - the
+   newest words are always in the same place, where a viewer's eye rests. */
+.viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: .12em;
+}
+.lines { display: flex; flex-direction: column; gap: .12em; }
+
+.line, .partial {
+  font-size: 1em;
+  line-height: 1.3;
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+  text-shadow: var(--text-shadow);
+  transition: opacity 600ms ease;
+}
+.stage.align-left .line, .stage.align-left .partial { text-align: left; }
+.line { color: var(--fg); }
+.line.old { opacity: 0; }                 /* had its moment; fades, then is dropped */
+.partial { color: var(--fg); opacity: .78; font-weight: 500; min-height: 1.3em; }
+.partial:empty { min-height: 0; }
+
+.status {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: .8em; font-weight: 600; letter-spacing: .06em;
+  color: var(--dim);
+  text-align: center;
+  white-space: nowrap;
+  display: none;
+}
+.stage[data-state="off"] .status,
+.stage[data-state="starting"] .status,
+.stage[data-state="unavailable"] .status { display: block; }
+.stage[data-state="off"] .viewport,
+.stage[data-state="starting"] .viewport,
+.stage[data-state="unavailable"] .viewport { visibility: hidden; }
+.stage[data-state="unavailable"] .status { color: #ffb4b4; white-space: normal; max-width: 90%; }
+.stage[data-state="starting"] .status::after {
+  content: "…";
+  display: inline-block; width: 1.2em; text-align: left;
+  animation: dots 1.2s steps(4, end) infinite;
+}
+@keyframes dots { 0% { content: ""; } 33% { content: "."; } 66% { content: ".."; } 100% { content: "..."; } }
+
+/* ---------------------------------------------------------------- handles */
+
+.handles { position: absolute; inset: 0; z-index: 20; opacity: 0; transition: opacity 140ms ease; pointer-events: none; }
+.stage:hover .handles { opacity: 1; }
+.stage.preview .handles { display: none; }
+
+/* The handle UI is sized in px, not em: caption text is big, and a hint
+   pill or close button that grew with it would wrap and crowd the words. */
+.hint {
+  position: absolute; left: 50%; top: 6px; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255,255,255,.7); background: rgba(0,0,0,.55);
+  padding: 3px 12px; border-radius: 1em; font-family: system-ui, sans-serif;
+}
+/* Window buttons: minimize (hides to the taskbar) and close. */
+.winbtn {
+  position: absolute; top: 6px;
+  width: 22px; height: 22px; display: grid; place-items: center;
+  font-size: 13px; line-height: 1; color: #fff;
+  border: none; border-radius: 50%;
+  cursor: pointer; pointer-events: auto; font-family: system-ui, sans-serif;
+}
+.winbtn.close { right: 6px; background: rgba(220,40,60,.85); }
+.winbtn.close:hover { background: rgb(230,50,70); }
+.winbtn.min { right: 32px; background: rgba(255,255,255,.14); }
+.winbtn.min:hover { background: color-mix(in srgb, var(--accent, #ffb7c5) 55%, rgba(0,0,0,.4)); }
+
+/* Resize handles: eight edges/corners in px so they don't scale with the em
+   font. The SE corner keeps the three-diagonal-lines grip glyph. */
+.rz { position: absolute; pointer-events: auto; }
+.rz-n, .rz-s { left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.rz-n { top: 0; } .rz-s { bottom: 0; }
+.rz-e, .rz-w { top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.rz-w { left: 0; } .rz-e { right: 0; }
+.rz-nw, .rz-ne, .rz-sw, .rz-se { width: 16px; height: 16px; }
+.rz-nw { top: 0; left: 0; cursor: nwse-resize; }
+.rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.rz-ne { top: 0; right: 0; cursor: nesw-resize; }
+.rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.rz-n:hover, .rz-s:hover, .rz-e:hover, .rz-w:hover {
+  background: color-mix(in srgb, var(--accent, #ffb7c5) 45%, transparent);
+}
+.rz-se.grip {
+  background:
+    linear-gradient(135deg, transparent 0 55%, rgba(255,255,255,.75) 55% 62%, transparent 62% 70%,
+                    rgba(255,255,255,.75) 70% 77%, transparent 77% 85%,
+                    rgba(255,255,255,.75) 85% 92%, transparent 92%);
+  border-bottom-right-radius: var(--card-radius, 12px);
+}
+
+/* First-open hint: show the pill on its own for a few seconds (the handles
+   group must be opaque for the pill inside it to paint; buttons/edges stay
+   hidden so only the hint reads). */
+.stage.show-hint .handles { opacity: 1; }
+.stage.show-hint .winbtn, .stage.show-hint .rz { opacity: 0; }
+.stage.show-hint .hint { opacity: 1; transition: opacity .3s; }
+
+.offline {
+  position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+  z-index: 20; display: none;
+  font-size: 11px; letter-spacing: .06em; color: #ffd9d9; white-space: nowrap;
+  background: rgba(140,20,30,.85); padding: 3px 12px; border-radius: 1em;
+  font-family: system-ui, sans-serif;
+}
+.stage.offline-on .offline { display: block; }
+.stage.preview .offline { display: none; }

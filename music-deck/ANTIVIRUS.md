@@ -107,7 +107,7 @@ the detection.
 Every build writes `dist/SHA256SUMS.txt`. To check a file matches:
 
 ```powershell
-Get-FileHash ".\Awesome Music Streaming Deck.exe" -Algorithm SHA256
+Get-FileHash ".\Awesome Streaming Deck.exe" -Algorithm SHA256
 ```
 
 Compare against the value published with the release. If they differ, do not run

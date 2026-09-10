@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - the framing dialog.
+/* Awesome Streaming Deck - the framing dialog.
 
    Two sliders called "Across" and "Down" are a poor way to decide what part of
    a photograph ends up on stream: you are aiming blind and checking the result

@@ -21,7 +21,7 @@ import urllib.parse
 import urllib.request
 
 LRC_STAMP = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
-USER_AGENT = "MusicDeck/1.0 (local streaming overlay)"
+USER_AGENT = "StreamingDeck/1.0 (local streaming overlay)"
 LRCLIB = "https://lrclib.net/api"
 
 

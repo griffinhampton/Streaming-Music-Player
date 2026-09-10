@@ -1,23 +1,41 @@
-# Awesome Music Streaming Deck
+# Awesome Streaming Deck
 
-A local "now playing" rig for streaming. It binds to `127.0.0.1` only, so
-nobody on your network can even see it, and it works fully offline out of the
-box. Two things can reach the internet, both optional and both off unless you
-turn them on: lyric lookup (a checkbox) and connecting your Spotify account
-(a setup you have to go through on purpose).
+A local overlay deck for streaming: now playing, lyrics, the Spotify queue,
+and live captions of what you say. It binds to `127.0.0.1` only, so nobody on
+your network can even see it, and it works fully offline out of the box. Two
+things can reach the internet, both optional and both off unless you turn
+them on: lyric lookup (a checkbox) and connecting your Spotify account (a
+setup you have to go through on purpose). Captions never do - they are
+recognized on this PC by Windows' own speech engine.
 
-Three windows:
+Five windows:
 
-- **Awesome Music Streaming Deck** – the control room. Library, playback, Spotify controls, and
+- **Awesome Streaming Deck** – the control room. Library, playback, Spotify controls, and
   every design setting with a live preview. Its player card follows whatever is
   actually playing, local or Spotify, and its transport, seek bar and volume
   drive that source.
-- **Awesome Music Streaming Deck - Now Playing** – the pop-out you add to TikTok Studio. Borderless,
+- **Awesome Streaming Deck - Now Playing** – the pop-out you add to TikTok Studio. Borderless,
   any size or shape.
-- **Awesome Music Streaming Deck - Lyrics** – a pop-out that scrolls the words in time with the
+- **Awesome Streaming Deck - Lyrics** – a pop-out that scrolls the words in time with the
   song. Optional.
-- **Awesome Music Streaming Deck - Queue** – a pop-out listing what Spotify plays next. Optional,
+- **Awesome Streaming Deck - Queue** – a pop-out listing what Spotify plays next. Optional,
   and needs the Spotify account connected.
+- **Awesome Streaming Deck - Captions** – a pop-out that turns what you say into your
+  microphone into closed captions, live. Optional, off until you press Start.
+
+## Live captions
+
+Press **Start** on the Captions card and the deck listens to your default
+microphone with Windows' built-in, on-device speech recognizer (English). The
+phrase being spoken shows as it forms, settles into a finished line when you
+pause, and finished lines fade out after a few seconds so the box empties
+between things said. Nothing is sent anywhere: no cloud speech service, no
+account, no key - which is also why the accuracy is Windows-dictation grade
+rather than perfect. A clear microphone and normal speaking pace help a lot.
+
+It needs the English (United States) speech pack, which Windows includes by
+default; if it is missing the card says so and where to add it. Captions stay
+off until you start them, and the deck remembers the choice across restarts.
 
 Two sources, picked automatically or by hand:
 
@@ -45,10 +63,10 @@ player and every design setting on the right.
 
 ## Start it
 
-- **From the .exe** – double-click `Awesome Music Streaming Deck.exe`. First launch takes a few
+- **From the .exe** – double-click `Awesome Streaming Deck.exe`. First launch takes a few
   seconds while it unpacks. The deck window opens on its own. **Quit** in the
   top-right stops everything.
-- **From source** – double-click `Start Awesome Music Streaming Deck.bat` (needs Python 3.10+).
+- **From source** – double-click `Start Awesome Streaming Deck.bat` (needs Python 3.10+).
   Close the black window to stop.
 
 Chrome or Edge has to be installed (Edge always is on Windows 10/11).
@@ -56,10 +74,10 @@ Chrome or Edge has to be installed (Edge always is on Windows 10/11).
 ## Put it on stream (TikTok Studio)
 
 1. In the deck, press **Open** on the **Now Playing** card at the top.
-2. TikTok Studio → **Add source → Window** → pick **Awesome Music Streaming Deck - Now Playing**.
+2. TikTok Studio → **Add source → Window** → pick **Awesome Streaming Deck - Now Playing**.
 3. Size and place it on your canvas like any other source.
 4. Want lyrics or the queue? Press **Open** on those cards too, then add
-   **Awesome Music Streaming Deck - Lyrics** or **Awesome Music Streaming Deck - Queue** the same way.
+   **Awesome Streaming Deck - Lyrics** or **Awesome Streaming Deck - Queue** the same way.
 
 The windows do not need to stay visible on your desktop – window capture reads
 the window itself, even behind a fullscreen game.
@@ -292,7 +310,7 @@ them.
 
 ## Send it to friends
 
-Run `build.bat`. It produces `..\dist\Awesome Music Streaming Deck\` — a folder
+Run `build.bat`. It produces `..\dist\Awesome Streaming Deck\` — a folder
 — and, if you have Inno Setup, an installer beside it.
 
 A folder rather than one `.exe` on purpose. A single-file PyInstaller build

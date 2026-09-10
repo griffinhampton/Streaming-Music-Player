@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title Build Awesome Music Streaming Deck
+title Build Awesome Streaming Deck
 
 rem ---------------------------------------------------------------------------
 rem Builds a folder, not a single .exe, and that is deliberate.
@@ -18,7 +18,7 @@ rem part no build flag can fix.
 rem ---------------------------------------------------------------------------
 
 set "ENV=%~dp0..\.build-env"
-set "APP=Awesome Music Streaming Deck"
+set "APP=Awesome Streaming Deck"
 
 if not exist "%ENV%\Scripts\pyinstaller.exe" (
   echo Setting up the build environment ^(one time^)...
@@ -40,7 +40,7 @@ echo Building "%APP%" ...
 "%ENV%\Scripts\pyinstaller.exe" --noconfirm --clean --onedir --noconsole ^
   --name "%APP%" --icon "%~dp0music-deck.ico" ^
   --version-file "%~dp0version.txt" ^
-  --add-data "%~dp0web;web" --add-data "%~dp0smtc.ps1;." ^
+  --add-data "%~dp0web;web" --add-data "%~dp0smtc.ps1;." --add-data "%~dp0captions.ps1;." ^
   --add-data "%~dp0music-deck.ico;." ^
   !THEMES! ^
   --hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox ^
@@ -61,7 +61,7 @@ if defined ISCC (
   echo.
   echo Building the installer ...
   "!ISCC!" /Q "%~dp0installer.iss" || goto :fail
-  echo Installer:  %~dp0..\dist\Awesome-Music-Streaming-Deck-Setup.exe
+  echo Installer:  %~dp0..\dist\Awesome-Streaming-Deck-Setup.exe
 ) else (
   echo.
   echo Inno Setup not found, so no installer was built. To make one:

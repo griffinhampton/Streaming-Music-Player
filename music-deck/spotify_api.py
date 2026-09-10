@@ -697,7 +697,7 @@ class SpotifyAccount:
         if hit:
             return hit
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "MusicDeck/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "StreamingDeck/1.0"})
             with urllib.request.urlopen(req, timeout=8) as r:
                 mime = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
                 data = r.read()

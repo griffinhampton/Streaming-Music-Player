@@ -21,12 +21,12 @@ VSVersionInfo(
       StringTable(
         '040904B0',      # US English, Unicode
         [StringStruct('CompanyName', 'Griffin Hampton'),
-         StringStruct('FileDescription', 'Awesome Music Streaming Deck'),
+         StringStruct('FileDescription', 'Awesome Streaming Deck'),
          StringStruct('FileVersion', '1.0.0.0'),
          StringStruct('InternalName', 'AwesomeMusicStreamingDeck'),
          StringStruct('LegalCopyright', 'Open source - MIT license'),
-         StringStruct('OriginalFilename', 'Awesome Music Streaming Deck.exe'),
-         StringStruct('ProductName', 'Awesome Music Streaming Deck'),
+         StringStruct('OriginalFilename', 'Awesome Streaming Deck.exe'),
+         StringStruct('ProductName', 'Awesome Streaming Deck'),
          StringStruct('ProductVersion', '1.0.0.0'),
          StringStruct('Comments',
                       'Local-first now-playing overlays for streaming. '

@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - reading colors out of a picture.
+/* Awesome Streaming Deck - reading colors out of a picture.
 
    Two jobs. One: build a theme from an image, so a background you like can
    dress the rest of the app instead of clashing with it. Two: give the

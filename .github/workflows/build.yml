@@ -19,7 +19,7 @@ permissions:
   contents: write           # needed only by the release job, to attach files
 
 env:
-  APP_NAME: Awesome Music Streaming Deck
+  APP_NAME: Awesome Streaming Deck
 
 jobs:
   build:
@@ -65,6 +65,7 @@ jobs:
             --name "$env:APP_NAME" --icon "$PWD\music-deck.ico" `
             --version-file "$PWD\version.txt" `
             --add-data "$PWD\web;web" --add-data "$PWD\smtc.ps1;." `
+            --add-data "$PWD\captions.ps1;." `
             --add-data "$PWD\music-deck.ico;." `
             --hidden-import tkinter --hidden-import tkinter.filedialog `
             --hidden-import tkinter.messagebox `
@@ -121,10 +122,10 @@ jobs:
       # is approved - see ANTIVIRUS.md for how to apply and wire it in.
       - uses: actions/upload-artifact@v4
         with:
-          name: awesome-music-streaming-deck-unsigned
+          name: awesome-streaming-deck-unsigned
           path: |
             dist/${{ env.APP_NAME }}/
-            dist/Awesome-Music-Streaming-Deck-Setup.exe
+            dist/Awesome-Streaming-Deck-Setup.exe
             dist/SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
@@ -137,14 +138,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: awesome-music-streaming-deck-unsigned
+          name: awesome-streaming-deck-unsigned
           path: artifact
 
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifact/Awesome-Music-Streaming-Deck-Setup.exe
+            artifact/Awesome-Streaming-Deck-Setup.exe
             artifact/SHA256SUMS.txt
           body: |
             Download the installer below and run it. It installs to your own

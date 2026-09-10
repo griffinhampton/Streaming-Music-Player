@@ -1,4 +1,4 @@
-; Inno Setup script for Awesome Music Streaming Deck.
+; Inno Setup script for Awesome Streaming Deck.
 ;
 ; Build it with:  winget install JRSoftware.InnoSetup
 ; then run build.bat, which calls this automatically when ISCC is on the box.
@@ -7,9 +7,9 @@
 ; one less scary dialog, and it keeps settings with the person rather than the
 ; machine.
 
-#define AppName    "Awesome Music Streaming Deck"
+#define AppName    "Awesome Streaming Deck"
 #define AppVersion "1.0.0"
-#define AppExe     "Awesome Music Streaming Deck.exe"
+#define AppExe     "Awesome Streaming Deck.exe"
 #define AppUrl     "https://github.com/griffinhampton/Streaming-Music-Player"
 
 [Setup]
@@ -29,7 +29,7 @@ DisableProgramGroupPage=yes
 DisableDirPage=auto
 
 OutputDir=..\dist
-OutputBaseFilename=Awesome-Music-Streaming-Deck-Setup
+OutputBaseFilename=Awesome-Streaming-Deck-Setup
 SetupIconFile=music-deck.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}

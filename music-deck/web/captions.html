@@ -4,31 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Fixed title: the server finds this window by name to tuck it inside its
-     frameless host. The host ("Awesome Streaming Deck - Queue") is what capture sees. -->
-<title>Awesome Streaming Deck - Queue (source)</title>
+     frameless host. The host ("Awesome Streaming Deck - Captions") is what capture sees. -->
+<title>Awesome Streaming Deck - Captions (source)</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
-<link rel="stylesheet" href="transport.css">
-<link rel="stylesheet" href="queue.css">
+<link rel="stylesheet" href="captions.css">
 </head>
 <body>
 
-<div id="stage" class="stage" data-state="idle">
+<div id="stage" class="stage" data-state="off">
   <div id="bgImage" class="bg-image"></div>
   <div id="bgDim" class="bg-dim"></div>
 
   <div class="card" id="card">
     <div class="card-bg" id="cardBg"></div>
-
-    <div class="head">
-      <span id="heading" class="heading">UP NEXT</span>
-      <span id="count" class="count"></span>
-    </div>
-
     <div class="viewport" id="viewport">
-      <div id="rows" class="rows"></div>
+      <div id="lines" class="lines"></div>
+      <div id="partial" class="partial"></div>
     </div>
-
-    <div id="status" class="status">Nothing queued</div>
+    <div id="status" class="status"></div>
   </div>
 
   <!-- Only visible while the mouse is over the window, so it never lands on stream. -->
@@ -44,12 +37,10 @@
   </div>
 
   <div id="offline" class="offline">Deck disconnected &mdash; reconnecting&hellip;</div>
-  <div id="transport" class="transport-row" hidden></div>
 </div>
 
 <script src="scenes.js"></script>
 <script src="windowctl.js"></script>
-<script src="transport.js"></script>
-<script src="queue.js"></script>
+<script src="captions.js"></script>
 </body>
 </html>

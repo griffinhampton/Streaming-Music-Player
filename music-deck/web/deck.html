@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Awesome Music Streaming Deck</title>
+<title>Awesome Streaming Deck</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="icon" type="image/png" sizes="256x256" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
@@ -29,21 +29,21 @@
 <header class="topbar">
   <div class="brand">
     <span class="dot"></span>
-    <h1>Awesome Music Streaming Deck</h1>
+    <h1>Awesome Streaming Deck</h1>
     <span id="brandKao" class="kaomoji"></span>
     <span class="tag">local first</span>
   </div>
 
   <div class="topbar-right">
     <button id="appLookToggle" class="btn btn-ghost btn-sm" title="Colors, font and density of this app's own window">App appearance&hellip;</button>
-    <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Awesome Music Streaming Deck completely">Quit</button>
+    <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Awesome Streaming Deck completely">Quit</button>
   </div>
 </header>
 
 <!-- First-run help, dismissable; the ? button brings it back any time. -->
 <div class="onboard" id="onboard" hidden>
   <div class="onboard-body">
-    <b>Welcome!</b> Put a live now-playing window on your stream in three steps:
+    <b>Welcome!</b> Put live windows on your stream &mdash; now playing, lyrics, the queue, captions &mdash; in three steps:
     <span class="onboard-steps">① pick a window &middot; ② size and style it in the preview &middot; ③ open it and add it in TikTok Studio.</span>
   </div>
   <button id="onboardOk" class="btn btn-primary btn-sm">Got it</button>
@@ -93,6 +93,19 @@
     <div class="wc-foot">
       <span class="wc-size" id="qSize"></span>
       <button id="qToggle" class="btn btn-primary btn-sm">Open</button>
+    </div>
+  </div>
+
+  <div class="wincard" data-win="captions" tabindex="0" role="button" aria-pressed="false">
+    <div class="wc-head">
+      <span class="wc-dot"></span>
+      <span class="wc-name">Captions</span>
+      <span class="wc-state" id="capStatus">closed</span>
+    </div>
+    <p class="wc-sub">What you say, as live text</p>
+    <div class="wc-foot">
+      <span class="wc-size" id="capSize"></span>
+      <button id="capToggle" class="btn btn-primary btn-sm">Open</button>
     </div>
   </div>
 </nav>
@@ -176,12 +189,15 @@
         <button data-tab="queue-text" data-for="queue">Text</button>
         <button data-tab="bits" data-for="np">Art &amp; bar</button>
         <button data-tab="bg" data-for="all">Background</button>
-        <button data-tab="controls" data-for="all">Buttons</button>
+        <button data-tab="controls" data-for="np lyrics queue">Buttons</button>
         <button data-tab="decor" data-for="np">Decor</button>
         <button data-tab="stickers" data-for="np">Stickers</button>
         <button data-tab="window" data-for="np">Size</button>
         <button data-tab="lyrics-size" data-for="lyrics">Size</button>
         <button data-tab="queue-size" data-for="queue">Size</button>
+        <button data-tab="captions" data-for="captions">Look</button>
+        <button data-tab="captions-text" data-for="captions">Text</button>
+        <button data-tab="captions-size" data-for="captions">Size</button>
       </div>
 
       <!-- layout -->
@@ -357,6 +373,7 @@
             <button data-t="np" class="on">Now Playing</button>
             <button data-t="lyrics">Lyrics</button>
             <button data-t="queue">Queue</button>
+            <button data-t="captions">Captions</button>
             <button data-t="app">The app</button>
           </div>
         </label>
@@ -596,7 +613,7 @@
       <!-- lyrics: look -->
       <div class="tabpane" data-pane="lyrics">
         <p class="hint">A second window that scrolls the words in time with the song.
-          Add it in TikTok Studio as <b>Awesome Music Streaming Deck - Lyrics</b> and drag it wherever you like.
+          Add it in TikTok Studio as <b>Awesome Streaming Deck - Lyrics</b> and drag it wherever you like.
           Local tracks use a <b>.lrc</b> file next to the song when there is one.</p>
         <div id="lyInfo" class="hint"></div>
 
@@ -686,7 +703,7 @@
       <!-- queue: look -->
       <div class="tabpane" data-pane="queue">
         <p class="hint">A window showing what Spotify plays next. Add it in TikTok Studio
-          as <b>Awesome Music Streaming Deck - Queue</b>. Needs the Spotify account connected.</p>
+          as <b>Awesome Streaming Deck - Queue</b>. Needs the Spotify account connected.</p>
 
         <label class="field">
           <span>Heading</span>
@@ -752,6 +769,92 @@
         <label class="field">
           <span>Snap to</span>
           <div class="row gap wrap" id="qSnap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">↘ Bottom right</button>
+          </div>
+        </label>
+      </div>
+
+      <!-- captions: look -->
+      <div class="tabpane" data-pane="captions">
+        <p class="hint">A window that turns what you say into your microphone into closed captions, live.
+          Add it in TikTok Studio as <b>Awesome Streaming Deck - Captions</b> and drag it wherever you like.</p>
+
+        <div class="row gap wrap cap-mic">
+          <button class="btn btn-primary" id="capMic">Start listening</button>
+          <span class="cap-state" id="capState" data-tone="off">Off</span>
+        </div>
+        <div id="capLast" class="cap-last" aria-live="polite"></div>
+        <p class="hint">Recognized on this PC by Windows' built-in speech recognition. Nothing is sent
+          anywhere. English only, and about as accurate as Windows dictation: a clear microphone and a
+          normal speaking pace make a big difference.</p>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-cap="follow_theme" data-kind="bool"><span>Use the same background as Now Playing</span></label>
+        </div>
+
+        <label class="field">
+          <span>Lines kept <b class="mono" data-capout="lines">2</b></span>
+          <input class="range" type="range" min="1" max="4" step="1"
+                 data-cap="lines" data-kind="range" data-capout="lines">
+          <span class="hint">Finished lines shown above the one being spoken.</span>
+        </label>
+        <label class="field">
+          <span>Lines fade after <b class="mono" data-capout="hold">6</b>s</span>
+          <input class="range" type="range" min="2" max="15" step="1"
+                 data-cap="hold" data-kind="range" data-capout="hold">
+        </label>
+      </div>
+
+      <!-- captions: text -->
+      <div class="tabpane" data-pane="captions-text">
+        <label class="field">
+          <span>Text size <b class="mono" data-capout="scale">1.00</b></span>
+          <input class="range" type="range" min="50" max="220"
+                 data-cap="scale" data-kind="range" data-div="100" data-capout="scale" data-dp="2">
+        </label>
+        <label class="field">
+          <span>Alignment</span>
+          <div class="segmented small" data-cap="align" data-kind="seg">
+            <button data-v="center">Center</button>
+            <button data-v="left">Left</button>
+          </div>
+        </label>
+
+        <div class="divider"></div>
+        <label class="field"><span>Words</span>
+          <span class="color-row"><input class="color wide" type="color" data-cap="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="cap" title="Reset to theme">&#8635;</button></span></label>
+        <label class="field"><span>Status text</span>
+          <span class="color-row"><input class="color wide" type="color" data-cap="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="cap" title="Reset to theme">&#8635;</button></span></label>
+        <label class="field"><span>Accent</span>
+          <span class="color-row"><input class="color wide" type="color" data-cap="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="cap" title="Reset to theme">&#8635;</button></span></label>
+        <span class="hint">Leave blank to use the Now Playing colors. Set a color to give them their own.</span>
+      </div>
+
+      <!-- captions: size -->
+      <div class="tabpane" data-pane="captions-size">
+        <label class="field">
+          <span>Shape</span>
+          <div class="row gap wrap" id="capSizePresets">
+            <button class="btn btn-ghost btn-sm" data-w="900" data-h="200">Wide 900×200</button>
+            <button class="btn btn-ghost btn-sm" data-w="1280" data-h="160">Banner 1280×160</button>
+            <button class="btn btn-ghost btn-sm" data-w="600" data-h="300">Box 600×300</button>
+          </div>
+          <span class="hint">Or grab a corner of the window itself and stretch it any way you like.</span>
+        </label>
+
+
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="capWidth" class="input" type="number" min="200" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="capHeight" class="input" type="number" min="100" max="2160" step="10"></label>
+        </div>
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="capSnap">
             <button class="btn btn-ghost btn-sm" data-c="tl">↖ Top left</button>
             <button class="btn btn-ghost btn-sm" data-c="tr">↗ Top right</button>
             <button class="btn btn-ghost btn-sm" data-c="bl">↙ Bottom left</button>
@@ -867,7 +970,7 @@
 
         <p class="hint">
           In TikTok Studio: <b>Add source → Window</b>, then pick
-          <b>Awesome Music Streaming Deck - Now Playing</b>. Resizing here changes the real window,
+          <b>Awesome Streaming Deck - Now Playing</b>. Resizing here changes the real window,
           so what you capture always matches the preview.
         </p>
       </div>
@@ -965,7 +1068,7 @@
       <details id="spSetupBox" class="sp-connect">
         <summary>Connect a Spotify account &mdash; for the queue, full-size art and remote control</summary>
         <div id="spSetup" class="sp-setup">
-        <p class="hint">Awesome Music Streaming Deck already reads the title and artist of whatever Spotify is
+        <p class="hint">Awesome Streaming Deck already reads the title and artist of whatever Spotify is
           playing on <b>this</b> PC — that needs no login at all. Connecting your account adds
           the things Windows cannot tell us: the <b>queue</b>, the <b>album art</b> at full size,
           and control of Spotify wherever it is playing — your phone, the web player, a speaker.</p>
@@ -978,7 +1081,7 @@
             Go to <b>developer.spotify.com/dashboard</b> and log in with your normal Spotify
             account. Press <b>Create app</b>.</li>
           <li><b>Fill the form.</b>
-            <i>App name</i> and <i>description</i> can be anything — "Awesome Music Streaming Deck" is fine; nobody
+            <i>App name</i> and <i>description</i> can be anything — "Awesome Streaming Deck" is fine; nobody
             else sees them. Leave the website blank.</li>
           <li><b>Add the redirect URI.</b>
             In <i>Redirect URIs</i> paste this exactly, then press <b>Add</b>:
@@ -990,7 +1093,7 @@
             Agree to the terms and press <b>Save</b>.</li>
           <li><b>Copy the Client ID.</b>
             On the app's page open <b>Settings</b>. Copy the <b>Client ID</b> — the long string of
-            letters and numbers. You do <i>not</i> need the client secret; Awesome Music Streaming Deck uses the
+            letters and numbers. You do <i>not</i> need the client secret; Awesome Streaming Deck uses the
             flow that does not take one, so there is no secret to leak.</li>
           <li><b>Paste it below and press Connect.</b>
             A window opens asking you to approve. Say yes and it closes itself.</li>
@@ -1033,7 +1136,7 @@
               queue and what is playing works on a free account; skip, pause and seek do not.</dd>
 
             <dt>You changed the port</dt>
-            <dd>The redirect URI has to match the port Awesome Music Streaming Deck is running on. If you started
+            <dd>The redirect URI has to match the port Awesome Streaming Deck is running on. If you started
               it on a different port, add that address in the dashboard too.</dd>
           </dl>
         </details>
@@ -1043,7 +1146,7 @@
           <p class="hint">A Spotify app starts in <i>development mode</i>, which only lets accounts
             you have listed use it — up to 25, added by email under <b>Settings → User Management</b>.
             So either add your friends there, or have each of them make their own app and paste
-            their own Client ID. Everything else in Awesome Music Streaming Deck works for them with no setup at all.</p>
+            their own Client ID. Everything else in Awesome Streaming Deck works for them with no setup at all.</p>
         </details>
 
         <p class="hint">None of this sends your listening anywhere. The token lives in

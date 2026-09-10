@@ -1,4 +1,4 @@
-/* Awesome Music Streaming Deck - one set of SVG glyphs for the whole app.
+/* Awesome Streaming Deck - one set of SVG glyphs for the whole app.
 
    Emoji render differently on every machine and font, and look by turns
    childish and broken; a streamer's overlay should not depend on which emoji
