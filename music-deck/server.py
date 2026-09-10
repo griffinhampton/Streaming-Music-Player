@@ -171,6 +171,7 @@ DEFAULT_CONFIG = {
         "model": "base.en",          # which Whisper model, once downloaded
         "mic": "",                   # "" = the Windows default microphone
         "words": "",                 # names and terms to expect, comma separated
+        "live_words": True,          # words while you still talk (about 3x the CPU of off)
         "font": "",                  # "" = the Now Playing font
         "width": 900, "height": 200, "x": 120, "y": 780,
         "borderless": True,
@@ -635,6 +636,7 @@ def captions_settings():
     name = c.get("model") if c.get("model") in models.MODELS else models.DEFAULT
     return {"engine": engine, "model": name, "model_dir": MODEL_STORE.path(name),
             "mic": c.get("mic") or "", "words": c.get("words") or "",
+            "live": c.get("live_words", True) is not False,
             "label": f"Whisper {name}" if engine == "whisper" else "Windows speech"}
 
 
@@ -845,6 +847,9 @@ class Hub:
         self.local_cmd = None
         self._subs = []
         self._lock = threading.Lock()
+        self._last_payload = None      # what every window last got
+        self._last_key = None          # ...minus what moves on its own
+        self._last_sent = 0.0
 
     def update_local(self, data):
         for key in ("playing", "position", "duration", "volume", "dpr"):
@@ -1038,6 +1043,14 @@ class Hub:
         q = queue.Queue(maxsize=8)
         with self._lock:
             self._subs.append(q)
+            last = self._last_payload
+        if last:
+            # A window that has just connected gets the current state at once,
+            # rather than waiting for the next change.
+            try:
+                q.put_nowait(last)
+            except Exception:
+                pass
         return q
 
     def unsubscribe(self, q):
@@ -1045,25 +1058,69 @@ class Hub:
             if q in self._subs:
                 self._subs.remove(q)
 
-    def broadcast(self):
-        payload = json.dumps(self.snapshot())
+    HEARTBEAT = 2.0      # seconds between sends when nothing changes
+
+    @staticmethod
+    def _change_key(snap):
+        """The snapshot minus what moves on its own: the clocks every window
+        runs itself, the microphone meter's fine grain, ages counting up.
+        A playing position is reduced to where the song would have started,
+        which holds still while it plays and jumps on a seek - so a seek is
+        still sent at once, and steady playback is not."""
+        s = dict(snap)
+        s.pop("server_time", None)
+        t = time.time()
+        for k in ("now", "local", "spotify"):
+            v = s.get(k)
+            if isinstance(v, dict) and "position" in v:
+                pos = float(v.get("position") or 0)
+                s[k] = dict(v, position=round(pos - t if v.get("playing") else pos))
+        if isinstance(s.get("captions"), dict):
+            # The microphone meter flickers constantly; the deck asks for it
+            # on its own while the meter is on screen (/api/captions/level).
+            s["captions"] = {k: v for k, v in s["captions"].items() if k != "level"}
+        if isinstance(s.get("spotify_queue"), dict):
+            s["spotify_queue"] = {k: v for k, v in s["spotify_queue"].items()
+                                  if k not in ("age", "retry_in")}
+        return json.dumps(s, sort_keys=True, default=str)
+
+    def _send(self, snap, key):
+        payload = json.dumps(snap)
         with self._lock:
+            self._last_payload, self._last_key, self._last_sent = payload, key, time.time()
             subs = list(self._subs)
         for q in subs:
             try:
                 q.put_nowait(payload)
             except Exception:
-                pass  # slow client; it will catch the next tick
+                pass  # slow client; it will catch the next one
+
+    def broadcast(self):
+        """Send now: something just happened (a setting, a press, a window)."""
+        snap = self.snapshot()
+        self._send(snap, self._change_key(snap))
+
+    def broadcast_if_changed(self):
+        """The pump's send: only when something a window shows has changed,
+        or every HEARTBEAT seconds to keep every window's clock in step.
+        Sending the whole state 2.5 times a second regardless had every
+        window parsing and re-checking it for nothing."""
+        snap = self.snapshot()
+        key = self._change_key(snap)
+        with self._lock:
+            due = key != self._last_key or time.time() - self._last_sent >= self.HEARTBEAT
+        if due:
+            self._send(snap, key)
 
 
 HUB = Hub()
 
 
 def _pump():
-    """Push state to the Now Playing window a few times a second."""
+    """Look for changes a few times a second; send only when there are."""
     while True:
         try:
-            HUB.broadcast()
+            HUB.broadcast_if_changed()
         except Exception:
             pass
         time.sleep(0.4)
@@ -1526,6 +1583,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/captions/mics":
             return self._json({"mics": list_microphones()})
+
+        if path == "/api/captions/level":
+            # The deck's meter, asked for only while it is on screen, so the
+            # broadcast does not have to carry every flicker of it.
+            c = CAPTIONS.get()
+            return self._json({"level": c["level"], "audio": c["audio"], "state": c["state"]})
 
         if path == "/api/fonts":
             return self._json({"fonts": FONT_STORE.list()})

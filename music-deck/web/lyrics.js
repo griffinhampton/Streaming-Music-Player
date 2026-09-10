@@ -159,6 +159,7 @@ function setLyrics(data) {
   // The first placement should not animate in from the top of the box.
   s.classList.add('no-anim');
   centerActive(true);
+  tick();                       // new lines, new moment the next one is due
   requestAnimationFrame(() => requestAnimationFrame(() => s.classList.remove('no-anim')));
 }
 
@@ -210,6 +211,7 @@ function wireLineSeek() {
     clock = { ...clock, position: to, at: performance.now() };
     active = idx;
     centerActive();
+    tick();
     fetch('/api/seek', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ seconds: to }),
@@ -235,7 +237,11 @@ function centerActive(force) {
 
 /* ------------------------------------------------------------- clock */
 
+/* The clock wakes at the moment the next line is due - or four times a
+   second for unsynced lyrics, which glide - instead of on every frame. */
+let tickTimer = null;
 function tick() {
+  clearTimeout(tickTimer);
   let pos = clock.position;
   if (clock.playing) pos += (performance.now() - clock.at) / 1000;
   if (PREVIEW) pos = pos % 30;   // loop the demo
@@ -244,7 +250,14 @@ function tick() {
     active = idx;
     centerActive();
   }
-  requestAnimationFrame(tick);
+  if (!clock.playing) return;
+  let wait = 250;
+  if (lyrics.status === 'synced') {
+    const next = lyrics.lines[idx + 1];
+    const offset = Number((opts && opts.offset) || 0);
+    wait = next ? (next.t - (pos + offset)) * 1000 + 15 : 1000;
+  }
+  tickTimer = setTimeout(tick, Math.max(30, Math.min(wait, 1000)));
 }
 
 function onState(now) {
@@ -260,6 +273,7 @@ function onState(now) {
       paintHeader();
     }
     clock = { position: 0, duration: 0, playing: false, at: performance.now() };
+    tick();
     return;
   }
   lastNow = now;
@@ -274,6 +288,7 @@ function onState(now) {
   if (drift > 1.2 || clock.playing !== now.playing || clock.duration !== now.duration) {
     clock = { position: now.position || 0, duration: now.duration || 0,
               playing: !!now.playing, at: performance.now() };
+    tick();
   }
 }
 
@@ -332,7 +347,7 @@ fetch('/api/state').then((r) => r.json()).then((d) => {
 
 wireLineSeek();
 connect();
-requestAnimationFrame(tick);
+tick();
 
 /* Which way round the play/pause icon goes. Fed from connect()'s stream above
    rather than a second subscription: that payload already carries `now`. */

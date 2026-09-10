@@ -124,8 +124,7 @@ function render(c, serverTime) {
   s.dataset.state = 'on';
 
   const keep = Math.max(1, (opts && opts.lines) || 2);
-  const hold = Math.max(1, Number((opts && opts.hold) || 6));
-  const now = serverTime || (Date.now() / 1000);
+  if (serverTime) skew = serverTime - Date.now() / 1000;
 
   if (c.version !== lastVersion) {
     lastVersion = c.version;
@@ -133,14 +132,28 @@ function render(c, serverTime) {
     el.lines.innerHTML = shown.map((l) => `<div class="line">${esc(l.text)}</div>`).join('');
     el.partial.textContent = c.partial || '';
   }
-  // Age the finished lines on every tick: fade after `hold`, then drop them,
-  // so the box empties between things said rather than pinning an old line.
+  ageLines();
+}
+
+/* Finished lines fade after `hold` and then go, so the box empties between
+   things said. They keep time themselves - the server's clock, carried over
+   from the last message - and wake exactly when the next one is due, since
+   the server only sends when something changes. */
+let skew = 0, ageTimer = null;
+function ageLines() {
+  clearTimeout(ageTimer);
+  const hold = Math.max(1, Number((opts && opts.hold) || 6));
+  const now = Date.now() / 1000 + skew;
   const rows = el.lines.children;
+  let next = Infinity;
   for (let i = 0; i < rows.length; i++) {
     const age = now - (shown[i] ? shown[i].at : now);
     rows[i].classList.toggle('old', age > hold);
     rows[i].hidden = age > hold + 1.2;
+    if (age <= hold) next = Math.min(next, hold - age);
+    else if (age <= hold + 1.2) next = Math.min(next, hold + 1.2 - age);
   }
+  if (next !== Infinity) ageTimer = setTimeout(ageLines, next * 1000 + 30);
 }
 
 /* ------------------------------------------------------------- preview */

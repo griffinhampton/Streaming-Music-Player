@@ -349,6 +349,7 @@ function render(now) {
     el.stage.classList.add('no-art-image');
     clock = { position: 0, duration: 0, playing: false, at: performance.now() };
     trackKey = '';
+    tick();
     requestAnimationFrame(measureMarquee);
     return;
   }
@@ -395,6 +396,7 @@ function render(now) {
       playing: !!now.playing,
       at: performance.now(),
     };
+    tick();
   }
 }
 
@@ -406,16 +408,29 @@ function timeLabel(mode, pos, dur) {
   return fmt(pos);                                   // elapsed
 }
 
+/* The clock wakes only when something on screen would change - the next
+   whole second for the time labels, the next half pixel for the bar. Run
+   on every frame it laid the window out 60 times a second to move a bar by
+   nothing. Paused, it does not run at all; render() and a seek wake it. */
+let tickTimer = null;
 function tick() {
+  clearTimeout(tickTimer);
+  const trackW = Math.max(1, el.fill.parentElement.clientWidth);
   let pos = clock.position;
   if (clock.playing) pos += (performance.now() - clock.at) / 1000;
   const dur = clock.duration;
   if (dur > 0) pos = Math.min(pos, dur);
-  el.fill.style.width = dur > 0 ? (pos / dur * 100).toFixed(2) + '%' : '0%';
+  const width = dur > 0 ? (pos / dur * 100).toFixed(2) + '%' : '0%';
+  if (el.fill.style.width !== width) el.fill.style.width = width;
   const prog = (design && design.progress) || {};
-  el.elapsed.textContent = timeLabel(prog.left || 'elapsed', pos, dur);
-  el.remain.textContent = timeLabel(prog.right || 'remaining', pos, dur);
-  requestAnimationFrame(tick);
+  const left = timeLabel(prog.left || 'elapsed', pos, dur);
+  const right = timeLabel(prog.right || 'remaining', pos, dur);
+  if (el.elapsed.textContent !== left) el.elapsed.textContent = left;
+  if (el.remain.textContent !== right) el.remain.textContent = right;
+  if (!clock.playing || !(dur > 0) || pos >= dur) return;
+  const toSecond = (1 - (pos % 1)) * 1000 + 10;
+  const halfPixel = (dur / trackW) * 500;
+  tickTimer = setTimeout(tick, Math.max(40, Math.min(toSecond, halfPixel)));
 }
 
 /* ------------------------------------------------------------- transport */
@@ -463,6 +478,7 @@ function wireSeeking() {
     const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width)));
     const to = frac * dur;
     clock = { ...clock, position: to, at: performance.now() };   // move instantly
+    tick();
     fetch('/api/seek', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ seconds: to }),
@@ -536,5 +552,5 @@ fetch('/api/state')
 
 connect();
 if (!PREVIEW) reportWindowMetrics('/api/window');
-requestAnimationFrame(tick);
+tick();
 setInterval(measureMarquee, 4000);

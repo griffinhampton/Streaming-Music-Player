@@ -87,6 +87,10 @@ $streamType = [Windows.Storage.Streams.IRandomAccessStreamWithContentType]
 $lastKey = ''
 $lastArt = ''
 $artUntil = Get-Date
+$artTried = [datetime]::MinValue
+$lastSig = ''                          # what was last reported, minus the clock
+$lastEmit = [datetime]::MinValue
+$playingNow = $false
 
 # ---- Cover art ------------------------------------------------------------
 function Save-Thumbnail($props, $key) {
@@ -190,7 +194,12 @@ while ($true) {
         Invoke-Command-File $session
 
         if (-not $session) {
-            Emit @{ ok = $true; has = $false }
+            $playingNow = $false
+            if ($lastSig -ne 'none' -or ((Get-Date) - $lastEmit).TotalSeconds -ge 3) {
+                Emit @{ ok = $true; has = $false }
+                $lastSig = 'none'
+                $lastEmit = Get-Date
+            }
         } else {
             $props = Await ($session.TryGetMediaPropertiesAsync()) ($propsType)
             $info = $session.GetPlaybackInfo()
@@ -211,7 +220,8 @@ while ($true) {
             # moment later - sometimes a stand-in picture first, then the real
             # one. Reading the cover only at the change left whole songs with
             # no cover, so keep looking for a while after each change.
-            if ((Get-Date) -lt $artUntil) {
+            if ((Get-Date) -lt $artUntil -and ((Get-Date) - $artTried).TotalMilliseconds -ge 900) {
+                $artTried = Get-Date
                 $found = Save-Thumbnail $props $key
                 if ($found) { $lastArt = $found }
             }
@@ -231,6 +241,15 @@ while ($true) {
                 if ($age -lt 0 -or $age -gt 120) { $age = 0 }
             } catch { }
 
+            # Report only what changed, plus a heartbeat every 3 s. The
+            # timeline's age grows on every poll but the server works that
+            # out itself from when the last report arrived, so it is not a
+            # change worth a report.
+            $playingNow = ($status -eq 4)
+            $sig = "$key|$status|$([math]::Round($pos, 1))|$([math]::Round($dur, 1))|$lastArt|$($controls.IsNextEnabled)|$($controls.IsPreviousEnabled)|$($controls.IsPauseEnabled)|$($controls.IsPlayEnabled)"
+            if ($sig -ne $lastSig -or ((Get-Date) - $lastEmit).TotalSeconds -ge 3) {
+            $lastSig = $sig
+            $lastEmit = Get-Date
             Emit @{
                 ok       = $true
                 has      = $true
@@ -249,10 +268,17 @@ while ($true) {
                 canPause = [bool]$controls.IsPauseEnabled
                 canPlay  = [bool]$controls.IsPlayEnabled
             }
+            }
         }
     } catch {
         Emit @{ ok = $true; has = $false; warn = "$($_.Exception.Message)" }
     }
 
-    Start-Sleep -Milliseconds $IntervalMs
+    # Poll briskly while music plays and gently otherwise, but look for a
+    # command from the deck every 100 ms either way, so a press never waits.
+    $wait = if ($playingNow) { $IntervalMs } else { 1000 }
+    for ($t = 0; $t -lt $wait; $t += 100) {
+        if (Test-Path $CmdFile) { break }
+        Start-Sleep -Milliseconds 100
+    }
 }

@@ -2362,6 +2362,7 @@ $('seek').addEventListener('change', () => {
         .then((r) => { if (!r.ok) toast(r.reason || 'Could not seek'); });
     }
     seeking = false;
+    cardTick();
     return;
   }
   const d = audio.duration || 0;
@@ -2425,22 +2426,31 @@ function paintCard(now) {
     cardClock = { position: now.position || 0, duration: now.duration || 0,
                   playing: !!now.playing, at: performance.now() };
   }
+  cardTick();
 }
 
 /* A local file drives the bar from <audio>; anything else runs on this clock. */
+/* It wakes when the time label or the slider would actually change - not on
+   every frame - and not at all while paused or while you drag the slider. */
+let cardTimer = null;
 function cardTick() {
-  if (cardSource !== 'local' && !seeking) {
-    let pos = cardClock.position;
-    if (cardClock.playing) pos += (performance.now() - cardClock.at) / 1000;
-    const dur = cardClock.duration;
-    if (dur > 0) pos = Math.min(pos, dur);
-    $('deckElapsed').textContent = fmt(pos);
-    $('deckDuration').textContent = fmt(dur);
-    $('seek').value = dur > 0 ? Math.round((pos / dur) * 1000) : 0;
-  }
-  requestAnimationFrame(cardTick);
+  clearTimeout(cardTimer);
+  if (cardSource === 'local' || seeking) return;
+  let pos = cardClock.position;
+  if (cardClock.playing) pos += (performance.now() - cardClock.at) / 1000;
+  const dur = cardClock.duration;
+  if (dur > 0) pos = Math.min(pos, dur);
+  const elapsed = fmt(pos), total = fmt(dur);
+  const value = String(dur > 0 ? Math.round((pos / dur) * 1000) : 0);
+  if ($('deckElapsed').textContent !== elapsed) $('deckElapsed').textContent = elapsed;
+  if ($('deckDuration').textContent !== total) $('deckDuration').textContent = total;
+  if ($('seek').value !== value) $('seek').value = value;
+  if (!cardClock.playing || !(dur > 0) || pos >= dur) return;
+  const toSecond = (1 - (pos % 1)) * 1000 + 10;
+  const toStep = dur;                       // one 1/1000 slider step, in ms
+  cardTimer = setTimeout(cardTick, Math.max(100, Math.min(toSecond, toStep)));
 }
-requestAnimationFrame(cardTick);
+cardTick();
 
 /* ------------------------------------------------------------- ui wiring */
 
@@ -2580,6 +2590,7 @@ function selectWindow(id) {
   // only on Now Playing, so their hint goes with it.
   $('capListen').hidden = id !== 'captions';
   $('stickerHint').hidden = id !== 'np';
+  meterLoop();
   $('dropHintWhat').textContent = id === 'np'
     ? 'PNG, JPEG, GIF or WebP — as a sticker, or as the background'
     : "to use it as this window's background";
@@ -2902,12 +2913,29 @@ function paintCaptions(c) {
   const meter = $('capMeter');
   meter.hidden = !(on && c.state === 'listening' && c.engine === 'whisper');
   meter.firstElementChild.style.width = Math.round((c.level || 0) * 100) + '%';
+  meterLoop();
 
   // The latest thing heard, so you can check the microphone without opening
   // the window - and see when it mishears you.
   const last = (c.lines && c.lines.length) ? c.lines[c.lines.length - 1].text : '';
   $('capLast').textContent = on ? (c.partial || last || '') : '';
 }
+
+/* The meter moves too often for the broadcast, which only sends on change,
+   so it is asked for directly - five times a second, and only while it is
+   actually on screen. */
+let meterTimer = null;
+function meterLoop() {
+  clearTimeout(meterTimer);
+  const c = capState;
+  const want = !!c && c.on && c.state === 'listening' && c.engine === 'whisper'
+    && selectedWin === 'captions' && document.visibilityState === 'visible';
+  if (!want) return;
+  fetch('/api/captions/level').then((r) => r.json()).then((d) => {
+    $('capMeter').firstElementChild.style.width = Math.round((d.level || 0) * 100) + '%';
+  }).catch(() => {}).finally(() => { meterTimer = setTimeout(meterLoop, 200); });
+}
+document.addEventListener('visibilitychange', meterLoop);
 
 $('capMic').addEventListener('click', () => {
   const on = !!(capState && capState.on);

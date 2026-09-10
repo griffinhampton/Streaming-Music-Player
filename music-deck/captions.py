@@ -57,11 +57,13 @@ class CaptionBridge:
             running, listener = self._on, self._listener
         if settings == old or not running:
             return
-        rest = lambda s: {k: v for k, v in s.items() if k != "words"}
+        rest = lambda s: {k: v for k, v in s.items() if k not in ("words", "live")}
         if listener is not None and rest(settings) == rest(old):
-            # New words to expect: a running Whisper takes them on its next
-            # read, without the second or two a restart would cost.
+            # New words to expect, or live words on or off: a running Whisper
+            # takes them on its next read, without the second or two a
+            # restart would cost.
             listener.set_words(settings.get("words", ""))
+            listener.set_live(settings.get("live", True))
             return
         self.stop()
         self.start()
@@ -131,7 +133,8 @@ class CaptionBridge:
                 from captions_whisper import WhisperListener
                 listener = WhisperListener(s["model_dir"], emit, mic=s.get("mic", ""),
                                            words=s.get("words", ""),
-                                           label=s.get("label", "Whisper"))
+                                           label=s.get("label", "Whisper"),
+                                           live=s.get("live", True))
                 with self._lock:
                     if self._gen == gen:
                         self._listener = listener

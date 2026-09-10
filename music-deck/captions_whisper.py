@@ -41,11 +41,13 @@ SPEECH_OFF = 0.35              # ...and below which a block counts as quiet
 PRE_ROLL_S = 0.3               # audio kept from just before speech starts
 END_SILENCE_S = 0.5            # a pause this long ends the phrase
 MIN_VOICED_S = 0.25            # shorter than this is a cough or a click
-PARTIAL_EVERY_S = 0.4          # how often the live line is re-read
+PARTIAL_EVERY_S = 1.0          # how often the live line is re-read
 COMMIT_AFTER_S = 7.0           # long phrases start committing sentences
 FORCE_AFTER_S = 14.0           # ...and are cut outright if Whisper never closes one
 TAIL_PAD_S = 0.2               # quiet left on the end of a finished phrase
 DEAD_MIC_S = 3.0               # this long of digital silence means a muted mic
+NO_AUDIO_S = 2.0               # this long with no audio at all: say so
+REOPEN_AFTER_S = 5.0           # ...and after this long, open the microphone again
 
 # Speed. Whisper's encoder is built for 30 s windows and costs the same
 # whatever is in them, so a three-second phrase is 90% padding: 0.86 s per
@@ -58,6 +60,14 @@ SHORT_WINDOW = True
 WINDOW_PAD_S = 2.0
 WINDOW_MIN_S = 10.0
 FINAL_BEAM = 5                 # beam width for finished lines; 1 = greedy
+
+# CPU. Measured on non-stop speech (the worst case), share of a 16-thread
+# CPU: 6 threads re-reading every 0.4 s took 25.5%; letting idle threads
+# sleep instead of spin took that to 15%; 2 threads to 8%; re-reading once
+# a second to 5.3% - with no change at all in accuracy. Finished lines only
+# (no live words) is 1.7%.
+THREADS = 2                    # CPU threads for Whisper; 0 = pick from the machine
+LIVE_PARTIALS = True           # default for re-reading the phrase while it is spoken
 _window = {"full": False}      # set while a stuck read is retried at 30 s
 
 
@@ -97,6 +107,10 @@ def load_whisper():
     the build leaves PyAV's 60 MB of FFmpeg out and a stand-in satisfies the
     import. From source, a real PyAV is used if one is installed.
     """
+    # CTranslate2's OpenMP threads spin for 200 ms after every read by
+    # default, burning a core each while there is nothing to do. It has to be
+    # set before the runtime loads, which is the import just below.
+    os.environ.setdefault("KMP_BLOCKTIME", "0")
     if "av" not in sys.modules:
         try:
             import av  # noqa: F401
@@ -181,7 +195,7 @@ class WhisperListener:
     """One listening session: load, open the microphone, caption until told
     to stop. `emit` receives the same messages captions.ps1 prints."""
 
-    def __init__(self, model_dir, emit, mic="", words="", threads=0, label="Whisper"):
+    def __init__(self, model_dir, emit, mic="", words="", threads=0, label="Whisper", live=None):
         self.model_dir = model_dir
         self.emit = emit
         self.mic = mic or ""
@@ -190,13 +204,19 @@ class WhisperListener:
         self.words = clean_words(words)
         # Half the machine at most, and never all of it: there is a game and
         # an encoder running too. 16 threads -> 6, 8 -> 3, 4 -> 2.
-        self.threads = threads or max(2, min(6, (os.cpu_count() or 4) // 2 - 1))
+        self.threads = threads or THREADS or max(2, min(6, (os.cpu_count() or 4) // 2 - 1))
         self.label = label
         self.context = ""            # what was just said: a prompt for the next line
+        # Live words: re-read the phrase while it is spoken. Off, a line is
+        # read once, when you pause - about a third of the CPU.
+        self.live = LIVE_PARTIALS if live is None else bool(live)
 
     def set_words(self, words):
         """Takes effect from the next read; no restart, no reload."""
         self.words = clean_words(words)
+
+    def set_live(self, on):
+        self.live = bool(on)
 
     # ------------------------------------------------------------- setup
 
@@ -233,22 +253,29 @@ class WhisperListener:
         except Exception as exc:
             self.emit({"ok": False, "error": f"Whisper could not load: {exc}"})
             return False
-        q = queue.Queue()
-        try:
-            stream = self.open_source(q)
-        except Exception as exc:
-            self.emit({"ok": False, "error": f"Could not open the microphone: {exc}"})
-            return False
-        self.emit({"ok": True, "ready": True, "recognizer": self.label})
-        self.emit({"t": "audio", "state": "silence"})
-        try:
-            self._loop(q, stop)
-        finally:
+        while not stop.is_set():
+            q = queue.Queue()
             try:
-                stream.stop()
-                stream.close()
-            except Exception:
-                pass
+                stream = self.open_source(q)
+            except Exception as exc:
+                self.emit({"ok": False, "error": f"Could not open the microphone: {exc}"})
+                return False
+            self.emit({"ok": True, "ready": True, "recognizer": self.label})
+            self.emit({"t": "audio", "state": "silence"})
+            try:
+                lost = self._loop(q, stop)
+            finally:
+                try:
+                    stream.stop()
+                    stream.close()
+                except Exception:
+                    pass
+            if not lost:
+                break
+            # The microphone stopped delivering sound altogether. Open it
+            # again - the model stays loaded - rather than sit "listening" to
+            # nothing with the last thing it heard frozen on the deck.
+            stop.wait(1.0)
         return True
 
     # ------------------------------------------------------------- listening
@@ -263,12 +290,27 @@ class WhisperListener:
         dead = 0                 # blocks of pure digital silence in a row
         mic_dead = False
         level_at = 0.0
+        last_audio = time.monotonic()
+        no_audio = False
 
         while not stop.is_set():
             try:
                 chunk = q.get(timeout=0.1)
             except queue.Empty:
+                # Not quiet - nothing at all: the device went away, or Windows
+                # stopped delivering it. Say so at once, and after a few
+                # seconds hand back to run(), which opens the microphone again.
+                gap = time.monotonic() - last_audio
+                if gap > NO_AUDIO_S and not no_audio:
+                    no_audio = True
+                    self.emit({"t": "audio", "state": "stopped"})
+                if gap > REOPEN_AFTER_S:
+                    return True
                 continue
+            last_audio = time.monotonic()
+            if no_audio:
+                no_audio = False
+                self.emit({"t": "audio", "state": "silence"})
             pending = np.concatenate([pending, chunk]) if pending.size else chunk
 
             while pending.size >= BLOCK:
@@ -317,9 +359,13 @@ class WhisperListener:
             # Caught up with the microphone? Then refresh the live line. When
             # a decode runs long the queue fills; this skips partials until
             # the audio is drained, so the captions never fall behind.
-            if speaking and utt and since_partial * BLOCK_S >= PARTIAL_EVERY_S and q.empty():
+            # Without live words a phrase is only read when it ends - or, if it
+            # runs on, often enough to commit its finished sentences.
+            every = PARTIAL_EVERY_S if self.live else COMMIT_AFTER_S
+            if speaking and utt and since_partial * BLOCK_S >= every and q.empty():
                 since_partial = 0
                 utt = self._live(utt)
+        return False
 
     def _live(self, utt):
         """Re-read the phrase so far; commit what is settled. Returns the
