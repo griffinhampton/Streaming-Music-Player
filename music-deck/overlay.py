@@ -231,6 +231,14 @@ class Overlay:
         time.sleep(0.35)
         if host.aligned():
             return {"ok": True, "state": "realigned"}
+        # Still off: the frame learned when the window opened no longer fits -
+        # it opened on a screen with a different scale (or off every screen)
+        # and was moved. Learn it again from what Chrome shows now.
+        if host.learn_frame():
+            host.align_child()
+            time.sleep(0.35)
+            if host.aligned():
+                return {"ok": True, "state": "relearned"}
         if url and cfg:
             return dict(self.rebuild(url, cfg), state="rebuilt")
         return {"ok": False, "state": "misaligned"}
@@ -279,6 +287,13 @@ class Overlay:
                         continue
                     host.align_child()
                     time.sleep(0.3)
+                    if not host.aligned() and misses >= 1 and host.learn_frame():
+                        # Off two checks running, so not Chrome mid-layout: the
+                        # frame learned at opening no longer fits (the window
+                        # moved to a screen with another scale). Learn it again
+                        # - cheaper and calmer on stream than a rebuild.
+                        host.align_child()
+                        time.sleep(0.3)
                     misses = 0 if host.aligned() else misses + 1
                     if misses >= 3 and self._rebuild_hint:
                         # Nudging is not getting there; start over cleanly.

@@ -247,10 +247,14 @@ while ($true) {
             try {
                 $pos = [double]$tl.Position.TotalSeconds
                 $dur = [double]($tl.EndTime.TotalSeconds - $tl.StartTime.TotalSeconds)
-                # Spotify only refreshes the timeline every few seconds; report how
-                # stale it is so the deck can extrapolate a smooth progress bar.
+                # Spotify only refreshes the timeline every few seconds, and a
+                # browser (YouTube in Chrome) only on play, pause or seek; report
+                # how stale it is so the deck can extrapolate the progress bar.
+                # Only a nonsense stamp (in the future, or older than a day - an
+                # app that never set one) is thrown away: capping it at two
+                # minutes snapped a YouTube video's clock back to its last seek.
                 $age = [double]((Get-Date).ToUniversalTime() - $tl.LastUpdatedTime.UtcDateTime).TotalSeconds
-                if ($age -lt 0 -or $age -gt 120) { $age = 0 }
+                if ($age -lt 0 -or $age -gt 86400) { $age = 0 }
             } catch { }
 
             # Report only what changed, plus a heartbeat every 3 s. The

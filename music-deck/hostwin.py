@@ -133,15 +133,20 @@ _ENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
 
 def viewport_rect(chrome_hwnd):
-    """Screen rect of Chrome's web content: the largest render-widget child
-    under the browser window. This is where the page really is, whatever the
-    frame around it is doing."""
+    """Screen rect of Chrome's web content: the largest visible render-widget
+    child under the browser window. This is where the page really is,
+    whatever the frame around it is doing.
+
+    Visible only: with every pop-out in one Chrome, each window also carries
+    hidden render widgets sized like some other window's page. Measuring one
+    of those sized every window from another's numbers."""
     best = {}
 
     def cb(h, _l):
         cls = ctypes.create_unicode_buffer(64)
         user32.GetClassNameW(h, cls, 64)
-        if cls.value == "Chrome_RenderWidgetHostHWND":
+        if (cls.value == "Chrome_RenderWidgetHostHWND"
+                and user32.GetWindowLongW(wintypes.HWND(h), GWL_STYLE) & WS_VISIBLE):
             r = wintypes.RECT()
             user32.GetWindowRect(wintypes.HWND(h), ctypes.byref(r))
             area = (r.right - r.left) * (r.bottom - r.top)
