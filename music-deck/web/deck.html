@@ -833,6 +833,18 @@
           <div class="cap-progress" id="capProgress" hidden><i></i></div>
           <span class="hint" id="capModelHint"></span>
         </div>
+        <div class="field" id="capGpuField" hidden>
+          <span>Run Whisper on</span>
+          <div class="segmented small" data-cap="device" data-kind="seg">
+            <button data-v="cpu">Processor</button>
+            <button data-v="gpu">Graphics card</button>
+          </div>
+          <div class="font-row" id="capGpuRow" hidden>
+            <button class="btn btn-ghost btn-sm" id="capGpuBtn" type="button">Download</button>
+          </div>
+          <div class="cap-progress" id="capGpuProgress" hidden><i></i></div>
+          <span class="hint" id="capGpuHint"></span>
+        </div>
         <label class="field">
           <span>Microphone</span>
           <select class="input" id="capMicPick" data-cap="mic" data-kind="str">

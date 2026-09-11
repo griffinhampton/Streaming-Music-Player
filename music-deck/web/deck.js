@@ -2900,6 +2900,84 @@ function capModelAction(act) {
 }
 $('capModelBtn').addEventListener('click', () => capModelAction($('capModelBtn').dataset.act || 'download'));
 
+/* The graphics card: offered only when there is an NVIDIA one, and it needs
+   NVIDIA's cuBLAS once. Until that is on disk Whisper keeps to the processor,
+   and if the card turns it down the engine's reason shows here. */
+let capGpu = null;
+function paintCaptionGpu(g) {
+  if (!g) return;
+  capGpu = g;
+  const wantGpu = capCfg().device === 'gpu';
+  const field = $('capGpuField');
+  // Shown whenever it has something to say: a card to offer, a library on
+  // disk, or a choice of Graphics card (whose reason must never be hidden).
+  field.hidden = capEngine() !== 'whisper' || !(g.gpu || g.ready || g.downloading || wantGpu);
+  if (field.hidden) return;
+  const card = g.gpu || 'NVIDIA graphics card';
+  const usable = !!g.gpu && g.driver_ok !== false && !g.pending;
+  const btn = $('capGpuBtn'), bar = $('capGpuProgress'), hint = $('capGpuHint');
+  const c = capState || {};
+  const running = c.on && c.state === 'listening' && c.engine === 'whisper';
+  const unpacking = g.downloading && g.phase === 'unpack';
+  // Something to press: Cancel, Remove, or Download (and Retry) for a card
+  // that can use it.
+  $('capGpuRow').hidden = unpacking || !(g.downloading || g.ready || (usable && (wantGpu || g.error)));
+  bar.hidden = !g.downloading;
+  let text, warn = false;
+  if (g.ready) { btn.textContent = 'Remove'; btn.dataset.act = 'remove'; }
+  else { btn.textContent = `Download (${g.download_mb} MB)`; btn.dataset.act = 'download'; }
+  if (unpacking) {
+    bar.firstElementChild.style.width = '100%';
+    text = "Checking and unpacking NVIDIA's cuBLAS…";
+  } else if (g.downloading) {
+    bar.firstElementChild.style.width = (g.total ? Math.floor((100 * g.done) / g.total) : 0) + '%';
+    btn.textContent = 'Cancel';
+    btn.dataset.act = 'cancel';
+    text = `Downloading NVIDIA's cuBLAS… ${megabytes(g.done)} of ${megabytes(g.total)} MB`;
+  } else if (running && c.note) {
+    text = c.note;
+    warn = true;
+  } else if (g.pending && !g.ready) {
+    text = "Removed. NVIDIA's library was still in use, so its files go when the app restarts - "
+      + 'restart it before downloading it again.';
+  } else if (g.failed) {
+    text = `The graphics card stopped working for Whisper earlier (${g.failed})`
+      + (wantGpu ? ', so it runs on the processor. ' : '. ') + 'Restart the app to use the graphics card again.';
+    warn = wantGpu;
+  } else if (!g.gpu) {
+    text = 'No NVIDIA graphics card was found on this PC, so Whisper runs on the processor.';
+  } else if (g.driver_ok === false) {
+    text = `Your NVIDIA driver (${g.driver}) is too old for Whisper on the graphics card - update it `
+      + 'from NVIDIA, then restart the app. Until then Whisper runs on the processor.';
+    warn = wantGpu;
+  } else if (g.ready) {
+    if (!wantGpu) text = `NVIDIA's library is downloaded. Pick Graphics card to run Whisper on your ${card}.`;
+    else if (running && c.device === 'cuda') text = `Running on your ${card}.`;
+    else text = `Ready: Whisper runs on your ${card}.`;
+  } else if (wantGpu && g.error) {
+    text = g.error;
+    warn = true;
+  } else if (wantGpu) {
+    text = `Needs NVIDIA's cuBLAS library first: a one-time ${g.download_mb} MB download from PyPI `
+      + `(${g.disk_mb} MB on disk; NVIDIA's license applies). Until then Whisper runs on the processor.`;
+  } else {
+    text = `Found your ${card}. Running Whisper on it takes almost all of the work off the processor.`;
+  }
+  hint.textContent = text;
+  hint.classList.toggle('warn', warn);
+}
+
+function capGpuAction(act) {
+  if (act === 'remove' && !confirm("Remove NVIDIA's library? Whisper goes back to the processor. "
+    + 'If Whisper has used it since the app started, its files are freed when the app restarts.')) return;
+  post('/api/captions/gpu/' + act, {}).then((r) => {
+    if (r && r.gpu) paintCaptionGpu(r.gpu);
+    if (r && r.ok === false && r.reason) toast(r.reason);
+    if (r && r.pending) toast('Removed. The last files are in use until the app restarts.');
+  });
+}
+$('capGpuBtn').addEventListener('click', () => capGpuAction($('capGpuBtn').dataset.act || 'download'));
+
 function paintCaptions(c) {
   if (!c) return;
   capState = c;
@@ -2917,7 +2995,12 @@ function paintCaptions(c) {
   btn.classList.toggle('btn-ghost', on);
 
   let text = 'Off', tone = 'off';
-  if (on && c.state === 'starting') { text = c.engine === 'whisper' ? 'Loading Whisper…' : 'Starting…'; tone = 'wait'; }
+  if (on && c.state === 'starting') {
+    const g = capGpu;
+    const onCard = capCfg().device === 'gpu' && g && g.ready && g.gpu && g.driver_ok !== false && !g.failed;
+    text = c.engine !== 'whisper' ? 'Starting…' : onCard ? 'Starting Whisper on the graphics card…' : 'Loading Whisper…';
+    tone = 'wait';
+  }
   else if (on && c.state === 'unavailable') { text = c.error || 'Not available'; tone = 'bad'; }
   else if (on && c.audio === 'speech') { text = 'Hearing you'; tone = 'good'; }
   else if (on && c.audio === 'stopped') { text = 'Listening, but no sound is arriving from the microphone'; tone = 'warn'; }
@@ -3093,7 +3176,9 @@ function paintSpotify(state) {
   syncWindows(state);
   paintLyricsInfo(state);
   paintCaptionModels(state.captions_models);
+  if (state.captions_gpu) capGpu = state.captions_gpu;   // the status pill reads it
   paintCaptions(state.captions);
+  paintCaptionGpu(state.captions_gpu);
   syncFontsState(state);
   if (acc.connected && spWaiting) {
     spWaiting = false;

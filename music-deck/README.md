@@ -3,10 +3,11 @@
 A local overlay deck for streaming: now playing, lyrics, the Spotify queue,
 and live captions of what you say. It binds to `127.0.0.1` only, so nobody on
 your network can even see it, and it works fully offline out of the box.
-Three things can reach the internet, all optional and all off unless you ask:
+A few things can reach the internet, all optional and all off unless you ask:
 lyric lookup (a checkbox), connecting your Spotify account (a setup you have
-to go through on purpose), and the one-time download of the Whisper captions
-model (a button). Your voice never leaves the PC - captions are recognized
+to go through on purpose), and two one-time downloads for captions, each a
+button: the Whisper model, and NVIDIA's cuBLAS library if you want Whisper on
+your graphics card. Your voice never leaves the PC - captions are recognized
 right here.
 
 Five windows:
@@ -62,6 +63,41 @@ The live line is read on a single CPU thread, so it never takes more than one
 core at a time; finished lines get two, so they are not held up either.
 Turn off **Show words while I'm still talking** (Listening tab) and each line
 appears once you pause instead, for a fraction of that.
+
+### On the graphics card
+
+With an NVIDIA graphics card, **Run Whisper on: Graphics card** (Listening tab)
+takes almost all of that work off the processor. It needs one library from
+NVIDIA first, cuBLAS - press **Download** under the switch. That fetches
+NVIDIA's own `nvidia-cublas-cu12` 12.9.2.10 package from PyPI (553 MB, checked
+against the hash PyPI publishes for it), keeps just its two DLLs in
+`cache/cuda` (about 770 MB) and deletes the rest. Nothing else is needed - no
+CUDA toolkit, no cuDNN - just a current NVIDIA driver. Your voice still never
+leaves the PC; the graphics card is part of it.
+
+On an RTX 3080 laptop with the card otherwise idle, a Whisper read takes
+about 0.12 s on the graphics card instead of about 1.2 s on two processor
+cores, and costs the processor about a tenth of a core-second instead of two
+and a half. Talking non-stop, captions used 13% of one processor core instead
+of 59%, and the first words showed up in half the time. A game sharing the
+card makes each read slower, and the live line then updates a little less
+often.
+
+Only Whisper moves to the NVIDIA card. The app's windows stay on whichever
+graphics chip Windows gives them - on a laptop usually the built-in one,
+which is the right place for drawing a few overlays.
+
+If the card can't run Whisper (an old driver, a card switched off, no
+memory left), Whisper runs on the processor instead and the Listening tab
+says why; if the card fails mid-stream, captions carry on on the processor
+until the app restarts. Until the download finishes, Whisper runs on the
+processor too. Once Whisper has used the card, the card stays awake until
+the app closes, even if you switch back to Processor. The very first start
+on a card newer than the Whisper engine itself can take a few minutes while
+the card prepares; captions run on the processor meanwhile, and stopping and
+starting listening once it's done moves them onto the card. After that it's
+quick. NVIDIA's license for cuBLAS (kept next to it as
+`License.txt`) applies.
 
 ## Ultra optimized
 

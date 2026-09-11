@@ -2,7 +2,8 @@
 Live captions with Whisper.
 
 Windows' built-in dictation engine is quick but guesses a lot. This runs
-OpenAI's Whisper instead - through faster-whisper, int8 on the CPU - which is
+OpenAI's Whisper instead - through faster-whisper, int8 on the CPU, or on an
+NVIDIA graphics card once NVIDIA's cuBLAS is downloaded (gpu.py) - which is
 far more accurate and still never sends a sound anywhere: the model sits in
 cache/models and everything happens on this machine.
 
@@ -29,6 +30,7 @@ import os
 import queue
 import re
 import sys
+import threading
 import time
 import types
 
@@ -43,6 +45,11 @@ END_SILENCE_S = 0.5            # a pause this long ends the phrase
 MIN_VOICED_S = 0.25            # shorter than this is a cough or a click
 PARTIAL_EVERY_S = 1.0          # how often the live line is re-read
 COMMIT_AFTER_S = 7.0           # long phrases start committing sentences
+# ...but only sentences that end this long before the audio does: Whisper's
+# last few words, and their timings, are its least sure, and a cut there once
+# split "lighthouse" across two lines. Non-stop talk on the graphics card:
+# 2.5% word errors -> 1.0%; processor unchanged at 1.0%; no later lines.
+COMMIT_SETTLE_S = 0.8
 FORCE_AFTER_S = 14.0           # ...and are cut outright if Whisper never closes one
 TAIL_PAD_S = 0.2               # quiet left on the end of a finished phrase
 DEAD_MIC_S = 3.0               # this long of digital silence means a muted mic
@@ -80,6 +87,40 @@ LIVE_PARTIALS = True           # default for re-reading the phrase while it is s
 # many cores on average - a read that took longer pushes the next one out.
 LIVE_BUDGET_CORES = 0.45
 _window = {"full": False}      # set while a stuck read is retried at 30 s
+
+# The graphics card. The first start on a card newer than CTranslate2's build
+# can compile kernels for a while; past this the processor takes over (the
+# compile carries on, and the next start is quick).
+GPU_START_TIMEOUT_S = 90
+# Shared by every session in this process: a start still running, a failure
+# that rules the card out until the app restarts, the model on the card (with
+# the model and library folders it came from) for the next session to reuse,
+# and the models of a card that failed - kept, because freeing them on a
+# broken card can crash.
+_gpu = {"starting": None, "failed": "", "model": None, "parked": [],
+        "gen": 0}                # bumps whenever the card's copy should go
+
+
+class GpuStillStarting(RuntimeError):
+    """The card is taking longer than GPU_START_TIMEOUT_S to get ready."""
+
+
+def gpu_failure():
+    """Why the card is ruled out until the app restarts; "" when it is not."""
+    return _gpu["failed"]
+
+
+def _gpu_reason(exc):
+    """What went wrong on the graphics card, in a few words."""
+    text = " ".join(str(exc).split())
+    low = text.lower()
+    if "insufficient" in low and "driver" in low:
+        return "the NVIDIA driver is too old - update it"
+    if "out of memory" in low:
+        return "the card is out of memory"
+    if "cublas" in low and any(w in low for w in ("missing", "not found", "load")):
+        return "NVIDIA's library would not load - remove it and download it again"
+    return text[:160] or type(exc).__name__
 
 
 def _looks_stuck(segs, dur):
@@ -206,8 +247,14 @@ class WhisperListener:
     """One listening session: load, open the microphone, caption until told
     to stop. `emit` receives the same messages captions.ps1 prints."""
 
-    def __init__(self, model_dir, emit, mic="", words="", threads=0, label="Whisper", live=None):
+    def __init__(self, model_dir, emit, mic="", words="", threads=0, label="Whisper", live=None,
+                 cuda_dir=None):
         self.model_dir = model_dir
+        # NVIDIA's cuBLAS, when Whisper should run on the graphics card. If the
+        # card will not take it, the processor does, and `note` says why.
+        self.cuda_dir = cuda_dir
+        self.device = "cpu"
+        self.note = ""
         self.emit = emit
         self.mic = mic or ""
         # Names and words it should expect - usernames, games, slang. Whisper
@@ -233,23 +280,142 @@ class WhisperListener:
 
     # ------------------------------------------------------------- setup
 
-    def load(self):
+    def load(self, stop=None):
         import numpy as np
         WhisperModel, get_vad_model = load_whisper()
         self.np = np
+        self._WhisperModel = WhisperModel
+        self.vad = StreamingVAD(get_vad_model)
+        if not self.cuda_dir:
+            # On the processor now: let the card's copy go - and any start
+            # still running must not put one back.
+            _gpu["gen"] += 1
+            _gpu["model"] = None
+        else:
+            if _gpu["failed"]:
+                self.note = (f"The graphics card stopped working for Whisper earlier ({_gpu['failed']}), "
+                             "so it runs on the processor. Restart the app to use the graphics card again.")
+            else:
+                try:
+                    # One model for everything: on the card a read takes a
+                    # tenth of the time, so live and finished lines never wait
+                    # on each other. While the card reads, one processor core
+                    # feeds it - what a read costs, and what the budget counts.
+                    self.model = self.live_model = self._start_gpu(stop)
+                    self.cores = 1
+                    self.device = "cuda"
+                    return
+                except GpuStillStarting:
+                    self.note = ("The graphics card is still getting ready for Whisper (the first "
+                                 "time can take a few minutes), so it runs on the processor for now. "
+                                 "Stop and start listening in a minute or two to use the card.")
+                except Exception as exc:
+                    # An old driver, a card switched off or out of memory, a
+                    # library that will not load: the processor still works,
+                    # and the deck says why.
+                    self.note = (f"The graphics card could not run Whisper ({_gpu_reason(exc)}), "
+                                 "so it runs on the processor.")
+            if stop is not None and stop.is_set():
+                return
+        self._load_cpu()
+
+    def _start_gpu(self, stop):
+        """The model on the NVIDIA card, built and warmed up on a helper
+        thread, so a start that hangs - a card newer than CTranslate2's build
+        compiling its kernels the first time, a driver that never answers -
+        cannot hold captions up: past GPU_START_TIMEOUT_S the processor takes
+        over, and Stop is never kept waiting.
+
+        The model is kept for later sessions of this process. Every new one
+        costs the card memory CUDA never gives back - 8 MB a restart, measured
+        over 40 - and a session restarts on every retry and microphone
+        change; reused, a restart is also instant. A start that ran past the
+        limit still leaves its model here for the next one."""
+        key = (self.model_dir, self.cuda_dir)
+        deadline = time.monotonic() + GPU_START_TIMEOUT_S
+
+        def wait(th):
+            while th.is_alive() and time.monotonic() < deadline and not (stop is not None and stop.is_set()):
+                th.join(0.25)
+            if th.is_alive():
+                if stop is not None and stop.is_set():
+                    raise RuntimeError("stopped while starting")
+                raise GpuStillStarting()
+
+        # Captions restarted while an earlier session was still starting on
+        # the card: wait for that start, then use what it built.
+        earlier = _gpu["starting"]
+        if earlier is not None and earlier.is_alive():
+            wait(earlier)
+        if _gpu["model"] and _gpu["model"][0] == key:
+            return _gpu["model"][1]
+        if stop is not None and stop.is_set():
+            raise RuntimeError("stopped while starting")
+        _gpu["model"] = None             # another model's copy: let it go before building this one
+        box = {}
+        gen = _gpu["gen"]
+
+        def build():
+            try:
+                box["model"] = model = self._build_gpu()
+                # Offered for reuse only if nothing since has said to let the
+                # card go (a session on the processor, or the card failing).
+                if _gpu["failed"]:
+                    _gpu["parked"].append(model)
+                elif _gpu["gen"] == gen:
+                    _gpu["model"] = (key, model)
+            except BaseException as exc:
+                box["error"] = exc
+
+        th = threading.Thread(target=build, name="whisper-gpu-start", daemon=True)
+        _gpu["starting"] = th
+        th.start()
+        wait(th)
+        if "error" in box:
+            raise box["error"]
+        return box["model"]
+
+    def _build_gpu(self):
+        import ctranslate2
+        import gpu
+        gpu.prepare(self.cuda_dir)
+        if ctranslate2.get_cuda_device_count() < 1:
+            raise RuntimeError("no NVIDIA card is available - it may be switched off")
+        have = ctranslate2.get_supported_compute_types("cuda")
+        kind = next((k for k in ("float16", "int8_float16", "float32") if k in have), "float32")
+        # Which card: CUDA numbers NVIDIA cards only, fastest first, so card 0
+        # is the NVIDIA one even on a laptop where Windows lists the
+        # integrated graphics first. The windows keep to whichever GPU Windows
+        # gives them; only this goes to the NVIDIA card.
+        model = self._WhisperModel(self.model_dir, device="cuda", device_index=0,
+                                   compute_type=kind, cpu_threads=1, num_workers=1)
+        # The first reads load cuBLAS and set the card up: a card that cannot
+        # run Whisper fails here, not on the first thing someone says.
+        quiet = self.np.zeros(RATE, dtype=self.np.float32)
+        for beam in (1, FINAL_BEAM):
+            segments, _info = model.transcribe(quiet, language="en", beam_size=beam, best_of=1,
+                                               temperature=0.0, vad_filter=False,
+                                               condition_on_previous_text=False,
+                                               without_timestamps=True)
+            list(segments)
+        return model
+
+    def _load_cpu(self):
+        self.device = "cpu"
+        WhisperModel = self._WhisperModel
         self.model = WhisperModel(self.model_dir, device="cpu", compute_type="int8",
                                   cpu_threads=self.threads, num_workers=1)
         self.live_model = self.model
         if self.live_threads:
             self.live_model = WhisperModel(self.model_dir, device="cpu", compute_type="int8",
                                            cpu_threads=self.live_threads, num_workers=1)
-        self._use = self.model
-        self.vad = StreamingVAD(get_vad_model)
+        self.cores = self.live_threads or self.threads
         # The first decode pays for setting everything up. Pay it now, not
         # on the first thing someone says.
-        self._decode(np.zeros(RATE, dtype=np.float32), final=False)
+        quiet = self.np.zeros(RATE, dtype=self.np.float32)
+        self._decode(quiet, final=False)
         if self.live_model is not self.model:
-            self._decode(np.zeros(RATE, dtype=np.float32), final=True)
+            self._decode(quiet, final=True)
 
     def open_source(self, q):
         """Start the microphone feeding 16 kHz mono float blocks into q."""
@@ -269,7 +435,7 @@ class WhisperListener:
     def run(self, stop):
         """Caption until stop is set. False means it could not start at all."""
         try:
-            self.load()
+            self.load(stop)
         except Exception as exc:
             self.emit({"ok": False, "error": f"Whisper could not load: {exc}"})
             return False
@@ -280,7 +446,9 @@ class WhisperListener:
             except Exception as exc:
                 self.emit({"ok": False, "error": f"Could not open the microphone: {exc}"})
                 return False
-            self.emit({"ok": True, "ready": True, "recognizer": self.label})
+            where = "graphics card" if self.device == "cuda" else "processor"
+            self.emit({"ok": True, "ready": True, "recognizer": f"{self.label} on the {where}",
+                       "device": self.device, "note": self.note})
             self.emit({"t": "audio", "state": "silence"})
             try:
                 lost = self._loop(q, stop)
@@ -399,16 +567,18 @@ class WhisperListener:
         dur = audio.size / RATE
         long = dur >= COMMIT_AFTER_S
         # Word timings are only needed to find where to cut a long phrase.
-        started = time.monotonic()
+        started, device = time.monotonic(), self.device
         segs = self._decode(audio, final=False, words=long)
         spent = time.monotonic() - started
         # Keep live words inside their CPU budget: the next re-read waits
-        # until this one's cost, spread over the wait, fits it.
-        self._partial_every = max(PARTIAL_EVERY_S, spent * (self.live_threads or self.threads) / LIVE_BUDGET_CORES)
+        # until this one's cost, spread over the wait, fits it. Not when the
+        # read moved the session off the card - it timed a model load.
+        if self.device == device:
+            self._partial_every = max(PARTIAL_EVERY_S, spent * self.cores / LIVE_BUDGET_CORES)
         if long:
             words = [w for s in segs for w in (s.words or [])]
             ends = [i for i, w in enumerate(words[:-1])
-                    if w.word.strip().endswith((".", "!", "?"))]
+                    if w.word.strip().endswith((".", "!", "?")) and w.end <= dur - COMMIT_SETTLE_S]
             if ends:
                 # Long and still going: every sentence Whisper has closed
                 # except the one in progress is as good as final. Commit them,
@@ -429,13 +599,38 @@ class WhisperListener:
 
     # ------------------------------------------------------------- decoding
 
-    def _read(self, audio, opts, full_window=False):
-        _window["full"] = full_window
-        try:
-            segments, _info = self._use.transcribe(audio, **opts)
-            return list(segments)
-        finally:
-            _window["full"] = False
+    def _read(self, audio, opts, final, full_window=False):
+        """One Whisper read: finished lines and the full-window retry on the
+        main model, live re-reads on the live one. If the graphics card fails
+        mid-session - a driver reset during a game, the card out of memory -
+        the session moves to the processor and reads the same audio there."""
+        while True:
+            model = self.model if final or full_window else self.live_model
+            _window["full"] = full_window
+            try:
+                segments, _info = model.transcribe(audio, **opts)
+                return list(segments)
+            except Exception as exc:
+                if self.device != "cuda":
+                    raise
+                self._leave_gpu(exc)
+            finally:
+                _window["full"] = False
+
+    def _leave_gpu(self, exc):
+        reason = _gpu_reason(exc)
+        # A CUDA failure can leave the card unusable for the rest of this
+        # process, so it is not tried again until the app restarts, and its
+        # model is kept, never freed: freeing it on a broken card can crash.
+        _gpu["failed"] = reason
+        _gpu["parked"].append(self.model)
+        _gpu["gen"] += 1
+        _gpu["model"] = None
+        self.note = (f"The graphics card stopped working for Whisper ({reason}), so it runs on the "
+                     "processor. Restart the app to use the graphics card again.")
+        self._load_cpu()
+        self._partial_every = PARTIAL_EVERY_S
+        self.emit({"t": "device", "device": self.device, "note": self.note})
 
     def _decode(self, audio, final, words=False):
         dur = audio.size / RATE
@@ -453,15 +648,13 @@ class WhisperListener:
             opts.update(beam_size=FINAL_BEAM, best_of=1, temperature=[0.0, 0.2, 0.4])
         else:
             opts.update(beam_size=1, best_of=1, temperature=0.0)
-        self._use = self.model if final else self.live_model
-        segments = self._read(audio, opts)
+        segments = self._read(audio, opts, final)
         if SHORT_WINDOW and _looks_stuck(segments, dur):
             # Read that phrase again the standard way, over a full window. That
-            # read is the heavy one, so it gets every thread even when a live
-            # re-read started it: on one thread it held up the next finished
-            # line by several seconds.
-            self._use = self.model
-            segments = self._read(audio, opts, full_window=True)
+            # read is the heavy one, so _read gives it the main model even when
+            # a live re-read started it: on one thread it held up the next
+            # finished line by several seconds.
+            segments = self._read(audio, opts, final, full_window=True)
         keep = []
         for s in segments:
             text = s.text.strip()

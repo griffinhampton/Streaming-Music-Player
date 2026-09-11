@@ -34,8 +34,9 @@ import tags
 import winwin
 from smtc import MediaBridge
 from captions import CaptionBridge
-from captions_whisper import list_microphones
+from captions_whisper import gpu_failure, list_microphones
 import fonts
+import gpu
 import models
 
 import paths
@@ -176,6 +177,7 @@ DEFAULT_CONFIG = {
         "mic": "",                   # "" = the Windows default microphone
         "words": "",                 # names and terms to expect, comma separated
         "live_words": True,          # words while you still talk (about 3x the CPU of off)
+        "device": "cpu",             # cpu | gpu: Whisper on an NVIDIA card, once its library is downloaded
         "font": "",                  # "" = the Now Playing font
         "width": 900, "height": 200, "x": 120, "y": 780,
         "borderless": True,
@@ -629,6 +631,7 @@ LIBRARY = Library()
 BRIDGE = MediaBridge()
 CAPTIONS = CaptionBridge()
 MODEL_STORE = models.ModelStore(os.path.join(CACHE, "models"))
+GPU_STORE = gpu.GpuStore(os.path.join(CACHE, "cuda"))
 FONT_STORE = fonts.FontStore(os.path.join(CACHE, "fonts"))
 
 
@@ -644,19 +647,26 @@ def bridge_interval():
 
 def captions_settings():
     """What the caption engine needs from the config, resolved: which engine,
-    the model folder if it is on disk, the microphone, the expected words.
+    the model folder if it is on disk, the microphone, the expected words,
+    and NVIDIA's library when Whisper should run on the graphics card and it
+    has been downloaded (until then Whisper keeps to the processor).
     Ultra optimized keeps to finished lines, which reads each phrase once."""
     c = CONFIG.get("captions", {})
     engine = c.get("engine") if c.get("engine") in ("whisper", "windows") else "whisper"
     name = c.get("model") if c.get("model") in models.MODELS else models.DEFAULT
+    cuda = (GPU_STORE.path() if engine == "whisper" and c.get("device") == "gpu"
+            and GPU_STORE.gpu and GPU_STORE.driver_ok else None)
     return {"engine": engine, "model": name, "model_dir": MODEL_STORE.path(name),
             "mic": c.get("mic") or "", "words": c.get("words") or "",
             "live": c.get("live_words", True) is not False and not ultra_on(),
+            "cuda_dir": cuda,
             "label": f"Whisper {name}" if engine == "whisper" else "Windows speech"}
 
 
-# A model arriving (or going) changes what a running session can use.
+# A model or NVIDIA's library arriving (or going) changes what a running
+# session can use.
 MODEL_STORE.on_change = lambda _name: CAPTIONS.configure(captions_settings())
+GPU_STORE.on_change = lambda: CAPTIONS.configure(captions_settings())
 
 
 # ================================================================= assets
@@ -1040,6 +1050,7 @@ class Hub:
             # deck's status line. A cached read; the helper does the listening.
             "captions": CAPTIONS.get(),
             "captions_models": MODEL_STORE.status(),
+            "captions_gpu": dict(GPU_STORE.status(), failed=gpu_failure()),
             # Fonts people added: the families for the pickers, and a version
             # every page watches to reload /fonts.css when the set changes.
             "fonts": FONT_STORE.families(),
@@ -1325,6 +1336,11 @@ class QuietServer(ThreadingHTTPServer):
     """A browser closing mid-request is normal here, not something to print."""
 
     daemon_threads = True
+    # On Windows, address reuse lets a second copy bind the port the first is
+    # already serving, so both would run (two media bridges, two microphones
+    # listening). Without it the second bind fails and that copy just opens
+    # the deck; a quick restart still binds fine.
+    allow_reuse_address = False
 
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
@@ -1850,6 +1866,17 @@ class Handler(BaseHTTPRequestHandler):
             HUB.broadcast()
             return self._json(dict(res, models=MODEL_STORE.status()))
 
+        if path in ("/api/captions/gpu/download", "/api/captions/gpu/cancel",
+                    "/api/captions/gpu/remove"):
+            # NVIDIA's cuBLAS, for Whisper on the graphics card: only ever on a
+            # press in the deck, like the model.
+            what = path.rsplit("/", 1)[1]
+            res = (GPU_STORE.download() if what == "download" else
+                   GPU_STORE.cancel() if what == "cancel" else
+                   GPU_STORE.remove())
+            HUB.broadcast()
+            return self._json(dict(res, gpu=GPU_STORE.status()))
+
         if path in ("/api/fonts/upload", "/api/fonts/delete"):
             res = (FONT_STORE.save(data.get("name", "font.ttf"), data.get("data", ""))
                    if path.endswith("upload") else
@@ -1931,6 +1958,9 @@ def main():
     httpd.daemon_threads = True
 
     BRIDGE.set_interval(bridge_interval())
+    # Only now, with the port ours: a second copy started by mistake exits
+    # above and must leave this one's graphics-card files alone.
+    GPU_STORE.cleanup()
     BRIDGE.start()
     SPOTIFY.start()
 

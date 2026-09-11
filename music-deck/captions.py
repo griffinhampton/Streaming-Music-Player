@@ -1,8 +1,9 @@
 """
 The live-captions bridge: one state, two engines.
 
-  whisper  OpenAI's Whisper on the CPU (captions_whisper.py) - accurate, the
-           default once its model is downloaded.
+  whisper  OpenAI's Whisper on the CPU or an NVIDIA graphics card
+           (captions_whisper.py) - accurate, the default once its model is
+           downloaded.
   windows  Windows' own dictation engine in a PowerShell helper
            (captions.ps1) - nothing to download, but it guesses a lot.
 
@@ -46,6 +47,8 @@ class CaptionBridge:
         self._lines = collections.deque(maxlen=self.KEEP)
         self._version = 0                 # bumps on every visible change
         self._recognizer = ""
+        self._device = ""                 # where Whisper actually runs: cpu | cuda
+        self._note = ""                   # ...and why, when that is not what was asked
 
     # ------------------------------------------------------------- lifecycle
 
@@ -79,6 +82,7 @@ class CaptionBridge:
             self._error = ""
             self._partial = ""
             self._audio = ""
+            self._device = self._note = ""
             self._version += 1
             engine = self._settings.get("engine")
         target = self._supervise_whisper if engine == "whisper" else self._supervise_windows
@@ -90,6 +94,7 @@ class CaptionBridge:
             self._available = None
             self._partial = ""
             self._audio = ""
+            self._device = self._note = ""
             self._level = 0.0
             self._version += 1
             proc, self._proc = self._proc, None
@@ -129,12 +134,15 @@ class CaptionBridge:
             def emit(msg, gen=gen):
                 if self._current(gen):
                     self._apply(msg)
+            listener = None
+            began = time.monotonic()
             try:
                 from captions_whisper import WhisperListener
                 listener = WhisperListener(s["model_dir"], emit, mic=s.get("mic", ""),
                                            words=s.get("words", ""),
                                            label=s.get("label", "Whisper"),
-                                           live=s.get("live", True))
+                                           live=s.get("live", True),
+                                           cuda_dir=s.get("cuda_dir"))
                 with self._lock:
                     if self._gen == gen:
                         self._listener = listener
@@ -144,6 +152,8 @@ class CaptionBridge:
                 ok = False
             if not self._current(gen):
                 return
+            if time.monotonic() - began > 30:
+                backoff = 5         # it did run for a while: a later failure starts the wait afresh
             time.sleep(2 if ok else backoff)
             if not ok:
                 backoff = min(backoff * 2, 60)
@@ -229,10 +239,17 @@ class CaptionBridge:
                 self._available = True
                 self._error = ""
                 self._recognizer = msg.get("recognizer") or ""
+                self._device = msg.get("device") or ""
+                self._note = msg.get("note") or ""
                 self._version += 1
                 return False
             t = msg.get("t")
-            if t == "level":
+            if t == "device":
+                # Whisper moved to the processor mid-session: the card failed.
+                self._device = msg.get("device") or ""
+                self._note = msg.get("note") or ""
+                self._version += 1
+            elif t == "level":
                 # The meter moves constantly; it is not a visible change of
                 # the captions themselves, so it leaves the version alone.
                 self._level = float(msg.get("value") or 0)
@@ -274,6 +291,8 @@ class CaptionBridge:
                 "level": self._level,
                 "error": self._error,
                 "recognizer": self._recognizer,
+                "device": self._device,
+                "note": self._note,
                 "partial": self._partial,
                 "lines": list(self._lines),
                 "version": self._version,
