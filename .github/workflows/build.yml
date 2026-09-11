@@ -52,6 +52,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Syntax error in $($_.Name)" }
           }
 
+      - name: Unit tests
+        # Scenes, assets, the component registry, feeds and voice - pure
+        # Python, no server, no microphone.
+        run: python -m unittest discover -s music-deck/tests -v
+
       - name: Build
         working-directory: music-deck
         # --onedir, not --onefile: a self-extracting executable behaves like a

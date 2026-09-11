@@ -25,7 +25,7 @@ every later prompt reads it first.
 |---|------|-------|--------|
 | P0 | Groundwork: capture, permissions, limits, encoders measured; decisions written | Fable | [x] 2026-09-11 |
 | P1 | Streaming engine spike: capture -> encode -> RTMP, measured, go/no-go | Fable | [x] 2026-09-11 |
-| P2 | Server architecture: registry, feeds + WebSocket, scene store, assets, outputs, capture sources, voice, key vault | Fable | [ ] |
+| P2 | Server architecture: registry, feeds + WebSocket, scene store, assets, outputs, capture sources, voice, key vault | Fable | [x] 2026-09-11 |
 | P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [ ] |
 | P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [ ] |
 | P5 | Optimization and hardening of the backend | Fable | [ ] |
@@ -192,9 +192,10 @@ modules (components.py, feeds.py, scenes.py, assets.py, capture.py, voice.py, li
 ## P3 - Scene runtime (Fable)
 
 ```text
-Canvas Builder step P3. Run with Fable. Read the plan and DECISIONS.md. Goal: web/scene.html?id=<scene> renders any
-scene exactly and cheaply, as an output window and as the thing that goes LIVE. Scenes are authored as JSON
-templates for now (no editor yet).
+Canvas Builder step P3. Run with Fable. Read the plan and DECISIONS.md (P2 lists the modules and routes you build
+on: scenes.py schema and /api/scenes, /ws/events for the feed, components.py for outputs, capture.py sources,
+voice.py). Goal: web/scene.html?id=<scene> (a placeholder today) renders any scene exactly and cheaply, as an
+output window and as the thing that goes LIVE. Scenes are authored as JSON templates for now (no editor yet).
 
 - Renderer engine: a layer-type registry (create(el, props) / update(props) / destroy), the scene laid out at
   native resolution and scaled with one transform, only changed layers re-rendered when the revision changes.

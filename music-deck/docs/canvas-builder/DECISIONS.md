@@ -287,6 +287,62 @@ vault are ready; it needs the key pasted once). `tools/p1/` keeps
 for a soak), `rtmptest.py`, `nativetest.py`, `mfprobe.py`, `mfdbg.py`,
 `memcap.py`.
 
+## P2 - the server architecture (2026-09-11)
+
+The backend every later step stands on, as modules next to `server.py`:
+
+- `components.py` - the registry. A component is an id, label, page,
+  config section, default size, group and capabilities; the four old route
+  names are aliases. Scene outputs register as dynamic components
+  (`scene:<id>`, settings under `canvas.outputs`) and follow the store as
+  scenes are created, renamed and deleted. Also the camera/microphone
+  self-grant (P0's method), run for both Chrome profiles at start and again
+  before the first pop-out opens.
+- `feeds.py` - who holds a state feed, by page group, with a log line the
+  moment the shared pop-out profile reaches Chrome's six; and `/ws/events`,
+  the same snapshots over a WebSocket (its own pool) for the pages after the
+  four.
+- `scenes.py` - the versioned scene schema (format, background,
+  transparency mode, layers with transform/style/props/triggers, guides),
+  validation that clamps and keeps unknown fields, migration, and a store
+  with atomic writes, five rolling backups, revisions with 409 conflicts,
+  restore and duplicate.
+- `assets.py` - the library, moved out of `server.py` and extended: webm/mp4,
+  kinds, dedupe by content hash, browser-made thumbnails, usage counts and a
+  refusal to delete what a scene or window still shows.
+- `voice.py` - `{level, speaking}` from the caption engine while it listens,
+  else a microphone monitor of our own that runs only behind renewed leases.
+- `capture.py` - plus `list_windows`, `list_monitors` and one-shot
+  thumbnails (a single WGC frame read back, then closed).
+- `overlay.py` - the host is sized first and Chrome resized after adoption
+  (a 1080x1920 output measured 1427 tall as a plain window; it now opens at
+  1920), and `park`/`unpark`. `hostwin.py` re-aligns after every move.
+
+Routes: `/api/components` (+ `/<id>/status`, `/<id>/<action>` with the old
+names kept, `park` and `unpark` added), `/api/scenes` (list, create;
+`/<id>` read and save with `expect_rev`; `delete`, `duplicate`, `restore`,
+`backups`), `/api/assets?kind=` (upload with `thumb`, delete checked for
+use), `/api/capture/sources`, `/api/capture/thumb`, `/api/voice` (+
+`hold`, `release`), `/api/feeds`, `/ws/events`. The snapshot carries
+`components`, `scenes`, `voice`, `feeds`, and `windows` for every component.
+
+Verified: 14 unit tests (now run in CI) and 36 rig checks
+(`tools/p2/p2rig.py`) - the four windows through the registry and an old
+alias, `windiag2` clean, a phone output opened at 1080x1920, aligned and
+captured whole by WGC, still captured while parked, save/conflict/backup/
+restore/duplicate, upload with thumbnail and the refusal while used, ten
+windows and one monitor listed with PNG thumbnails, the voice lease
+lifecycle, the WebSocket feed's handshake and first snapshot, feed
+accounting. Two bugs found and fixed on the way: a re-entrant lock in the
+feed accounting, and a pixel of misalignment right after a window was
+moved from off screen.
+
+Notes: the deck's own UI still names the four (P6 makes it read the
+registry); `scene.html` is a placeholder until P3; the WebSocket feed sends
+whole snapshots like SSE does (deltas are P5's); the rig's Python has no
+`sounddevice`, so the live microphone monitor is exercised by the built app
+only (its error is reported in the voice status).
+
 ## Tools kept for later steps (`music-deck/tools/p0/`)
 
 - `wgc.py` - Windows Graphics Capture of a window or monitor, PNG + fps + CPU.

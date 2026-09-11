@@ -449,6 +449,11 @@ class HostWindow:
             return False
         user32.SetWindowPos(wintypes.HWND(self.hwnd), None, int(x), int(y), 0, 0,
                             SWP_NOSIZE | SWP_NOACTIVATE)
+        # A move sends no WM_SIZE, yet Chrome can shift a pixel when the
+        # window lands on a screen with another scale - so check soon,
+        # rather than leave it to the watchdog's next round.
+        if self.child:
+            self.schedule_align(0.25)
         return True
 
     def set_topmost(self, on=True):

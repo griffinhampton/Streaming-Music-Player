@@ -113,8 +113,8 @@ class D3D:
         check(d3d11.CreateDirect3D11DeviceFromDXGIDevice(dxgi, byref(self.winrt)), "WinRT device")
         release(dxgi)
 
-    def texture(self, width, height, bind=0x8 | 0x20):
-        desc = TEX2D_DESC(width, height, 1, 1, DXGI_FORMAT_B8G8R8A8_UNORM, 1, 0, 0, bind, 0, 0)
+    def texture(self, width, height, bind=0x8 | 0x20, usage=0, cpu=0):
+        desc = TEX2D_DESC(width, height, 1, 1, DXGI_FORMAT_B8G8R8A8_UNORM, 1, 0, usage, bind, cpu, 0)
         tex = c_void_p()
         check(vcall(self.device, 5, c_int32, [POINTER(TEX2D_DESC), c_void_p, POINTER(c_void_p)],
                     byref(desc), None, byref(tex)), "CreateTexture2D")
@@ -122,6 +122,26 @@ class D3D:
 
     def copy(self, dst, src):
         vcall(self.context, 47, None, [c_void_p, c_void_p], dst, src)     # CopyResource
+
+    def read_pixels(self, tex, width, height):
+        """One trip to the CPU: the texture's BGRA rows and their pitch.
+        For thumbnails only - the stream never comes this way."""
+        stage = self.texture(width, height, bind=0, usage=3, cpu=0x20000)     # staging, CPU read
+        try:
+            self.copy(stage, tex)
+            m = MAPPED()
+            check(vcall(self.context, 14, c_int32, [c_void_p, c_uint, c_int32, c_uint, POINTER(MAPPED)],
+                        stage, 0, 1, 0, byref(m)), "Map")
+            try:
+                return ctypes.string_at(m.pData, m.RowPitch * height), m.RowPitch
+            finally:
+                vcall(self.context, 15, None, [c_void_p, c_uint], stage, 0)
+        finally:
+            release(stage)
+
+
+class MAPPED(ctypes.Structure):
+    _fields_ = [("pData", c_void_p), ("RowPitch", c_uint), ("DepthPitch", c_uint)]
 
 
 def find_window(title_part):
@@ -244,3 +264,132 @@ class WindowCapture:
             self.texture = None
         release(self.item)
         self.item = None
+
+
+# ------------------------------------------------------------------ what can be captured
+
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x80
+DWMWA_CLOAKED = 14
+_shared = {"d3d": None}
+
+
+def _process_name(hwnd):
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, byref(pid))
+    kernel32 = ctypes.windll.kernel32
+    h = kernel32.OpenProcess(0x1000, False, pid.value)
+    if not h:
+        return pid.value, ""
+    try:
+        buf = ctypes.create_unicode_buffer(520)
+        n = wintypes.DWORD(520)
+        kernel32.QueryFullProcessImageNameW(h, 0, buf, byref(n))
+        return pid.value, buf.value.replace("\\", "/").rsplit("/", 1)[-1]
+    finally:
+        kernel32.CloseHandle(h)
+
+
+def list_windows():
+    """Visible, titled top-level windows: what a picker offers. Our own
+    windows are included and marked, so a scene can be a source too."""
+    out = []
+    dwm = ctypes.windll.dwmapi
+    ENUM = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def cb(h, _):
+        if not user32.IsWindowVisible(h) or user32.IsIconic(h):
+            return True
+        t = ctypes.create_unicode_buffer(256)
+        user32.GetWindowTextW(h, t, 256)
+        title = t.value.strip()
+        if not title:
+            return True
+        if user32.GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
+            return True
+        cloaked = c_uint(0)
+        dwm.DwmGetWindowAttribute(h, DWMWA_CLOAKED, byref(cloaked), 4)
+        if cloaked.value:
+            return True                  # another virtual desktop, or hidden by the shell
+        r = wintypes.RECT()
+        user32.GetWindowRect(h, byref(r))
+        w, hh = r.right - r.left, r.bottom - r.top
+        if w < 50 or hh < 50:
+            return True
+        pid, exe = _process_name(h)
+        out.append({"hwnd": int(h), "title": title, "process": exe, "pid": pid,
+                    "x": r.left, "y": r.top, "w": w, "h": hh,
+                    "ours": title.startswith("Awesome Streaming Deck")})
+        return True
+
+    user32.EnumWindows(ENUM(cb), 0)
+    return out
+
+
+class MONITORINFOEXW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD), ("szDevice", ctypes.c_wchar * 32)]
+
+
+def list_monitors():
+    out = []
+    PROC = ctypes.WINFUNCTYPE(wintypes.BOOL, c_void_p, c_void_p, POINTER(wintypes.RECT), wintypes.LPARAM)
+
+    def cb(hmon, _dc, _r, _l):
+        info = MONITORINFOEXW()
+        info.cbSize = ctypes.sizeof(MONITORINFOEXW)
+        user32.GetMonitorInfoW(hmon, byref(info))
+        r = info.rcMonitor
+        out.append({"index": len(out), "hmon": int(hmon), "name": info.szDevice.lstrip("\\\\.\\"),
+                    "x": r.left, "y": r.top, "w": r.right - r.left, "h": r.bottom - r.top,
+                    "primary": bool(info.dwFlags & 1)})
+        return True
+
+    user32.EnumDisplayMonitors(None, None, PROC(cb), 0)
+    return out
+
+
+def list_sources():
+    return {"windows": list_windows(), "monitors": list_monitors()}
+
+
+def _png(width, height, rows):
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+    raw = b"".join(b"\x00" + r for r in rows)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+def thumbnail(hwnd=None, monitor=None, max_w=320, timeout=1.5):
+    """One frame of a window or monitor as a small PNG: (bytes, w, h).
+    Opens a capture, takes the first frame, closes it - nothing keeps running."""
+    import time
+    if _shared["d3d"] is None:
+        _shared["d3d"] = D3D()
+    d3d = _shared["d3d"]
+    cap = WindowCapture(d3d, hwnd=hwnd, monitor=monitor, buffers=1)
+    try:
+        cap.start()
+        deadline = time.monotonic() + timeout
+        while not cap.poll():
+            if time.monotonic() > deadline:
+                raise OSError("no frame arrived")
+            time.sleep(0.01)
+        w, h = cap.texture_size
+        data, pitch = d3d.read_pixels(cap.texture, w, h)
+    finally:
+        cap.close()
+    step = max(1, -(-w // max_w))
+    rows = []
+    for y in range(0, h, step):
+        px = memoryview(data)[y * pitch:y * pitch + w * 4].cast("I")[::step]
+        row = bytearray(px.tobytes())
+        row[0::4], row[2::4] = row[2::4], row[0::4]       # BGRA -> RGBA
+        row[3::4] = b"\xff" * (len(row) // 4)
+        rows.append(bytes(row))
+    ow = len(rows[0]) // 4 if rows else 0
+    return _png(ow, len(rows), rows), ow, len(rows)

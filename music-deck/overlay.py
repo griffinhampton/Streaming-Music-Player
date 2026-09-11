@@ -68,6 +68,10 @@ class Overlay:
         self._lock = threading.Lock()
         self._watchdog = None
         self._rebuild_hint = None   # (url, cfg) so the watchdog can start over
+        # Parked: moved off every screen while it keeps rendering - a capture
+        # still sees it, the desktop does not.
+        self.parked = False
+        self._parked_from = None
 
     # ------------------------------------------------------------- reporting
 
@@ -104,16 +108,17 @@ class Overlay:
             minimized = self.host.minimized()
             vp = viewport_rect(self.host.child) if self.host.child and not minimized else None
             return {"open": True, "hosted": True, "minimized": minimized,
+                    "parked": self.parked,
                     "rect": None if minimized else self.host.rect(),
                     "viewport": [self.metrics.get("inner_w"), self.metrics.get("inner_h")],
                     "viewport_rect": vp}
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             minimized = winwin.is_minimized(hwnd)
-            return {"open": True, "hosted": False, "minimized": minimized,
+            return {"open": True, "hosted": False, "minimized": minimized, "parked": self.parked,
                     "rect": None if minimized else self._plain_rect(hwnd),
                     "outer": None if minimized else winwin.get_rect(hwnd)}
-        return {"open": False, "hosted": False, "minimized": False, "rect": None}
+        return {"open": False, "hosted": False, "minimized": False, "parked": False, "rect": None}
 
     def _plain_rect(self, hwnd):
         """An un-hosted window as everything else sees windows: its outer
@@ -210,9 +215,16 @@ class Overlay:
             time.sleep(0.45)
             host.learn_frame()
             host.align_child()
+            # Windows clamps a plain window to the screen, so a page taller
+            # than it measured short. As a child of the host it can be any
+            # size - a 1080x1920 phone canvas on a 1440 px screen - so the
+            # host takes the size that was asked for and Chrome follows.
+            if (inner_w, inner_h) != (int(width), int(height)):
+                host.resize_content(int(width), int(height))
             host.schedule_align(0.9)
 
             self.host = host
+            self.parked = False
             host.set_topmost(topmost)
             self._start_watchdog()
             return {"ok": True, "hosted": True}
@@ -438,3 +450,24 @@ class Overlay:
             winwin.move_resize(hwnd, x, y)
             return self._plain_rect(hwnd)
         return None
+
+    PARK_X = -20000
+
+    def park(self):
+        """Move off every screen; rendering and capture carry on."""
+        rect = self.status().get("rect")
+        if not rect:
+            return None
+        if not self.parked:
+            self._parked_from = (rect["x"], rect["y"])
+        self.parked = True
+        return self.move(self.PARK_X, 0)
+
+    def unpark(self, x=None, y=None):
+        """Back to where it was parked from, or to the given spot."""
+        if not self.parked:
+            return self.status().get("rect")
+        fx, fy = self._parked_from or (x or 60, y or 60)
+        self.parked = False
+        return self.move(x if x is not None and not self._parked_from else fx,
+                         y if y is not None and not self._parked_from else fy)

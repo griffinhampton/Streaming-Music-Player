@@ -28,6 +28,12 @@ import urllib.parse
 from urllib.parse import urlparse, parse_qs
 
 import overlay as overlay_mod
+from assets import AssetStore
+import capture
+import components
+import feeds
+import scenes
+import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
 import tags
@@ -54,6 +60,9 @@ DECK_TITLE = "Awesome Streaming Deck"
 DEFAULT_CONFIG = {
     "port": 8713,
     "music_dirs": [],
+    "canvas": {
+        "outputs": {},               # per-scene output window settings, keyed "scene:<id>"
+    },
     "source_mode": "auto",          # auto | local | spotify
     "theme": "",                    # last full theme applied, so the picker can show it
     "volume": 0.7,
@@ -673,189 +682,7 @@ GPU_STORE.on_change = lambda: CAPTIONS.configure(captions_settings())
 
 # ================================================================= assets
 
-class AssetStore:
-    """PNGs and stickers people drop onto the overlay.
-
-    Files are copied into the cache so the overlay keeps working after the
-    original is moved or deleted, and so the whole look travels with the
-    config folder.
-    """
-
-    OK_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-              ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}
-    MAX_BYTES = 12 * 1024 * 1024
-
-    def __init__(self, folder, builtin=None):
-        self.folder = folder
-        self.builtin = builtin           # shipped artwork, read-only
-        os.makedirs(folder, exist_ok=True)
-        self.index_path = os.path.join(folder, "index.json")
-        self._index = self._load_index()
-        self._builtin_animated = {}      # shipped files never change
-
-    def _load_index(self):
-        try:
-            with open(self.index_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-
-    def _save_index(self):
-        try:
-            with open(self.index_path, "w", encoding="utf-8") as f:
-                json.dump(self._index, f, indent=1)
-        except Exception:
-            pass
-
-    @staticmethod
-    def _is_animated(raw, ext):
-        """Does this file hold more than one frame?
-
-        Worth knowing because a tinted sticker is drawn through a CSS mask, and
-        a mask only ever uses the first frame - so tinting silently freezes an
-        animation. Better to say so than to let someone wonder why their GIF
-        stopped moving.
-        """
-        try:
-            if ext == ".gif":
-                # Each frame is introduced by a Graphics Control Extension.
-                # Two is all we need to know about, so stop at the second
-                # rather than counting every frame of a long animation.
-                gce = bytes([0x21, 0xF9, 0x04])
-                first = raw.find(gce)
-                return first >= 0 and raw.find(gce, first + 3) >= 0
-            if ext == ".webp":
-                return b"ANMF" in raw[:4096] or b"ANIM" in raw[:4096]
-            if ext == ".png":
-                return b"acTL" in raw[:4096]          # APNG animation control
-        except Exception:
-            pass
-        return False
-
-    def _sniff_file(self, full):
-        """Read just enough of a file on disk to answer _is_animated."""
-        ext = os.path.splitext(full)[1].lower()
-        if ext not in (".gif", ".webp", ".png"):
-            return False
-        try:
-            with open(full, "rb") as f:
-                # A GIF has to be read through to count its frames; the other
-                # two declare themselves in an early chunk.
-                raw = f.read() if ext == ".gif" else f.read(4096)
-        except OSError:
-            return False
-        return self._is_animated(raw, ext)
-
-    def save(self, name, data_url):
-        """Accept a browser FileReader data: URL and write it to the cache."""
-        try:
-            ext = os.path.splitext(name)[1].lower()
-            if ext not in self.OK_EXT:
-                return {"ok": False, "reason": f"{ext or 'that file type'} is not an image"}
-            if "," not in data_url:
-                return {"ok": False, "reason": "bad upload"}
-
-            import base64
-            raw = base64.b64decode(data_url.split(",", 1)[1], validate=False)
-            if len(raw) > self.MAX_BYTES:
-                return {"ok": False, "reason": "image is larger than 12 MB"}
-            if not raw:
-                return {"ok": False, "reason": "empty file"}
-
-            asset_id = hashlib.sha1(raw).hexdigest()[:16] + ext
-            with open(os.path.join(self.folder, asset_id), "wb") as f:
-                f.write(raw)
-            self._index[asset_id] = {"name": os.path.basename(name),
-                                     "added": round(time.time()),
-                                     "bytes": len(raw),
-                                     "animated": self._is_animated(raw, ext)}
-            self._save_index()
-            return {"ok": True, "id": asset_id, "name": os.path.basename(name),
-                    "url": f"/asset/{asset_id}", "assets": self.list()}
-        except Exception as exc:
-            return {"ok": False, "reason": str(exc)}
-
-    def path(self, asset_id):
-        asset_id = urllib.parse.unquote(asset_id or "")
-        # Shipped artwork is addressed as "builtin:<file>" and never written to.
-        if asset_id.startswith("builtin:"):
-            if not self.builtin:
-                return None
-            name = os.path.basename(asset_id.split(":", 1)[1])
-            full = os.path.join(self.builtin, name)
-            ok = os.path.splitext(name)[1].lower() in self.OK_EXT
-            return full if ok and os.path.isfile(full) else None
-        name = os.path.basename(asset_id)
-        if not name or name == "index.json":
-            return None
-        if os.path.splitext(name)[1].lower() not in self.OK_EXT:
-            return None
-        full = os.path.join(self.folder, name)
-        return full if os.path.isfile(full) else None
-
-    def list(self):
-        """Newest first, with whatever the file was called when it arrived."""
-        out = []
-        dirty = False
-        try:
-            for name in os.listdir(self.folder):
-                if os.path.splitext(name)[1].lower() not in self.OK_EXT:
-                    continue
-                full = os.path.join(self.folder, name)
-                meta = self._index.get(name, {})
-                if "animated" not in meta:
-                    # Added before we started checking, or dropped into the
-                    # folder by hand. Look now and remember the answer.
-                    meta["animated"] = self._sniff_file(full)
-                    self._index[name] = meta
-                    dirty = True
-                out.append({"id": name, "url": f"/asset/{name}",
-                            "name": meta.get("name", name),
-                            "added": meta.get("added", int(os.path.getmtime(full))),
-                            "animated": bool(meta.get("animated")),
-                            "size": os.path.getsize(full)})
-        except Exception:
-            pass
-        if dirty:
-            self._save_index()          # or every restart re-reads every GIF
-        out.sort(key=lambda a: a["added"], reverse=True)
-
-        shipped = []
-        try:
-            for name in sorted(os.listdir(self.builtin or "")):
-                if os.path.splitext(name)[1].lower() not in self.OK_EXT:
-                    continue
-                if name not in self._builtin_animated:
-                    # Shipped files never change, so one look each per run.
-                    self._builtin_animated[name] = self._sniff_file(
-                        os.path.join(self.builtin, name))
-                shipped.append({
-                    "id": "builtin:" + name,
-                    "url": "/asset/builtin:" + urllib.parse.quote(name),
-                    "name": os.path.splitext(name)[0],
-                    "animated": self._builtin_animated[name],
-                    "builtin": True, "added": 0,
-                    "size": os.path.getsize(os.path.join(self.builtin, name)),
-                })
-        except Exception:
-            pass
-        return out + shipped
-
-    def delete(self, asset_id):
-        if (asset_id or "").startswith("builtin:"):
-            return False             # shipped artwork is read-only
-        full = self.path(asset_id)
-        if not full:
-            return False
-        try:
-            os.remove(full)
-            self._index.pop(os.path.basename(asset_id), None)
-            self._save_index()
-            return True
-        except Exception:
-            return False
-
-
+# The library itself lives in assets.py; this is the one instance.
 ASSET_STORE = AssetStore(ASSETS, paths.builtin_dir())
 
 
@@ -1045,8 +872,13 @@ class Hub:
             # of these is a cached, local read - nothing here waits on a network.
             "spotify_queue": SPOTIFY.peek_queue(),
             "spotify_devices": SPOTIFY.peek_devices(),
-            "windows": {"np": OVERLAY.status(), "lyrics": LYRICS_WIN.status(),
-                        "queue": QUEUE_WIN.status(), "captions": CAPTIONS_WIN.status()},
+            "windows": COMPONENTS.statuses(),
+            # The registry itself, the scenes and who is talking, so the deck,
+            # the editor and every output read one model.
+            "components": COMPONENTS.describe_all(),
+            "scenes": SCENES.list(),
+            "voice": VOICE.snapshot(),
+            "feeds": FEEDS.counts(),
             "lyrics_info": self._lyrics_info(now),
             # What the microphone is hearing, for the captions window and the
             # deck's status line. A cached read; the helper does the listening.
@@ -1151,6 +983,7 @@ def _pump():
     """Look for changes a few times a second; send only when there are."""
     while True:
         try:
+            VOICE.tick()
             HUB.broadcast_if_changed()
         except Exception:
             pass
@@ -1189,14 +1022,22 @@ font-family:Segoe UI,system-ui,sans-serif"><div style="text-align:center;max-wid
 
 # ================================================================= windows
 
-OVERLAY = overlay_mod.Overlay(CACHE, "np", "Awesome Streaming Deck - Now Playing",
-                              "Awesome Streaming Deck - Now Playing (source)")
-LYRICS_WIN = overlay_mod.Overlay(CACHE, "lyrics", "Awesome Streaming Deck - Lyrics",
-                                 "Awesome Streaming Deck - Lyrics (source)")
-QUEUE_WIN = overlay_mod.Overlay(CACHE, "queue", "Awesome Streaming Deck - Queue",
-                                "Awesome Streaming Deck - Queue (source)")
-CAPTIONS_WIN = overlay_mod.Overlay(CACHE, "captions", "Awesome Streaming Deck - Captions",
-                                   "Awesome Streaming Deck - Captions (source)")
+# Every window the deck can put on stream is declared in components.py; the
+# four names below are the same objects, kept for the code that grew up
+# with them.
+COMPONENTS = components.builtin(CACHE)
+OVERLAY = COMPONENTS.get("np").overlay
+LYRICS_WIN = COMPONENTS.get("lyrics").overlay
+QUEUE_WIN = COMPONENTS.get("queue").overlay
+CAPTIONS_WIN = COMPONENTS.get("captions").overlay
+_log = lambda msg: print("  " + msg)
+# Scenes get an output component each; the registry follows the store.
+SCENES = scenes.SceneStore(os.path.join(CACHE, "scenes"), log=_log)
+SCENES.on_change = lambda: (COMPONENTS.sync_scenes(SCENES.list()), HUB.broadcast())
+COMPONENTS.sync_scenes(SCENES.list())
+VOICE = voice.Voice(CAPTIONS, mic_name=CONFIG["captions"].get("mic"),
+                    on_change=lambda: HUB.broadcast(), log=_log)
+FEEDS = feeds.Feeds(log=_log)
 LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
@@ -1214,6 +1055,11 @@ def window_action(ov, cfg, page, action, data):
         return {"ok": True}
     if action == "open":
         url = f"http://127.0.0.1:{CONFIG['port']}/{page}"
+        if not COMPONENTS.any_open():
+            # No pop-out Chrome is running, so its profile can be seeded: the
+            # camera and the microphone are allowed for our own pages.
+            components.seed_media_permissions(os.path.join(CACHE, overlay_mod.SHARED_PROFILE),
+                                              CONFIG["port"], _log)
         res = ov.open(url, cfg["width"], cfg["height"], cfg["x"], cfg["y"],
                       borderless=bool(cfg.get("borderless", True)),
                       topmost=bool(cfg.get("topmost", True)))
@@ -1281,6 +1127,13 @@ def window_action(ov, cfg, page, action, data):
             save_config(CONFIG)
             HUB.broadcast()
         return {"ok": bool(rect), "rect": rect}
+    if action == "park":
+        # Off every screen, still rendering: a capture sees it, nobody else.
+        rect = ov.park()
+        return {"ok": bool(rect), "rect": rect, "parked": True}
+    if action == "unpark":
+        rect = ov.unpark(cfg.get("x"), cfg.get("y"))
+        return {"ok": bool(rect), "rect": rect, "parked": False}
     if action == "minimize":
         return {"ok": ov.minimize(), "minimized": True}
     if action == "restore":
@@ -1544,7 +1397,7 @@ class Handler(BaseHTTPRequestHandler):
                               {"Cache-Control": "max-age=86400"})
 
         if path == "/api/assets":
-            return self._json({"assets": ASSET_STORE.list()})
+            return self._json({"assets": ASSET_STORE.list((query.get("kind") or [None])[0])})
 
         if path == "/spotify/callback":
             err = (query.get("error") or [""])[0]
@@ -1679,8 +1532,56 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/ws/live":
             return LIVE.serve_websocket(self)
+        if path == "/ws/events":
+            return feeds.serve_ws_feed(self, HUB, FEEDS)
         if path == "/api/live/status":
             return self._json(dict(LIVE.status(), native=NATIVE.status()))
+        if path == "/api/feeds":
+            return self._json(FEEDS.status())
+
+        if path == "/api/components":
+            return self._json({"components": COMPONENTS.describe_all(),
+                               "windows": COMPONENTS.statuses()})
+        m = re.match(r"^/api/components/([^/]+)/status$", path)
+        if m:
+            comp = COMPONENTS.resolve(urllib.parse.unquote(m.group(1)))
+            if not comp:
+                return self._json({"ok": False, "reason": "no such component"}, 404)
+            return self._json(comp.overlay.status())
+
+        if path == "/api/scenes":
+            return self._json({"scenes": SCENES.list()})
+        m = re.match(r"^/api/scenes/([^/]+)(/backups)?$", path)
+        if m:
+            scene = SCENES.get(m.group(1))
+            if not scene:
+                return self._json({"ok": False, "reason": "no such scene"}, 404)
+            if m.group(2):
+                return self._json({"backups": SCENES.backups(scene["id"])})
+            return self._json(scene)
+
+        if path == "/api/capture/sources":
+            # Only a list; nothing starts capturing until a scene asks.
+            try:
+                return self._json(capture.list_sources())
+            except Exception as exc:
+                return self._json({"windows": [], "monitors": [], "error": str(exc)})
+        if path == "/api/capture/thumb":
+            hwnd = int((query.get("hwnd") or ["0"])[0] or 0)
+            mon = (query.get("monitor") or [""])[0]
+            try:
+                hmon = None
+                if mon != "":
+                    mons = capture.list_monitors()
+                    hmon = mons[int(mon)]["hmon"] if 0 <= int(mon) < len(mons) else None
+                png, _w, _h = capture.thumbnail(hwnd=hwnd or None, monitor=hmon,
+                                                max_w=int((query.get("w") or ["320"])[0]))
+            except Exception as exc:
+                return self._send(404, f"no picture: {exc}", "text/plain")
+            return self._send(200, png, "image/png", {"Cache-Control": "no-store"})
+
+        if path == "/api/voice":
+            return self._json(VOICE.status())
 
         # Last resort: a file we ship in web/. This has to come after every
         # real route, or a route whose path ends in something dot-shaped
@@ -1692,6 +1593,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _sse(self):
         queue_ = HUB.subscribe()
+        token = FEEDS.track("sse", FEEDS.page_of(self))
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -1713,6 +1615,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             HUB.unsubscribe(queue_)
+            FEEDS.release(token)
         self.close_connection = True
 
     # -- POST --------------------------------------------------------------
@@ -1831,12 +1734,46 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/assets/upload":
             res = ASSET_STORE.save(data.get("name", "image.png"),
-                                   data.get("data", ""))
+                                   data.get("data", ""), thumb=data.get("thumb"))
             return self._json(res)
 
         if path == "/api/assets/delete":
-            return self._json({"ok": ASSET_STORE.delete(data.get("id", "")),
-                               "assets": ASSET_STORE.list()})
+            # Refused while a scene or a window still shows it, unless forced.
+            res = ASSET_STORE.remove(data.get("id", ""),
+                                     [SCENES.get(s["id"]) for s in SCENES.list()],
+                                     CONFIG, force=bool(data.get("force")))
+            return self._json(dict(res, assets=ASSET_STORE.list()))
+
+        if path == "/api/scenes":
+            scene = SCENES.create(data.get("name") or "New scene", data.get("format") or "horizontal",
+                                  data.get("width"), data.get("height"))
+            return self._json({"ok": True, "scene": scene})
+        m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore))?$", path)
+        if m:
+            sid, what = m.groups()
+            if not SCENES.get(sid):
+                return self._json({"ok": False, "reason": "no such scene"}, 404)
+            if what == "delete":
+                COMPONENTS.remove(COMPONENTS.scene_id(sid))
+                return self._json({"ok": SCENES.delete(sid)})
+            if what == "duplicate":
+                return self._json({"ok": True, "scene": SCENES.duplicate(sid, data.get("name"))})
+            if what == "restore":
+                scene = SCENES.restore(sid, data.get("n", 1))
+                return self._json({"ok": bool(scene), "scene": scene})
+            body = data.get("scene") if isinstance(data.get("scene"), dict) else data
+            body = dict(body, id=sid)
+            try:
+                scene = SCENES.save(body, expect_rev=data.get("expect_rev"))
+            except scenes.Conflict as exc:
+                return self._json({"ok": False, "reason": str(exc), "conflict": True,
+                                   "scene": SCENES.get(sid)}, 409)
+            return self._json({"ok": True, "scene": scene})
+
+        if path in ("/api/voice/hold", "/api/voice/release"):
+            if path.endswith("hold"):
+                return self._json(VOICE.hold(data.get("token")))
+            return self._json(VOICE.release(data.get("token", "")))
 
         if path == "/api/themes/save":
             name = (data.get("name") or "").strip()
@@ -1913,18 +1850,16 @@ class Handler(BaseHTTPRequestHandler):
             HUB.broadcast()
             return self._json({"ok": True, "captions": CAPTIONS.get()})
 
-        m = re.match(r"^/api/(window|lyrics/window|queue/window|captions/window)/([a-z]+)$", path)
+        # Any component's window, by its id (/api/components/<id>/<action>) or
+        # by the four names the deck has always used.
+        m = re.match(r"^/api/(window|lyrics/window|queue/window|captions/window|components/[^/]+)/([a-z]+)$", path)
         if m:
             which, action = m.groups()
-            if which == "window":
-                target = (OVERLAY, CONFIG["nowplaying"], "nowplaying.html")
-            elif which == "lyrics/window":
-                target = (LYRICS_WIN, CONFIG["lyrics"], "lyrics.html")
-            elif which == "captions/window":
-                target = (CAPTIONS_WIN, CONFIG["captions"], "captions.html")
-            else:
-                target = (QUEUE_WIN, CONFIG["queue"], "queue.html")
-            return self._json(window_action(*target, action, data))
+            key = which[len("components/"):] if which.startswith("components/") else which
+            comp = COMPONENTS.resolve(urllib.parse.unquote(key))
+            if not comp:
+                return self._json({"ok": False, "reason": "no such component"}, 404)
+            return self._json(window_action(comp.overlay, comp.config(CONFIG), comp.page, action, data))
 
         if path == "/api/live/start":
             return self._json(LIVE.start(data.get("url"), data.get("key"),
@@ -1954,10 +1889,8 @@ class Handler(BaseHTTPRequestHandler):
 
             def shutdown():
                 time.sleep(0.3)
-                OVERLAY.close()      # otherwise the reparented Chrome window is orphaned
-                LYRICS_WIN.close()
-                QUEUE_WIN.close()
-                CAPTIONS_WIN.close()
+                COMPONENTS.close_all()   # otherwise the reparented Chrome windows are orphaned
+                VOICE.stop()
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
                 CAPTIONS.stop()      # likewise the one holding the microphone
                 NATIVE.stop()
@@ -1993,6 +1926,11 @@ def main():
         return
 
     httpd.daemon_threads = True
+
+    # Before any Chrome runs: allow the camera and microphone for our own
+    # pages in both profiles, so no window ever waits on a prompt.
+    for profile in (overlay_mod.SHARED_PROFILE, "chrome-deck"):
+        components.seed_media_permissions(os.path.join(CACHE, profile), port, _log)
 
     BRIDGE.set_interval(bridge_interval())
     # Only now, with the port ours: a second copy started by mistake exits
