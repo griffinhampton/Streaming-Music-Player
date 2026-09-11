@@ -61,6 +61,21 @@ budget only ever slows that live line; finished lines are never held back.
 Turn off **Show words while I'm still talking** (Listening tab) and each line
 appears once you pause instead, for a fraction of that.
 
+## Ultra optimized
+
+The **Ultra optimized** switch at the top of the deck runs everything at its
+lightest, for streaming from a machine with no CPU to spare:
+
+- nothing animates - no drifting decoration, no sliding titles (a long one
+  ends in "..."), no equalizer, and animated stickers and backgrounds hold
+  their first frame
+- the progress bar and clocks move once a second
+- captions show finished lines only, whatever the Listening tab says
+- the Windows media bridge reads what is playing once a second instead of
+  two and a half times
+
+Turn it off and everything moves again straight away.
+
 ## Your own fonts
 
 Every **Font** menu has an **Add font…** button, and font files dropped

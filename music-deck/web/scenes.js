@@ -452,7 +452,9 @@ function applyBackground(stage, layer, bg, setVar) {
     // frame while a slider is dragged.
     const box = layer.getBoundingClientRect();
     layer.style.backgroundColor = '';
-    const url = `url("/asset/${encodeURIComponent(bg.image)}")`;
+    // Ultra optimized: an animated picture holds its first frame.
+    const src = '/asset/' + encodeURIComponent(bg.image);
+    const url = `url("${window.stillOf ? window.stillOf(src) : src}")`;
     const fit = bg.fit || 'cover';
     let size = fit === 'stretch' ? '100% 100%' : fit === 'tile' ? 'auto' : fit;
     // Zoom only means anything on top of cover/contain, where the picture is

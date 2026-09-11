@@ -37,6 +37,8 @@
   </div>
 
   <div class="topbar-right">
+    <label class="check ultra-toggle" title="The lightest the app can run: no animation in the app or your windows, animated pictures frozen, clocks that move once a second, and captions as finished lines only.">
+      <input type="checkbox" data-ui="ultra" data-kind="bool"><span>Ultra optimized</span></label>
     <button id="appLookToggle" class="btn btn-ghost btn-sm" title="Colors, font and density of this app's own window">App appearance&hellip;</button>
     <button id="quitBtn" class="btn btn-ghost btn-sm" title="Stop Awesome Streaming Deck completely">Quit</button>
   </div>
@@ -849,6 +851,7 @@
           </div>
           <span class="hint">Turn it off and each line appears once you pause instead &mdash; captions then
             use about a third of the CPU.</span>
+          <span class="hint" id="capUltraNote" hidden>Ultra optimized is on, so captions show finished lines only.</span>
         </div>
         <p class="hint">Everything is recognized on this PC; no audio is ever sent anywhere. Whisper's
           model downloads once from Hugging Face, then works offline. English only.</p>

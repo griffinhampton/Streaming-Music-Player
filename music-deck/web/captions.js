@@ -181,6 +181,7 @@ function connect() {
     try {
       const data = JSON.parse(event.data);
       syncUserFonts(data.fonts_v);
+      setUltra(data.ultra);
       applyDesign(data.nowplaying, data.captions_cfg);
       if (!PREVIEW) render(data.captions, data.server_time);
     } catch (_) { /* wait for the next frame */ }
@@ -195,6 +196,15 @@ function connect() {
 
 window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying, e.data.captions_cfg);
+  if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
+});
+
+/* Ultra optimized switched, or a frozen picture is ready: draw it again. */
+onMotionChange(() => {
+  const np = design, cfg = opts;
+  design = null;
+  opts = null;
+  if (np) applyDesign(np, cfg);
 });
 
 /* ------------------------------------------------------------- boot */

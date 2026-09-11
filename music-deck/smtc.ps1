@@ -138,17 +138,27 @@ function Save-Thumbnail($props, $key) {
 
 # ---- Commands from the deck ----------------------------------------------
 function Invoke-Command-File($session) {
-    if (-not (Test-Path $CmdFile)) { return }
+    if (-not [System.IO.File]::Exists($CmdFile)) { return }
     try {
-        $cmd = (Get-Content $CmdFile -Raw -ErrorAction Stop).Trim().ToLower()
+        $raw = [string](Get-Content $CmdFile -Raw -ErrorAction Stop)
         Remove-Item $CmdFile -Force -ErrorAction SilentlyContinue
-        if (-not $session -or -not $cmd) { return }
-        switch ($cmd) {
-            'play'       { AwaitVoid ($session.TryPlayAsync()) }
-            'pause'      { AwaitVoid ($session.TryPauseAsync()) }
-            'playpause'  { AwaitVoid ($session.TryTogglePlayPauseAsync()) }
-            'next'       { AwaitVoid ($session.TrySkipNextAsync()) }
-            'prev'       { AwaitVoid ($session.TrySkipPreviousAsync()) }
+        # One command per line: a press and a pace change can arrive together.
+        foreach ($line in ($raw -split "`n")) {
+            $cmd = $line.Trim().ToLower()
+            if (-not $cmd) { continue }
+            if ($cmd -match '^interval ([0-9]+)$') {
+                # Ultra optimized reads Windows once a second while music plays.
+                $script:IntervalMs = [Math]::Max(100, [int]$Matches[1])
+                continue
+            }
+            if (-not $session) { continue }
+            switch ($cmd) {
+                'play'       { AwaitVoid ($session.TryPlayAsync()) }
+                'pause'      { AwaitVoid ($session.TryPauseAsync()) }
+                'playpause'  { AwaitVoid ($session.TryTogglePlayPauseAsync()) }
+                'next'       { AwaitVoid ($session.TrySkipNextAsync()) }
+                'prev'       { AwaitVoid ($session.TrySkipPreviousAsync()) }
+            }
         }
     } catch { }
 }
@@ -160,8 +170,10 @@ while ($true) {
     # If the app that started us is gone - crashed, force-quit, whatever - go
     # too. Otherwise we orphan, keep polling forever, and hold the install
     # folder open so the next update cannot replace it.
-    if ($ParentPid -gt 0 -and -not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) {
-        break
+    if ($ParentPid -gt 0) {
+        $alive = $true
+        try { [void][System.Diagnostics.Process]::GetProcessById($ParentPid) } catch { $alive = $false }
+        if (-not $alive) { break }
     }
     try {
         $session = $null
@@ -275,10 +287,14 @@ while ($true) {
     }
 
     # Poll briskly while music plays and gently otherwise, but look for a
-    # command from the deck every 100 ms either way, so a press never waits.
+    # command from the deck in between so a press never waits long: every
+    # 100 ms, or every 250 in ultra optimized. Plain .NET calls rather than
+    # Test-Path and Start-Sleep, whose cmdlet overhead was most of this
+    # helper's CPU at ten checks a second.
     $wait = if ($playingNow) { $IntervalMs } else { 1000 }
-    for ($t = 0; $t -lt $wait; $t += 100) {
-        if (Test-Path $CmdFile) { break }
-        Start-Sleep -Milliseconds 100
+    $slice = if ($IntervalMs -ge 1000) { 250 } else { 100 }
+    for ($t = 0; $t -lt $wait; $t += $slice) {
+        if ([System.IO.File]::Exists($CmdFile)) { break }
+        [System.Threading.Thread]::Sleep($slice)
     }
 }

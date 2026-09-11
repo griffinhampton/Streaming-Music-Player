@@ -223,6 +223,7 @@ function connect() {
     try {
       const data = JSON.parse(e.data);
       syncUserFonts(data.fonts_v);
+      setUltra(data.ultra);
       applyDesign(data.nowplaying, data.queue_cfg);
       followPlaying(data.now);
       followQueue(data.spotify_queue, data.now);
@@ -238,6 +239,15 @@ function connect() {
 
 window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying, e.data.queue_cfg);
+  if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
+});
+
+/* Ultra optimized switched, or a frozen picture is ready: draw it again. */
+onMotionChange(() => {
+  const np = design, cfg = opts;
+  design = null;
+  opts = null;
+  if (np) applyDesign(np, cfg);
 });
 
 /* ------------------------------------------------------------- boot */

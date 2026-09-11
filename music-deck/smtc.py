@@ -54,6 +54,7 @@ class MediaBridge:
         self._received_at = 0.0
         self._available = None      # None = still starting up
         self._error = ""
+        self._interval_ms = 400     # while music plays; ultra optimized asks for 1000
         os.makedirs(ART_DIR, exist_ok=True)
 
     # ------------------------------------------------------------- lifecycle
@@ -67,7 +68,7 @@ class MediaBridge:
             flags = subprocess.CREATE_NO_WINDOW
         return subprocess.Popen(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-File", SCRIPT, ART_DIR, CMD_FILE, "400", str(os.getpid())],
+             "-File", SCRIPT, ART_DIR, CMD_FILE, str(self._interval_ms), str(os.getpid())],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
             text=True, encoding="utf-8", errors="replace",
             bufsize=1, creationflags=flags,
@@ -185,10 +186,26 @@ class MediaBridge:
         """Ask the helper to drive playback: play / pause / playpause / next / prev."""
         if cmd not in ("play", "pause", "playpause", "next", "prev"):
             return False
+        return self._send(cmd)
+
+    def set_interval(self, ms):
+        """How often to read Windows while music plays. Ultra optimized asks for
+        once a second; a running helper picks it up at its next command check,
+        and a restarted one is launched with it."""
+        ms = max(100, int(ms))
+        if ms == self._interval_ms:
+            return
+        self._interval_ms = ms
+        if self._proc and self._proc.poll() is None:
+            self._send(f"interval {ms}")
+
+    def _send(self, line):
+        # One command per line, appended, so a press and a pace change sent
+        # close together both arrive instead of one overwriting the other.
         try:
             os.makedirs(CACHE, exist_ok=True)
-            with open(CMD_FILE, "w", encoding="utf-8") as f:
-                f.write(cmd)
+            with open(CMD_FILE, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
             return True
         except Exception:
             return False

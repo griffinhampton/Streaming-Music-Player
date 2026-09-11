@@ -243,9 +243,9 @@ function renderStickers(list) {
 
   // What has to change for the elements themselves to be wrong. Anything not
   // in here is a style we can just overwrite.
-  const key = JSON.stringify(list.map((st) => st && st.asset
+  const key = JSON.stringify([isUltra(), list.map((st) => st && st.asset
     ? [st.asset, !!st.tint, st.color || '', st.ar || 1, (st.z ?? 5) < 0]
-    : null));
+    : null)]);
 
   if (key !== stickerKey) {
     stickerKey = key;
@@ -262,7 +262,8 @@ function renderStickers(list) {
             -webkit-mask-image:url('${url}'); mask-image:url('${url}');
             aspect-ratio:${st.ar || 1};"></div>`;
         }
-        return `<img class="sticker" src="${url}" alt="" style="${geometry(st)}">`;
+        // Ultra optimized: an animated picture holds its first frame.
+        return `<img class="sticker" src="${stillOf(url)}" alt="" style="${geometry(st)}">`;
       }).join('');
     };
     build(el.back, back);
@@ -323,7 +324,8 @@ function sizeRoot() {
 
 /* Slide long titles instead of cutting them off. */
 function measureMarquee() {
-  const on = !design || !design.text || design.text.marquee !== false;
+  // Ultra optimized ends a long title in an ellipsis instead (see the CSS).
+  const on = !isUltra() && (!design || !design.text || design.text.marquee !== false);
   for (const node of [el.title, el.artist]) {
     node.classList.remove('marquee');
     node.style.removeProperty('--marquee-shift');
@@ -435,7 +437,8 @@ function tick() {
   if (!clock.playing || !(dur > 0) || pos >= dur) return;
   const toSecond = (1 - (pos % 1)) * 1000 + 10;
   const halfPixel = (dur / trackW) * 500;
-  tickTimer = setTimeout(tick, Math.max(40, Math.min(toSecond, halfPixel)));
+  // Ultra optimized moves the bar with the seconds, once a second.
+  tickTimer = setTimeout(tick, Math.max(40, isUltra() ? toSecond : Math.min(toSecond, halfPixel)));
 }
 
 /* ------------------------------------------------------------- transport */
@@ -452,6 +455,7 @@ function connect() {
     try {
       const data = JSON.parse(event.data);
       syncUserFonts(data.fonts_v);
+      setUltra(data.ultra);
       applyDesign(data.nowplaying);
       render(data.now);
     } catch (_) { /* a torn frame just means we wait for the next one */ }
@@ -467,6 +471,17 @@ function connect() {
 /* The deck pushes design edits straight in, so the preview never lags. */
 window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying);
+  if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
+});
+
+/* Ultra optimized switched, or a frozen picture is ready: draw it all again
+   under the new rules - stickers rebuilt, marquee and clock decided afresh. */
+onMotionChange(() => {
+  const np = design;
+  design = null;
+  stickerKey = '';
+  if (np) applyDesign(np);
+  tick();
 });
 
 /* ------------------------------------------------------------- window */

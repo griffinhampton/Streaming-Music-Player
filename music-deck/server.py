@@ -67,6 +67,10 @@ DEFAULT_CONFIG = {
         "font": "Segoe UI",
         "density": "normal",         # compact | normal | roomy
         "glow": False,
+        # Ultra optimized: nothing animates in any window, animated pictures
+        # hold their first frame, clocks tick once a second, captions show
+        # finished lines only and the media bridge reads Windows once a second.
+        "ultra": False,
         # The same shape as nowplaying.bg, so one editor and one painter
         # serve the app and all three windows. (ui.bg above is the app's flat
         # background color, which this sits on top of.)
@@ -628,15 +632,26 @@ MODEL_STORE = models.ModelStore(os.path.join(CACHE, "models"))
 FONT_STORE = fonts.FontStore(os.path.join(CACHE, "fonts"))
 
 
+def ultra_on():
+    """Ultra optimized (an app setting): the lightest version of everything."""
+    return bool((CONFIG.get("ui") or {}).get("ultra"))
+
+
+def bridge_interval():
+    """How often the media bridge reads Windows while music plays, in ms."""
+    return 1000 if ultra_on() else 400
+
+
 def captions_settings():
     """What the caption engine needs from the config, resolved: which engine,
-    the model folder if it is on disk, the microphone, the expected words."""
+    the model folder if it is on disk, the microphone, the expected words.
+    Ultra optimized keeps to finished lines, which reads each phrase once."""
     c = CONFIG.get("captions", {})
     engine = c.get("engine") if c.get("engine") in ("whisper", "windows") else "whisper"
     name = c.get("model") if c.get("model") in models.MODELS else models.DEFAULT
     return {"engine": engine, "model": name, "model_dir": MODEL_STORE.path(name),
             "mic": c.get("mic") or "", "words": c.get("words") or "",
-            "live": c.get("live_words", True) is not False,
+            "live": c.get("live_words", True) is not False and not ultra_on(),
             "label": f"Whisper {name}" if engine == "whisper" else "Windows speech"}
 
 
@@ -1033,6 +1048,8 @@ class Hub:
             "lyrics_cfg": CONFIG.get("lyrics", {}),
             "queue_cfg": CONFIG.get("queue", {}),
             "captions_cfg": CONFIG.get("captions", {}),
+            # Ultra optimized, for every page: stop all motion, tick slowly.
+            "ultra": ultra_on(),
             "server_time": time.time(),
         }
 
@@ -1691,6 +1708,7 @@ class Handler(BaseHTTPRequestHandler):
             # A new engine, model, microphone or word list restarts a running
             # caption session; anything else leaves it alone.
             CAPTIONS.configure(captions_settings())
+            BRIDGE.set_interval(bridge_interval())
             SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
             sur = CONFIG["nowplaying"].get("surround") or {}
             backdrop = sur.get("color", "#000000") if sur.get("mode") == "solid" else "#000000"
@@ -1912,6 +1930,7 @@ def main():
 
     httpd.daemon_threads = True
 
+    BRIDGE.set_interval(bridge_interval())
     BRIDGE.start()
     SPOTIFY.start()
 

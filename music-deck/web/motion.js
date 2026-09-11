@@ -32,3 +32,59 @@
   document.addEventListener('animationiteration', queue, true);
   queue();
 })();
+
+/* Ultra optimized: nothing moves. One switch in the deck reaches every page
+   through the broadcast. Animations and transitions stop outright, animated
+   pictures (GIF, WebP) hold their first frame, and each page slows its own
+   clocks when it sees isUltra(). */
+(() => {
+  const hooks = [];
+  let css = null;
+  const notify = () => { for (const fn of hooks) { try { fn(); } catch (_) { /* keep going */ } } };
+
+  window.isUltra = () => document.documentElement.classList.contains('ultra');
+  // Pages redraw here when the switch flips or a frozen picture is ready.
+  window.onMotionChange = (fn) => { hooks.push(fn); };
+
+  window.setUltra = (on) => {
+    on = !!on;
+    if (on === window.isUltra()) return false;
+    if (on && !css) {
+      css = document.createElement('style');
+      css.textContent = 'html.ultra *, html.ultra *::before, html.ultra *::after' +
+        ' { animation: none !important; transition: none !important; }';
+      document.head.appendChild(css);
+    }
+    document.documentElement.classList.toggle('ultra', on);
+    notify();
+    return true;
+  };
+
+  // A GIF keeps playing whatever CSS says, so ultra mode paints a still of its
+  // first frame instead: drawn once on a canvas, kept for the page's life.
+  const stills = new Map();   // url -> data URL once drawn, '' while drawing
+  window.stillOf = (url) => {
+    if (!window.isUltra() || !/[.](gif|webp)$/i.test(url)) return url;
+    const have = stills.get(url);
+    if (have) return have;
+    if (have === undefined) {
+      stills.set(url, '');
+      const im = new Image();
+      im.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = im.naturalWidth || 1;
+          c.height = im.naturalHeight || 1;
+          c.getContext('2d').drawImage(im, 0, 0);
+          stills.set(url, c.toDataURL('image/png'));
+        } catch (_) {
+          stills.set(url, url);
+        }
+        if (window.isUltra()) notify();
+      };
+      im.onerror = () => stills.set(url, url);
+      im.src = url;
+    }
+    return url;
+  };
+})();

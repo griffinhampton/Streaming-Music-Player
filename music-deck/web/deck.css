@@ -100,6 +100,8 @@ h2 {
 }
 .tag-soft { opacity: .8; }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
+.topbar .ultra-toggle { font-size: .85em; white-space: nowrap; color: var(--dim); margin-right: 4px; }
+.topbar .ultra-toggle:has(input:checked) span { color: var(--fg); }
 
 .pill {
   font-size: .78em; font-weight: 500;

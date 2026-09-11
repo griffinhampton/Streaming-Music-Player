@@ -341,7 +341,22 @@ function deepMerge(target, src) {
    white-filled button is invisible otherwise. */
 let lastWallKey = null;
 
+/* The preview hears about ultra optimized straight away, not after the
+   broadcast comes round. */
+function tellPreviewUltra() {
+  try {
+    document.getElementById('preview').contentWindow.postMessage(
+      { type: 'ultra', on: !!(CONFIG && CONFIG.ui && CONFIG.ui.ultra) }, '*');
+  } catch (_) { /* frame still loading */ }
+}
+
 function applyUi(ui) {
+  // Ultra optimized: this page stills itself, tells the preview, and the
+  // Listening tab says why captions show finished lines only.
+  setUltra(!!ui.ultra);
+  tellPreviewUltra();
+  const ultraNote = document.getElementById('capUltraNote');
+  if (ultraNote) ultraNote.hidden = !ui.ultra;
   const r = document.documentElement.style;
   r.setProperty('--accent', ui.accent);
   r.setProperty('--on-accent', readableOn(ui.accent));
@@ -1755,6 +1770,7 @@ function pushPreview() {
       captions_cfg: CONFIG.captions,
     }, '*');
   } catch (_) { /* iframe still loading */ }
+  tellPreviewUltra();
   layoutPreview();
 }
 
@@ -2448,7 +2464,7 @@ function cardTick() {
   if (!cardClock.playing || !(dur > 0) || pos >= dur) return;
   const toSecond = (1 - (pos % 1)) * 1000 + 10;
   const toStep = dur;                       // one 1/1000 slider step, in ms
-  cardTimer = setTimeout(cardTick, Math.max(100, Math.min(toSecond, toStep)));
+  cardTimer = setTimeout(cardTick, Math.max(100, isUltra() ? toSecond : Math.min(toSecond, toStep)));
 }
 cardTick();
 
@@ -2933,7 +2949,7 @@ function meterLoop() {
   if (!want) return;
   fetch('/api/captions/level').then((r) => r.json()).then((d) => {
     $('capMeter').firstElementChild.style.width = Math.round((d.level || 0) * 100) + '%';
-  }).catch(() => {}).finally(() => { meterTimer = setTimeout(meterLoop, 200); });
+  }).catch(() => {}).finally(() => { meterTimer = setTimeout(meterLoop, isUltra() ? 1000 : 200); });
 }
 document.addEventListener('visibilitychange', meterLoop);
 
@@ -3478,6 +3494,13 @@ previewEl.addEventListener('load', () => { hookPreview(); syncStill(); });
 hookPreview();
 setInterval(syncStill, 1000);   // catches focus moves that fire no event
 syncStill();
+
+/* Ultra optimized switched, or a frozen picture is ready: repaint the app's
+   own wallpaper under the new rules. Deferred, since applyUi flips the switch. */
+onMotionChange(() => setTimeout(() => {
+  lastWallKey = null;
+  if (CONFIG && CONFIG.ui) applyUi(CONFIG.ui);
+}, 0));
 
 const events = new EventSource('/api/events');
 events.onmessage = (e) => { try { paintSpotify(JSON.parse(e.data)); } catch (_) {} };

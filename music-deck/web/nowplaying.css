@@ -259,6 +259,10 @@ html, body {
 
 /* Titles wider than the window slide back and forth instead of truncating. */
 .marquee { animation: slide var(--marquee-time, 12s) linear infinite alternate; }
+/* Ultra optimized: nothing slides, so a long title or artist ends in an
+   ellipsis, and the equalizer - all motion, no information - is hidden. */
+.ultra .title, .ultra .artist { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
+.ultra .bars { display: none !important; }
 @keyframes slide {
   0%   { transform: translateX(0); }
   8%   { transform: translateX(0); }

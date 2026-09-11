@@ -251,7 +251,7 @@ function tick() {
     centerActive();
   }
   if (!clock.playing) return;
-  let wait = 250;
+  let wait = isUltra() ? 1000 : 250;   // unsynced lyrics glide; ultra optimized steps once a second
   if (lyrics.status === 'synced') {
     const next = lyrics.lines[idx + 1];
     const offset = Number((opts && opts.offset) || 0);
@@ -303,6 +303,7 @@ function connect() {
     try {
       const data = JSON.parse(event.data);
       syncUserFonts(data.fonts_v);
+      setUltra(data.ultra);
       applyDesign(data.nowplaying, data.lyrics_cfg);
       onState(data.now);
       followPlaying(data.now);
@@ -318,6 +319,16 @@ function connect() {
 
 window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying, e.data.lyrics_cfg);
+  if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
+});
+
+/* Ultra optimized switched, or a frozen picture is ready: draw it again. */
+onMotionChange(() => {
+  const np = design, cfg = opts;
+  design = null;
+  opts = null;
+  if (np) applyDesign(np, cfg);
+  tick();
 });
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
