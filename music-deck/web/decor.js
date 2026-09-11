@@ -53,6 +53,7 @@ function renderDecor(root, container, decor, fallbackColor) {
   const chars = custom || (motif ? '' : BORDER_PATTERNS[d.border] || '');
 
   const on = (!!motif || !!chars) && sides !== 'none';
+  if (!on || sides !== 'all') clearLoop(container);
   root.classList.toggle('has-decor', on);
   root.classList.toggle('decor-motif', on && !!motif);
   for (const side of ['top', 'bottom', 'left', 'right']) {
@@ -159,6 +160,265 @@ function renderDecor(root, container, decor, fallbackColor) {
   // Seconds for one full pass around an edge. Higher speed = shorter time.
   const speed = Math.max(0.05, Number(d.speed ?? 1));
   style.setProperty('--decor-time', (24 / speed).toFixed(2) + 's');
+
+  if (sides === 'all') {
+    renderLoop(container, {
+      motif, chars, band: bandPx, gap: Math.max(0, d.gap ?? 0.5), speed,
+      animate: !!d.animate, tint: d.tint !== false, color: d.color || fallbackColor || '#ffffff',
+    });
+  }
+}
+
+/* ---------------------------------------------------------------- the loop
+
+   A frame on all four sides runs as one loop. Every icon rides a single path
+   traced through the icons' centers - a rounded rectangle half a band in
+   from the edge, its corners following the card's - at one steady speed,
+   evenly spaced, round the corners and on round again. Four strips sliding
+   separately could only ever meet at the corners.
+
+   It is drawn on one canvas, 30 times a second: each icon is drawn once onto
+   a little sprite, and a frame only stamps the sprites at their places on the
+   path (straight runs and true arcs, worked out exactly). Measured on the
+   real window, that beat both ways of doing it with CSS - one animation per
+   icon (Chrome ticks every one of them on every refresh of a 165 Hz screen)
+   and one shared animated value (every icon's style recomputed each step).
+
+   It stands still - evenly spaced - with drift off, in Ultra optimized, in a
+   hidden window, and inside the deck while the deck is in the background,
+   just as the deck pauses its other animations then. A frame too small for a
+   ring keeps the four strips. */
+
+const loops = new WeakMap();   // container -> loop state
+const LOOP_FPS = 30;
+const LOOP_MAX_ICONS = 200;
+
+/** What goes round: whole runs between spaces - a symbol, a word, a kaomoji -
+    so custom text keeps its pieces together. Spaces, including the wide
+    ideographic ones, only ever spaced the old strips out. */
+function splitRuns(text) {
+  return String(text || '').split(/\s+/u).filter(Boolean);
+}
+
+function clearLoop(container) {
+  const lp = container && loops.get(container);
+  if (!lp) return;
+  lp.ro.disconnect();
+  clearTimeout(lp.timer);
+  clearTimeout(lp.tick);
+  document.removeEventListener('visibilitychange', lp.onVis);
+  lp.canvas.remove();
+  lp.dead = true;
+  loops.delete(container);
+  showStrips(container, true);
+}
+
+function showStrips(container, on) {
+  container.querySelectorAll('.decor-strip').forEach((s) => { s.style.display = on ? '' : 'none'; });
+}
+
+/** The path through the icons' centers - a rounded rectangle half a band in
+    from the edge, clockwise from the top-left corner. at(s) is the point s
+    along it, wrapping round; straight runs and arcs are both exact. */
+function loopPath(w, h, inset, r) {
+  const x0 = inset, y0 = inset, x1 = w - inset, y1 = h - inset;
+  const across = x1 - x0 - 2 * r, down = y1 - y0 - 2 * r, turn = Math.PI * r / 2;
+  const arc = (cx, cy, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const runs = [
+    [across, (t) => [x0 + r + t, y0]],
+    [turn, (t) => arc(x1 - r, y0 + r, -Math.PI / 2 + t / r)],
+    [down, (t) => [x1, y0 + r + t]],
+    [turn, (t) => arc(x1 - r, y1 - r, t / r)],
+    [across, (t) => [x1 - r - t, y1]],
+    [turn, (t) => arc(x0 + r, y1 - r, Math.PI / 2 + t / r)],
+    [down, (t) => [x0, y1 - r - t]],
+    [turn, (t) => arc(x0 + r, y0 + r, Math.PI + t / r)],
+  ];
+  const len = runs.reduce((sum, run) => sum + run[0], 0);
+  const at = (s) => {
+    s = ((s % len) + len) % len;
+    for (const [l, f] of runs) {
+      if (s <= l) return f(s);
+      s -= l;
+    }
+    return runs[0][1](0);
+  };
+  return { len, at };
+}
+
+function renderLoop(container, args) {
+  let lp = loops.get(container);
+  if (!lp) {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'decor-loop';
+    canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;';
+    container.appendChild(canvas);
+    lp = { canvas, ctx: canvas.getContext('2d'), sig: '', args: null, frame: null,
+      timer: 0, tick: 0, frac: 0, last: 0, dead: false };
+    // The path comes from the frame's size, so it is traced again when that
+    // changes - a resized window, a card that grew a line.
+    lp.ro = new ResizeObserver(() => {
+      clearTimeout(lp.timer);
+      lp.timer = setTimeout(() => buildLoop(container, lp), 120);
+    });
+    lp.ro.observe(container);
+    lp.onVis = () => runLoop(lp);
+    document.addEventListener('visibilitychange', lp.onVis);
+    // A font you added can finish loading after the first draw; the sprites
+    // were drawn in the fallback then, so draw them again.
+    if (document.fonts) {
+      document.fonts.addEventListener('loadingdone', () => {
+        if (!lp.dead) { lp.sig = ''; buildLoop(container, lp); }
+      });
+    }
+    if (window.onMotionChange) window.onMotionChange(() => { if (!lp.dead) runLoop(lp); });
+    // The deck pauses its animations while it is in the background - its own
+    // frame, and the Now Playing preview inside it. Pop-out windows never.
+    lp.deckish = window.top !== window || container.id === 'appDecor';
+    loops.set(container, lp);
+  }
+  lp.args = args;
+  buildLoop(container, lp);
+}
+
+function buildLoop(container, lp) {
+  const a = lp.args;
+  const w = container.clientWidth, h = container.clientHeight;
+  const band = a.band;
+  if (!w || !h) return;                                  // not laid out yet: the observer calls back
+  if (!(w > band * 1.5 && h > band * 1.5)) {
+    // No room for a ring: the four strips draw the frame instead.
+    lp.frame = null;
+    lp.sig = '';
+    clearTimeout(lp.tick);
+    lp.canvas.style.display = 'none';
+    showStrips(container, true);
+    return;
+  }
+
+  const cs = getComputedStyle(container);
+  const fontPx = parseFloat(cs.fontSize) || 10;
+  // Round the corners like the card they sit in - its inner curve, since the
+  // frame lies inside its border - and give a square box a soft turn too.
+  const box = getComputedStyle(container.parentElement || container);
+  const boxRadius = Math.max(0, (parseFloat(box.borderTopLeftRadius) || 0)
+    - Math.max(parseFloat(box.borderTopWidth) || 0, parseFloat(box.borderLeftWidth) || 0));
+  const inset = band / 2;
+  const r = Math.min(Math.max(band * 0.5, boxRadius - inset), (Math.min(w, h) - band) / 2);
+  const path = loopPath(w, h, inset, r);
+  // Right-to-left pages run the loop the other way round.
+  const dir = cs.direction === 'rtl' ? -1 : 1;
+  const dpr = window.devicePixelRatio || 1;
+  const font = `${cs.fontStyle} ${cs.fontWeight} ${fontPx}px ${cs.fontFamily}`;
+  const color = cs.color;
+
+  // One pattern: each run's width, then the gap the Spacing setting and the
+  // old strips' own spaces used to leave.
+  const runs = a.motif ? [''] : splitRuns(a.chars);
+  if (!runs.length) return;
+  const gapPx = a.motif ? band * a.gap : fontPx * (2 * a.gap + 0.25);
+  const measure = lp.ctx;
+  measure.font = font;
+  const widths = runs.map((t) => (a.motif ? band : Math.max(1, measure.measureText(t).width)));
+  const patternLen = widths.reduce((sum, wd) => sum + wd + gapPx, 0);
+  // A whole number of patterns, stretched a touch to fill the path exactly,
+  // so there is no seam where the last icon meets the first.
+  const reps = Math.max(1, Math.min(Math.floor(LOOP_MAX_ICONS / runs.length), Math.round(path.len / patternLen)));
+  const scale = path.len / (reps * patternLen);
+  const offs = [];
+  const which = [];
+  let s = 0;
+  for (let k = 0; k < reps; k++) {
+    runs.forEach((t, j) => {
+      offs.push((s + widths[j] / 2) * scale);
+      which.push(j);
+      s += widths[j] + gapPx;
+    });
+  }
+  const unit = a.motif ? band * 0.65 : fontPx;
+  const lap = Math.max(0.5, path.len / Math.max(1, 5.4 * unit * a.speed));   // seconds round, at the old drift's pace
+
+  const sig = [w, h, band, r.toFixed(1), runs.join(' '), a.motif ? a.motif.file : '', a.tint, a.color, color,
+    font, offs.length, lap.toFixed(3), a.animate, dir, dpr].join('|');
+  if (sig === lp.sig) return;
+  lp.sig = sig;
+
+  // Every icon drawn once, at the canvas's own resolution.
+  const sprites = runs.map((t, j) => {
+    const c = document.createElement('canvas');
+    c.width = Math.ceil((widths[j] + fontPx * 0.5) * dpr);
+    c.height = Math.ceil(band * dpr);
+    const x = c.getContext('2d');
+    if (!a.motif) {
+      x.font = `${cs.fontStyle} ${cs.fontWeight} ${fontPx * dpr}px ${cs.fontFamily}`;
+      x.fillStyle = color;
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.fillText(t, c.width / 2, c.height / 2);
+    }
+    return c;
+  });
+  if (a.motif) {
+    const img = new Image();
+    img.onload = () => {
+      const c = sprites[0], x = c.getContext('2d');
+      x.clearRect(0, 0, c.width, c.height);
+      const fit = Math.min(c.width / (img.naturalWidth || 1), c.height / (img.naturalHeight || 1));
+      const iw = (img.naturalWidth || c.width) * fit, ih = (img.naturalHeight || c.height) * fit;
+      x.drawImage(img, (c.width - iw) / 2, (c.height - ih) / 2, iw, ih);
+      if (a.tint) {
+        // Tinted: keep the tile's shape, take the frame's color.
+        x.globalCompositeOperation = 'source-in';
+        x.fillStyle = a.color;
+        x.fillRect(0, 0, c.width, c.height);
+        x.globalCompositeOperation = 'source-over';
+      }
+      if (!lp.dead) runLoop(lp);
+    };
+    img.src = a.motif.file;
+  }
+
+  lp.canvas.width = Math.round(w * dpr);
+  lp.canvas.height = Math.round(h * dpr);
+  lp.canvas.style.display = '';
+  showStrips(container, false);
+  lp.frame = { path, offs, which, sprites, lap, dir, dpr, animate: a.animate };
+  runLoop(lp);
+}
+
+/** Draw a frame now, and the next one a thirtieth of a second on while it
+    moves. The ring's place is kept as a fraction of a lap, so a re-trace - a
+    resize, a new speed - carries on from where it was. */
+function runLoop(lp) {
+  clearTimeout(lp.tick);
+  const f = lp.frame;
+  if (!f || lp.dead) return;
+  let focused = true;
+  if (lp.deckish) {
+    try { focused = window.top.document.hasFocus(); } catch (_) { focused = true; }
+  }
+  const ultra = !!(window.isUltra && window.isUltra());
+  const moving = f.animate && !ultra && focused && document.visibilityState !== 'hidden';
+  const now = performance.now();
+  if (moving && lp.last) lp.frac = (lp.frac + (now - lp.last) / 1000 / f.lap) % 1;
+  lp.last = moving ? now : 0;
+  drawLoop(lp, f.animate && !ultra ? lp.frac : 0);
+  if (moving) lp.tick = setTimeout(() => runLoop(lp), 1000 / LOOP_FPS);
+  else if (f.animate && !ultra && document.visibilityState !== 'hidden') {
+    lp.tick = setTimeout(() => runLoop(lp), 500);          // back in front yet?
+  }
+}
+
+function drawLoop(lp, frac) {
+  const f = lp.frame, ctx = lp.ctx;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, lp.canvas.width, lp.canvas.height);
+  const base = frac * f.path.len;
+  for (let i = 0; i < f.offs.length; i++) {
+    const sp = f.sprites[f.which[i]];
+    const [x, y] = f.path.at(f.dir * (base + f.offs[i]));
+    ctx.drawImage(sp, Math.round(x * f.dpr - sp.width / 2), Math.round(y * f.dpr - sp.height / 2));
+  }
 }
 
 /** Options for a <select>, motifs first since they look better. */
