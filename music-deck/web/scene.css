@@ -1,24 +1,23 @@
-/* The scene output: a stage at the scene's own size, layers as absolute
-   boxes, one scale on the root. Two stages exist so a live switch can
-   crossfade in place. Nothing here animates endlessly except what a layer
+/* The scene output: one stage at the scene's own size, layers as absolute
+   boxes, one scale on the root. A live switch happens in place: shared
+   layers glide to their new box, new ones fade in, old ones fade out, the
+   background crossfades - so nothing that costs something (an iframe, a
+   camera) is rebuilt. Nothing here animates endlessly except what a layer
    asks for, and motion.js steps that at 30 fps. */
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
 body.see-through { background: transparent; }
 
 #root { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-.stage {
-  position: absolute; left: 0; top: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity 300ms steps(9);
-}
-.stage.shown { opacity: 1; }
-.scene-bg, .scene-bg-fill, .scene-bg-art, .scene-layers { position: absolute; inset: 0; }
+.stage { position: absolute; left: 0; top: 0; overflow: hidden; }
+.scene-bgs, .scene-bg, .scene-bg-fill, .scene-bg-art, .scene-layers { position: absolute; inset: 0; }
 .scene-bg[hidden] { display: none; }
 .scene-bg-art { background-position: center; background-repeat: no-repeat; background-size: cover; }
 
 .layer { position: absolute; box-sizing: border-box; overflow: hidden; }
 .layer.hidden { display: none; }
+/* The switch transitions: the duration is set inline for the moment. */
+.fading { transition-property: opacity, left, top, width, height; transition-timing-function: steps(9); }
+.entering, .leaving { opacity: 0 !important; }
 .layer > .media { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
 .layer > div.media { background-position: 0 0; }
 .type-background .bg-fill, .type-background .bg-art, .type-background .bg-dim { position: absolute; inset: 0; }

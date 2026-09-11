@@ -176,7 +176,8 @@ class RtmpClient:
         self.key = (key or "").strip()
         if not self.key:
             raise RtmpError("no stream key")
-        self.log = log or (lambda *_: None)
+        # The server may echo the key back in a status; it never reaches a log.
+        self.log = (lambda msg: (log or (lambda *_: None))(msg.replace(self.key, "***")))
         self.sock = None
         self.alive = False
         self.error = ""

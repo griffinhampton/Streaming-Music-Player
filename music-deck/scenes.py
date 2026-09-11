@@ -290,6 +290,36 @@ def from_template(key):
     return TEMPLATES[key][2]()
 
 
+def native_sources(scene):
+    """The scene's layers the server fills in itself while LIVE: capture
+    layers in native mode (a window or a screen) and camera layers in
+    native mode, each with the rectangle the page left black for it, in
+    layer order (the compositor keys them in bottom-up)."""
+    out = []
+    for layer in (scene or {}).get("layers") or []:
+        if layer.get("visible") is False:
+            continue
+        p = layer.get("props") or {}
+        t = layer.get("transform") or {}
+        rect = [int(round(float(t.get(k, 0) or 0))) for k in ("x", "y", "w", "h")]
+        if rect[2] <= 0 or rect[3] <= 0:
+            continue
+        if layer.get("type") == "capture" and p.get("mode") == "native":
+            src = p.get("source") or {}
+            if src.get("kind") == "monitor":
+                out.append({"kind": "monitor", "monitor": int(src.get("monitor") or 0), "rect": rect,
+                            "fit": "cover" if p.get("fit") == "cover" else "contain"})
+            elif src.get("title"):
+                out.append({"kind": "window", "title": str(src["title"]), "rect": rect,
+                            "fit": "cover" if p.get("fit") == "cover" else "contain"})
+        elif layer.get("type") == "camera" and p.get("mode") == "native":
+            out.append({"kind": "camera", "device": str(p.get("device") or ""), "width": int(p.get("width") or 1280),
+                        "height": int(p.get("height") or 720), "fps": int(p.get("fps") or 30), "rect": rect,
+                        "fit": "contain" if p.get("fit") == "contain" else "cover",
+                        "mirror": p.get("mirror") is not False})
+    return out
+
+
 def summary(scene):
     return {"id": scene["id"], "name": scene["name"], "format": scene["format"],
             "width": scene["width"], "height": scene["height"], "rev": scene["rev"],

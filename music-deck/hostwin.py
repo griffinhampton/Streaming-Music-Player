@@ -402,6 +402,10 @@ class HostWindow:
         """Is Chrome's viewport still covering the host exactly?"""
         if not self.alive() or not self.child:
             return True
+        if self.minimized():
+            # Windows parks a minimized host at -32000 and Chrome inside is
+            # hidden on purpose: nothing to line up until it is restored.
+            return True
         host, vp = self.rect(), viewport_rect(self.child)
         if not host or not vp:
             return True
@@ -468,7 +472,9 @@ class HostWindow:
     # ------------------------------------------------------------- minimize
 
     def minimize(self):
-        """Send the host to the taskbar without stealing focus."""
+        """Send the host to the taskbar without stealing focus. (The overlay
+        prefers parking a hosted window instead: Chrome inside a minimized
+        host comes back presenting badly for capture - see Overlay.minimize.)"""
         if not self.alive():
             return False
         user32.ShowWindow(wintypes.HWND(self.hwnd), SW_SHOWMINNOACTIVE)

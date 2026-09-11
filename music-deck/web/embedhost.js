@@ -11,6 +11,7 @@ const EmbedHost = (() => {
   const DESIGN_KEY = { np: 'nowplaying', lyrics: 'lyrics_cfg', queue: 'queue_cfg', captions: 'captions_cfg' };
   const hosts = new Set();
   let last = null;
+  let made = 0;                 // every iframe ever built here: a switch should add none
 
   function merge(base, over) {
     if (!over || typeof over !== 'object' || Array.isArray(over)) return over === undefined ? base : over;
@@ -27,6 +28,7 @@ const EmbedHost = (() => {
     frame.setAttribute('allow', 'autoplay');
     frame.src = '/' + page + '?embed=1';
     container.appendChild(frame);
+    made++;
     const h = {
       frame, spec: Object.assign({}, spec), ready: false,
       send(msg) { try { frame.contentWindow.postMessage(msg, '*'); } catch (_) { /* gone */ } },
@@ -61,5 +63,5 @@ const EmbedHost = (() => {
     for (const h of hosts) if (h.ready) h.push(state);
   }
 
-  return { create, broadcast, count: () => hosts.size };
+  return { create, broadcast, count: () => hosts.size, created: () => made };
 })();

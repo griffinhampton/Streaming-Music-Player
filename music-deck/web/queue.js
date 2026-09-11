@@ -220,7 +220,7 @@ function followQueue(q, now) {
 let source = null, retry = null;
 function takeSnapshot(data) {
   syncUserFonts(data.fonts_v);
-  setUltra(data.ultra);
+  setUltra(data.ultra || idleHere(data));
   applyDesign(data.nowplaying, data.queue_cfg);
   followPlaying(data.now);
   followQueue(data.spotify_queue, data.now);

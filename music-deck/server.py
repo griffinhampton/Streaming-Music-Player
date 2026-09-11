@@ -13,10 +13,14 @@ Windows' media session, not from Spotify's servers - no login, no API keys).
 Run:  python server.py
 """
 
+import os
+# numpy's BLAS reserves a thread pool with hundreds of MB of private memory
+# at import; the audio mixer does element-wise work only and needs none of it.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 import hashlib
 import json
 import mimetypes
-import os
 import re
 import subprocess
 import sys
@@ -32,6 +36,7 @@ from assets import AssetStore
 import capture
 import components
 import feeds
+import guard
 import scenes
 import voice
 from lyrics import Lyrics
@@ -1123,7 +1128,7 @@ def live_start(data):
         return {"ok": False, "error": "the output window is not hosted, so it cannot be captured"}
     LIVE.restamp_audio = False
     LIVE.on_reconnect = NATIVE.force_keyframe
-    NATIVE.start(hwnd=hwnd, fps=preset["fps"], kbps=preset["kbps"])
+    NATIVE.start(hwnd=hwnd, fps=preset["fps"], kbps=preset["kbps"], sources=live_native_sources())
     if not NATIVE.wait_ready():
         # No capture or no encoder: say so now rather than stream silence.
         why = NATIVE.error or "the output window gave no frame"
@@ -1167,6 +1172,113 @@ def live_audio(data):
     return {"ok": True, "audio": a, "live": AUDIO[0].status() if AUDIO[0] else None}
 
 
+def remember_outputs():
+    """Which outputs are open right now, and whether parked. A restart brings
+    them back the same way, and the watchdog re-opens one that dies."""
+    canvas = CONFIG.setdefault("canvas", {})
+    canvas["reopen"] = {c.id: {"parked": bool(c.overlay.status().get("parked"))}
+                        for c in COMPONENTS if c.group == "canvas" and c.overlay.is_open()}
+    save_config(CONFIG)
+
+
+def open_output(cid, parked=False):
+    comp = COMPONENTS.get(cid)
+    if not comp:
+        return {"ok": False, "reason": "no such output"}
+    res = window_action(comp.overlay, comp.config(CONFIG), comp.page, "open", {})
+    if res.get("ok") and parked:
+        window_action(comp.overlay, comp.config(CONFIG), comp.page, "park", {})
+    return res
+
+
+def rejoin_live():
+    """The live output was opened again mid-stream: capture the new window
+    into the running stream. The engine's clock carries on, so the viewer
+    sees a still for a moment, then the picture again."""
+    comp = COMPONENTS.get("live")
+    host = comp.overlay.host if comp else None
+    hwnd = host.hwnd if host and host.alive() else None
+    if not hwnd:
+        return False
+    preset = live.PRESETS.get(CONFIG.get("live", {}).get("preset") or "720p30") or live.PRESETS["720p30"]
+    NATIVE.stop()
+    NATIVE.start(hwnd=hwnd, fps=preset["fps"], kbps=preset["kbps"], sources=live_native_sources())
+    ok = NATIVE.wait_ready()
+    _log("live: the video re-joined the stream from the re-opened output" if ok
+         else f"live: the video could not re-join ({NATIVE.error})")
+    return ok
+
+
+def _watch_outputs():
+    """Every two seconds: an output that should be open but is not gets
+    opened again (three tries in two minutes, then it is left closed), a
+    window whose page has stopped talking to us is rebuilt, and the live
+    output re-joins the stream. At start this is also what brings back the
+    outputs of the last run."""
+    tries = {}
+    quiet_since = {}
+    while True:
+        time.sleep(2)
+        try:
+            wanted = dict(CONFIG.get("canvas", {}).get("reopen") or {})
+            for cid, how in wanted.items():
+                comp = COMPONENTS.get(cid)
+                if not comp:
+                    continue
+                now = time.time()
+                if comp.overlay.is_open():
+                    # Open, but is anyone home? A page holds a feed for as
+                    # long as it lives; fifteen quiet seconds means it is gone.
+                    if FEEDS.has_page(comp.page):
+                        quiet_since.pop(cid, None)
+                        continue
+                    if now - quiet_since.setdefault(cid, now) < 15:
+                        continue
+                    action, why = "rebuild", "its page has gone quiet"
+                else:
+                    action, why = "open", "it is gone"
+                quiet_since.pop(cid, None)
+                recent = [t for t in tries.get(cid, []) if now - t < 120]
+                if len(recent) >= 3:
+                    _log(f"outputs: {cid} keeps dying; leaving it closed")
+                    CONFIG["canvas"]["reopen"].pop(cid, None)
+                    save_config(CONFIG)
+                    tries.pop(cid, None)
+                    try:
+                        comp.overlay.close()
+                    except Exception:
+                        pass
+                    HUB.broadcast()
+                    continue
+                tries[cid] = recent + [now]
+                _log(f"outputs: {cid}: {why}; opening it again")
+                if action == "rebuild":
+                    res = window_action(comp.overlay, comp.config(CONFIG), comp.page, "rebuild", {})
+                else:
+                    res = open_output(cid, parked=bool(how.get("parked")))
+                if res.get("ok") and cid == "live" and LIVE.state in ("connecting", "live", "reconnecting"):
+                    rejoin_live()
+                HUB.broadcast()
+        except Exception as exc:
+            _log(f"outputs: watchdog error: {exc}")
+
+
+def live_native_sources():
+    """What the server composites into the stream: the live scene's native
+    camera and capture layers (see scenes.native_sources)."""
+    sid = CONFIG.get("canvas", {}).get("live", "")
+    return scenes.native_sources(SCENES.get(sid)) if sid else []
+
+
+def refresh_native_sources(sid=None):
+    """After a live switch or a save of the live scene: the encoder thread
+    picks the new sources up at its next tick."""
+    if sid and sid != CONFIG.get("canvas", {}).get("live", ""):
+        return
+    if NATIVE.status().get("running"):
+        NATIVE.set_sources(live_native_sources())
+
+
 def streaming_size():
     """The size the stream is locked to while the native path runs, or None."""
     st = NATIVE.status()
@@ -1202,6 +1314,7 @@ def set_live_scene(sid, transition=None, duration=None):
             cfg["width"], cfg["height"] = size
             if comp.overlay.is_open():
                 comp.overlay.apply(width=size[0], height=size[1])
+    refresh_native_sources()
     HUB.broadcast()
     return {"ok": True, "live": canvas["live"], "transition": canvas.get("transition"),
             "duration": canvas.get("duration")}
@@ -1408,22 +1521,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj), "application/json")
 
     def _trusted(self):
-        """Only this machine's own pages may use the server.
-
-        It listens on 127.0.0.1 alone, but any web page open in any browser
-        can still send requests to 127.0.0.1 - and a DNS name pointed at
-        127.0.0.1 makes them same-origin. So the Host must be this server by
-        its own name (which defeats DNS rebinding), and an Origin, when a
-        browser sends one, must be ours (which stops another site's page
-        from posting here - opening the microphone, say, or quitting).
-        Requests from tools that send no Origin, like curl, still work.
-        """
-        port = CONFIG.get("port", 8713)
-        ours = {f"127.0.0.1:{port}", f"localhost:{port}"}
-        if (self.headers.get("Host") or "").strip().lower() not in ours:
-            return False
-        origin = self.headers.get("Origin")
-        return not origin or origin.strip().lower() in {f"http://{h}" for h in ours}
+        """Only this machine's own pages may use the server (see guard.py)."""
+        return guard.trusted(self.headers.get("Host"), self.headers.get("Origin"), CONFIG.get("port", 8713))
 
     def _body(self):
         try:
@@ -1751,6 +1850,26 @@ class Handler(BaseHTTPRequestHandler):
                 Handler._mem_snap = snap
             return self._json(out)
 
+        if path == "/api/debug/threads":
+            # CPU seconds per thread of this process, by the thread's name:
+            # two reads apart say where the server's time goes.
+            import ctypes as _ct
+            from ctypes import wintypes as _wt
+            k32 = _ct.windll.kernel32
+            k32.OpenThread.restype = _wt.HANDLE
+            k32.OpenThread.argtypes = [_wt.DWORD, _wt.BOOL, _wt.DWORD]
+            out = []
+            for t in threading.enumerate():
+                h = k32.OpenThread(0x0800, False, t.native_id or 0)       # THREAD_QUERY_LIMITED_INFORMATION
+                if not h:
+                    continue
+                c, e, k, u = (_wt.FILETIME() for _ in range(4))
+                if k32.GetThreadTimes(h, _ct.byref(c), _ct.byref(e), _ct.byref(k), _ct.byref(u)):
+                    secs = sum((f.dwHighDateTime << 32 | f.dwLowDateTime) / 1e7 for f in (k, u))
+                    out.append({"name": t.name, "id": t.native_id, "cpu": round(secs, 3)})
+                k32.CloseHandle(h)
+            return self._json({"threads": out, "at": time.time()})
+
         if path == "/api/components":
             return self._json({"components": COMPONENTS.describe_all(),
                                "windows": COMPONENTS.statuses()})
@@ -1997,6 +2116,7 @@ class Handler(BaseHTTPRequestHandler):
             except scenes.Conflict as exc:
                 return self._json({"ok": False, "reason": str(exc), "conflict": True,
                                    "scene": SCENES.get(sid)}, 409)
+            refresh_native_sources(sid)
             return self._json({"ok": True, "scene": scene})
 
         if path in ("/api/voice/hold", "/api/voice/release"):
@@ -2088,7 +2208,12 @@ class Handler(BaseHTTPRequestHandler):
             comp = COMPONENTS.resolve(urllib.parse.unquote(key))
             if not comp:
                 return self._json({"ok": False, "reason": "no such component"}, 404)
-            return self._json(window_action(comp.overlay, comp.config(CONFIG), comp.page, action, data))
+            res = window_action(comp.overlay, comp.config(CONFIG), comp.page, action, data)
+            if comp.group == "canvas" and action in ("open", "close", "park", "unpark", "rebuild"):
+                remember_outputs()
+            if action != "metrics":
+                HUB.broadcast()             # minimized, parked, moved: the pages hear it now
+            return self._json(res)
 
         if path == "/api/live/start":
             return self._json(live_start(data))
@@ -2188,6 +2313,8 @@ def main():
                 pass
             time.sleep(2)
     threading.Thread(target=follow_queue_window, daemon=True).start()
+    # Outputs that were open last time come back, and stay back.
+    threading.Thread(target=_watch_outputs, daemon=True).start()
 
     # The microphone is opened only if captions were left on last time.
     CAPTIONS.configure(captions_settings())

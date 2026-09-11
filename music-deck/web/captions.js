@@ -178,7 +178,7 @@ function demoTick() {
 let source = null, retry = null;
 function takeSnapshot(data) {
   syncUserFonts(data.fonts_v);
-  setUltra(data.ultra);
+  setUltra(data.ultra || idleHere(data));
   applyDesign(data.nowplaying, data.captions_cfg);
   if (!PREVIEW) render(data.captions, data.server_time);
 }

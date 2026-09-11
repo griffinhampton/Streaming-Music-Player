@@ -75,6 +75,8 @@ class Overlay:
         # Parked: moved off every screen while it keeps rendering - a capture
         # still sees it, the desktop does not.
         self.parked = False
+        self.minimized = False      # hosted: parked on purpose, and the page knows
+        self._minimized_from = False
         self._parked_from = None
 
     # ------------------------------------------------------------- reporting
@@ -84,6 +86,8 @@ class Overlay:
             "inner_w": int(data.get("inner_w") or 0),
             "inner_h": int(data.get("inner_h") or 0),
             "dpr": float(data.get("dpr") or 1),
+            "visibility": str(data.get("visibility") or ""),
+            "focus": bool(data.get("focus")),
             "ts": time.time(),
         }
 
@@ -109,12 +113,13 @@ class Overlay:
         # a 221 x 1 window. None tells every caller to keep what it had.
         if self.host and self.host.alive():
             from hostwin import viewport_rect
-            minimized = self.host.minimized()
+            minimized = self.minimized or self.host.minimized()
             vp = viewport_rect(self.host.child) if self.host.child and not minimized else None
             return {"open": True, "hosted": True, "minimized": minimized,
-                    "parked": self.parked,
+                    "parked": self.parked and not self.minimized,
                     "rect": None if minimized else self.host.rect(),
                     "viewport": [self.metrics.get("inner_w"), self.metrics.get("inner_h")],
+                    "visibility": self.metrics.get("visibility", ""),
                     "viewport_rect": vp}
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
@@ -417,8 +422,19 @@ class Overlay:
         return None
 
     def minimize(self):
+        """Out of sight but alive. A hosted window is parked off screen rather
+        than minimized for real: Chrome tucked inside a minimized host keeps
+        drawing at full cost, and once restored it presents in a way a
+        capture only sees at 3-4 fps, with a busy browser process whenever it
+        is parked afterwards (measured in P5). Parked, the page sees itself
+        minimized in the snapshot and idles like Ultra."""
         if self.host and self.host.alive():
-            return self.host.minimize()
+            if not self.minimized:
+                self._minimized_from = self.parked
+                if not self.parked:
+                    self.park()
+                self.minimized = True
+            return True
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             return winwin.minimize(hwnd)
@@ -426,7 +442,11 @@ class Overlay:
 
     def restore(self):
         if self.host and self.host.alive():
-            return self.host.restore()
+            if self.minimized:
+                self.minimized = False
+                if not self._minimized_from:
+                    self.unpark()
+            return True
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             return winwin.restore(hwnd)

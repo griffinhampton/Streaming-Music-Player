@@ -267,6 +267,15 @@ TYPES.component = {
   destroy(entry) { if (entry.host) { entry.host.destroy(); entry.host = null; } },
 };
 
+/* A native hole: the server composites the source here while LIVE. Pure
+   black is the key, so the page must not paint anything darker than the
+   compositor's threshold where a picture is not meant to show. */
+function paintHole(entry) {
+  entry.el.classList.add('native-hole');
+  const scene = currentScene();
+  entry.el.style.background = scene && scene.transparency === 'key' ? scene.key_color : '#000';
+}
+
 /* Camera and capture: media that costs something to hold open, so it exists
    only while the layer is visible, and stops when the layer goes. */
 async function pickDevice(hint) {
@@ -312,11 +321,15 @@ TYPES.camera = {
     el.classList.toggle('mask-rounded', p.mask === 'rounded');
     el.style.clipPath = p.mask === 'blob'
       ? 'polygon(50% 0%, 83% 12%, 100% 43%, 94% 78%, 68% 100%, 32% 100%, 6% 78%, 0% 43%, 17% 12%)' : el.style.clipPath;
-    const key = JSON.stringify([p.device, p.width, p.height, p.fps, entry.layer.visible]);
+    const key = JSON.stringify([p.mode, p.device, p.width, p.height, p.fps, entry.layer.visible]);
     if (entry.mediaKey !== key) {
       entry.mediaKey = key;
       dropStream(entry);
-      if (entry.layer.visible !== false) this.start(entry, p);
+      el.classList.remove('native-hole');
+      el.style.background = '';
+      if (entry.layer.visible === false) { /* nothing to open */ }
+      else if (p.mode === 'native') { paintHole(entry); noteSource(entry, 'native camera' + (p.device ? ': ' + p.device : ''), false); }
+      else this.start(entry, p);
     }
     if (entry.media) {
       entry.media.style.objectFit = p.fit === 'contain' ? 'contain' : 'cover';
@@ -361,11 +374,10 @@ TYPES.capture = {
     if (entry.media) entry.media.style.objectFit = p.fit === 'contain' ? 'contain' : 'cover';
   },
   native(entry, p) {
-    // The app's own capture puts the source here (P4): the box shows the
-    // key color so anything compositing knows where the picture goes.
-    entry.el.classList.add('native-hole');
-    const scene = currentScene();
-    entry.el.style.background = scene && scene.transparency === 'key' ? scene.key_color : 'transparent';
+    // The app's own capture puts the source here while LIVE: the box is
+    // painted black (the key color in key mode), and the server's
+    // compositor keys the picture into exactly that shape.
+    paintHole(entry);
     const src = p.source || {};
     noteSource(entry, `native capture: ${src.title || (src.kind === 'monitor' ? 'screen ' + (src.monitor ?? 0) : 'window')}`, false);
   },
@@ -463,36 +475,58 @@ function applyTriggers(entry, v) {
 
 /* ------------------------------------------------------------- a stage */
 
+/* What makes two layers from different scenes "the same thing": media that
+   costs something to open again. A component's iframe would reload if it
+   were rebuilt (or even moved in the document), a camera or capture would
+   ask Windows for the stream again, a video would start over - so on a
+   switch these are kept in place and only their box moves. */
+function identity(layer) {
+  const p = layer.props || {};
+  if (layer.visible === false) return '';
+  switch (layer.type) {
+    case 'component': return 'component:' + (p.component || 'np');
+    case 'camera': return 'camera:' + JSON.stringify([p.mode, p.device, p.width, p.height, p.fps]);
+    case 'capture': return 'capture:' + JSON.stringify([p.mode, p.source, p.fps]);
+    case 'image': return isVideo(assetUrl(p.src)) ? 'video:' + p.src : '';
+    default: return '';
+  }
+}
+
 class Stage {
   constructor(el) {
     this.el = el;
-    el.innerHTML = '<div class="scene-bg"><div class="scene-bg-fill"></div><div class="scene-bg-art"></div></div><div class="scene-layers"></div>';
-    this.bg = el.querySelector('.scene-bg');
-    this.bgFill = el.querySelector('.scene-bg-fill');
-    this.bgArt = el.querySelector('.scene-bg-art');
+    el.innerHTML = '<div class="scene-bgs"></div><div class="scene-layers"></div>';
+    this.bgs = el.querySelector('.scene-bgs');
     this.list = el.querySelector('.scene-layers');
     this.scene = null;
     this.layers = new Map();
+    this.bgKey = '';
   }
 
-  render(scene) {
+  /* Bring the stage to `scene`. Over `ms` milliseconds when switching
+     scenes: layers the next scene shares stay put and glide to their new
+     box, new ones fade in, the rest fade out, the background crossfades -
+     one stage, nothing rebuilt that did not change. */
+  render(scene, ms = 0) {
+    const switching = !this.scene || this.scene.id !== scene.id;
     this.scene = scene;
     this.el.style.width = px(scene.width);
     this.el.style.height = px(scene.height);
-    const bg = scene.background || {};
-    const paint = scene.transparency === 'opaque' && bg.mode !== 'none';
-    this.bg.hidden = !paint;
-    if (paint) applyBackground(this.bg, this.bgArt, bg, (k, v) => { if (k === '--bg') this.bgFill.style.background = v; });
+    this.renderBackground(scene, ms);
 
+    const pool = switching ? this.layers : null;         // the old scene's layers, up for adoption
+    if (switching) this.layers = new Map();
     const seen = new Set();
     const order = [];
     for (const layer of scene.layers || []) {
       seen.add(layer.id);
       const key = JSON.stringify(layer);
-      let entry = this.layers.get(layer.id);
+      let entry = switching ? null : this.layers.get(layer.id);
       if (entry && entry.type !== layer.type) { this.drop(entry); entry = null; }
+      if (!entry && pool) entry = this.adopt(pool, layer, ms);
       if (!entry) {
         entry = this.make(layer);
+        if (ms) this.fadeIn(entry, ms);
       } else if (entry.key !== key) {
         const prev = entry.layer;
         entry.layer = layer;
@@ -507,11 +541,51 @@ class Stage {
         applyTriggers(entry, voiceNow);
       }
       entry.key = key;
+      this.layers.set(layer.id, entry);
       order.push(entry.el);
     }
-    for (const [id, entry] of this.layers) if (!seen.has(id)) this.drop(entry);
+    const gone = pool ? [...pool.values()] : [...this.layers.values()].filter((e) => !seen.has(e.layer.id));
+    for (const entry of gone) {
+      if (!pool) this.layers.delete(entry.layer.id);
+      if (ms) this.fadeOut(entry, ms); else this.retire(entry);
+    }
+    // Leaving layers keep their place under the new order until they are gone.
     if (order.some((el, i) => this.list.children[i] !== el)) order.forEach((el) => this.list.appendChild(el));
     this.watchClock();
+  }
+
+  renderBackground(scene, ms) {
+    const bg = scene.background || {};
+    const paint = scene.transparency === 'opaque' && bg.mode !== 'none';
+    const key = JSON.stringify([paint, bg]);
+    if (key === this.bgKey) return;
+    this.bgKey = key;
+    const old = [...this.bgs.children];
+    const el = document.createElement('div');
+    el.className = 'scene-bg';
+    el.innerHTML = '<div class="scene-bg-fill"></div><div class="scene-bg-art"></div>';
+    el.hidden = !paint;
+    if (paint) applyBackground(el, el.lastChild, bg, (k, v) => { if (k === '--bg') el.firstChild.style.background = v; });
+    this.bgs.appendChild(el);
+    if (ms && old.length) {
+      this.fadeIn({ el }, ms);
+      for (const o of old) this.fadeOut({ el: o, type: '' }, ms);
+    } else {
+      for (const o of old) o.remove();
+    }
+  }
+
+  adopt(pool, layer, ms) {
+    const want = identity(layer);
+    if (!want) return null;
+    for (const [id, entry] of pool) {
+      if (entry.type !== layer.type || identity(entry.layer) !== want) continue;
+      pool.delete(id);
+      entry.el.dataset.id = layer.id;
+      if (ms) this.glide(entry, ms);
+      return entry;
+    }
+    return null;
   }
 
   make(layer) {
@@ -520,7 +594,6 @@ class Stage {
     el.className = 'layer type-' + type;
     el.dataset.id = layer.id;
     const entry = { el, layer, type, key: '' };
-    this.layers.set(layer.id, entry);
     applyBox(entry);
     // In the document before it is built: text that fits itself measures
     // its box, and a detached box measures as nothing. Order is fixed after.
@@ -532,14 +605,49 @@ class Stage {
     return entry;
   }
 
-  drop(entry) {
-    if (TYPES[entry.type].destroy) TYPES[entry.type].destroy(entry);
+  /* The transitions: a class carries the duration, stepped like every
+     other motion here; the timer clears it so nothing keeps transitioning. */
+  fadeIn(entry, ms) {
+    const el = entry.el;
+    el.style.transitionDuration = `${ms}ms`;
+    el.classList.add('entering');
+    void el.offsetWidth;                              // commit the starting opacity
+    el.classList.add('fading');
+    el.classList.remove('entering');
+    clearTimeout(entry.fadeTimer);
+    entry.fadeTimer = setTimeout(() => { el.classList.remove('fading'); el.style.transitionDuration = ''; }, ms + 40);
+  }
+
+  fadeOut(entry, ms) {
+    const el = entry.el;
+    el.style.transitionDuration = `${ms}ms`;
+    el.classList.add('fading', 'leaving');
+    clearTimeout(entry.fadeTimer);
+    setTimeout(() => this.retire(entry), ms + 40);
+  }
+
+  glide(entry, ms) {
+    const el = entry.el;
+    el.style.transitionDuration = `${ms}ms`;
+    el.classList.add('fading');
+    clearTimeout(entry.fadeTimer);
+    entry.fadeTimer = setTimeout(() => { el.classList.remove('fading'); el.style.transitionDuration = ''; }, ms + 40);
+  }
+
+  retire(entry) {
+    if (entry.type && TYPES[entry.type] && TYPES[entry.type].destroy) TYPES[entry.type].destroy(entry);
     entry.el.remove();
+  }
+
+  drop(entry) {
     this.layers.delete(entry.layer.id);
+    this.retire(entry);
   }
 
   clear() {
     for (const entry of [...this.layers.values()]) this.drop(entry);
+    for (const o of [...this.bgs.children]) o.remove();
+    this.bgKey = '';
     this.scene = null;
   }
 
@@ -582,8 +690,8 @@ class Stage {
 
 /* ------------------------------------------------------------- the runtime */
 
-const stageObjs = [new Stage(document.getElementById('stageA')), new Stage(document.getElementById('stageB'))];
-let current = null;
+const stage = new Stage(document.getElementById('stage'));
+let current = null;                                   // the stage, once it shows a scene
 let lastState = null;
 let voiceNow = { speaking: false, started: false };
 let loading = null;
@@ -609,27 +717,13 @@ function paintBody(scene) {
 
 async function show(scene, transition) {
   paintBody(scene);
-  if (current && current.scene && current.scene.id === scene.id) {
-    current.render(scene);
-    fit();
-    holdVoice();
-    return;
-  }
-  const next = stageObjs.find((s) => s !== current);
-  const old = current;
-  next.render(scene);
-  next.state(lastState);
-  fit();
-  const fade = transition && transition.kind === 'fade' && !isUltra() && old;
+  const switching = !!(current && current.scene && current.scene.id !== scene.id);
+  const fade = switching && transition && transition.kind === 'fade' && !isUltra();
   const ms = fade ? Math.max(60, Math.min(3000, Number(transition.duration) || 300)) : 0;
-  next.el.style.transitionDuration = `${ms}ms`;
-  if (old) old.el.style.transitionDuration = `${ms}ms`;
-  void next.el.offsetWidth;                       // commit the starting opacity
-  next.el.classList.add('shown');
-  if (old) old.el.classList.remove('shown');
-  current = next;
-  if (ms) await new Promise((r) => setTimeout(r, ms + 40));
-  if (old) old.clear();
+  stage.render(scene, ms);
+  current = stage;
+  current.state(lastState);
+  fit();
   holdVoice();
 }
 
@@ -654,8 +748,12 @@ async function loadScene(id, transition) {
 function onState(s) {
   lastState = s;
   syncUserFonts(s.fonts_v);
-  setUltra(s.ultra);
-  EmbedHost.broadcast(s);
+  // Minimized (Chrome keeps drawing a window tucked inside a minimized
+  // host), this page idles like Ultra, and so do the pages embedded in it.
+  const mine = (s.windows || {})[COMPONENT] || {};
+  const idle = !!mine.minimized && !PREVIEW;
+  setUltra(!!s.ultra || idle);
+  EmbedHost.broadcast(idle && !s.ultra ? Object.assign({}, s, { ultra: true }) : s);
   const v = (s.voice || {});
   const speaking = !!v.speaking;
   if (speaking !== voiceNow.speaking) {
@@ -679,7 +777,10 @@ function onState(s) {
 
 let ws = null;
 function connectFeed() {
-  try { ws = new WebSocket(`ws://${location.host}/ws/events`); } catch (_) { setTimeout(connectFeed, 2000); return; }
+  // Named after this page (a WebSocket carries no Referer), so the server
+  // knows which output holds the feed - and notices when one goes quiet.
+  const page = encodeURIComponent(location.pathname.split('/').pop() + location.search);
+  try { ws = new WebSocket(`ws://${location.host}/ws/events?page=${page}`); } catch (_) { setTimeout(connectFeed, 2000); return; }
   ws.onmessage = (e) => { try { onState(JSON.parse(e.data)); } catch (_) { /* next one */ } };
   ws.onclose = () => { ws = null; setTimeout(connectFeed, 1500); };
   ws.onerror = () => { try { ws.close(); } catch (_) {} };
@@ -706,7 +807,7 @@ window.addEventListener('pagehide', () => {
 });
 
 onMotionChange(() => { if (current) current.motion(); });
-document.addEventListener('visibilitychange', () => { if (current) current.motion(); });
+document.addEventListener('visibilitychange', () => { if (current) current.motion(); if (!PREVIEW) reportWindowMetrics(API); });
 
 window.addEventListener('resize', () => {
   fit();
@@ -718,7 +819,7 @@ if (!PREVIEW) reportWindowMetrics(API);
 window.SceneDebug = {
   scene: () => currentScene(),
   layers: () => current ? [...current.layers.values()].map((e) => ({ id: e.layer.id, type: e.type, status: e.status || '', media: !!e.media, src: e.media && e.media.dataset ? e.media.dataset.src : '' })) : [],
-  embeds: () => EmbedHost.count(),
+  embeds: () => ({ live: EmbedHost.count(), created: EmbedHost.created() }),
   voice: () => voiceNow,
 };
 

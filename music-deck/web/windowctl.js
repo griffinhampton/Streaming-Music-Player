@@ -11,6 +11,10 @@ function reportWindowMetrics(api) {
       inner_w: window.innerWidth,
       inner_h: window.innerHeight,
       dpr: window.devicePixelRatio,
+      // What the page believes about itself: a window Chrome counts as
+      // hidden stops animating, which a capture sees as a frozen picture.
+      visibility: document.visibilityState,
+      focus: document.hasFocus(),
     }),
   }).catch(() => {});
 }

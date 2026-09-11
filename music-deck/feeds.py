@@ -30,14 +30,28 @@ class Feeds:
 
     @staticmethod
     def page_of(handler):
+        # The page name, query included, so one scene output can be told
+        # from another (scene.html?id=... / scene.html?follow=1). A WebSocket
+        # request carries no Referer, so the page names itself in the URL.
+        named = urllib.parse.parse_qs(urllib.parse.urlsplit(getattr(handler, "path", "") or "").query).get("page")
+        if named and named[0]:
+            return named[0].rsplit("/", 1)[-1][:120]
         ref = handler.headers.get("Referer") or ""
-        path = urllib.parse.urlsplit(ref).path
-        return path.rsplit("/", 1)[-1] or "?"
+        u = urllib.parse.urlsplit(ref)
+        name = u.path.rsplit("/", 1)[-1] or "?"
+        return f"{name}?{u.query}" if u.query else name
 
     @staticmethod
     def group_of(page):
-        # The deck has its own Chrome; everything else shares one.
-        return "deck" if page in DECK_PAGES else "windows"
+        # The deck has its own Chrome, and its preview iframe lives there
+        # too; everything else shares one.
+        name, _, query = page.partition("?")
+        return "deck" if name in DECK_PAGES or "preview=1" in query else "windows"
+
+    def has_page(self, page):
+        """Does some open feed come from this page (name and query)?"""
+        with self._lock:
+            return any(f["page"] == page for f in self._open.values())
 
     def track(self, kind, page):
         with self._lock:

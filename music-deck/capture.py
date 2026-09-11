@@ -144,7 +144,7 @@ class MAPPED(ctypes.Structure):
     _fields_ = [("pData", c_void_p), ("RowPitch", c_uint), ("DepthPitch", c_uint)]
 
 
-# ------------------------------------------------------------------ BGRA -> NV12 on the GPU
+# ------------------------------------------------------------------ the compositor: sources keyed in, BGRA -> NV12 on the GPU
 
 IID_ID3D11VideoDevice = guid("10EC4D5B-975A-4689-B9E4-D0AAC30FE333")
 IID_ID3D11VideoContext = guid("61F21C45-3C0E-4A74-9CEA-67100D9AD5E4")
@@ -172,11 +172,165 @@ class VP_STREAM(ctypes.Structure):
                 ("ppFutureSurfacesRight", c_void_p)]
 
 
-class Nv12Converter:
-    """BGRA textures -> NV12 through the Direct3D 11 video processor, on the
-    GPU, no shader of ours. NV12 is what every H.264 encoder takes natively;
-    handing the AMD encoder RGB instead makes it convert internally, and
-    that path leaks ~1.7 KB per frame (measured: 3 MB/min at 30 fps)."""
+class SAMPLER_DESC(ctypes.Structure):
+    _fields_ = [("Filter", c_uint), ("AddressU", c_uint), ("AddressV", c_uint), ("AddressW", c_uint),
+                ("MipLODBias", ctypes.c_float), ("MaxAnisotropy", c_uint), ("ComparisonFunc", c_uint),
+                ("BorderColor", ctypes.c_float * 4), ("MinLOD", ctypes.c_float), ("MaxLOD", ctypes.c_float)]
+
+
+class BUFFER_DESC(ctypes.Structure):
+    _fields_ = [("ByteWidth", c_uint), ("Usage", c_uint), ("BindFlags", c_uint), ("CPUAccessFlags", c_uint),
+                ("MiscFlags", c_uint), ("StructureByteStride", c_uint)]
+
+
+class VIEWPORT(ctypes.Structure):
+    _fields_ = [("TopLeftX", ctypes.c_float), ("TopLeftY", ctypes.c_float), ("Width", ctypes.c_float),
+                ("Height", ctypes.c_float), ("MinDepth", ctypes.c_float), ("MaxDepth", ctypes.c_float)]
+
+
+# The keying pass. A source is drawn over its layer's rectangle, but only
+# where the scene painted (nearly) black: that is the hole the page left
+# for it - a circle, a rounded box, whatever the layer's mask made - and a
+# frame drawn over the hole stays a frame. `mirror` flips a camera the way
+# the page would have.
+_HLSL = """
+Texture2D scene : register(t0);
+Texture2D src : register(t1);
+SamplerState samp : register(s0);
+cbuffer C : register(b0) { float4 uv; float2 size; float mirror; float keyMax; };
+struct VS { float4 pos : SV_Position; float2 t : TEXCOORD0; };
+VS vs(uint id : SV_VertexID) {
+  float2 p = float2((id << 1) & 2, id & 2);
+  VS o; o.pos = float4(p.x * 2 - 1, 1 - p.y * 2, 0, 1); o.t = p; return o;
+}
+float4 ps_scene(VS i) : SV_Target { return float4(scene.Sample(samp, i.t).rgb, 1); }
+float4 ps_source(VS i) : SV_Target {
+  float2 t = i.t;
+  if (mirror > 0.5) t.x = 1 - t.x;
+  float2 st = lerp(uv.xy, uv.zw, t);
+  float3 s = scene.Load(int3(i.pos.xy, 0)).rgb;
+  clip(keyMax - dot(s, float3(0.2126, 0.7152, 0.0722)));
+  return float4(src.Sample(samp, st).rgb, 1);
+}
+"""
+
+
+class _Passes:
+    """Shaders, sampler, constants and the render target of the keying pass."""
+
+    def __init__(self, d3d, width, height):
+        self.d3d, self.width, self.height = d3d, width, height
+        self.vs = self.ps_scene = self.ps_src = self.sampler = self.cb = self.rt = self.rtv = None
+        self._srvs = {}
+        dev = d3d.device
+        try:
+            comp = ctypes.windll.d3dcompiler_47
+        except OSError:
+            raise OSError("d3dcompiler_47.dll is missing")
+        comp.D3DCompile.restype = c_int32
+        comp.D3DCompile.argtypes = [c_void_p, ctypes.c_size_t, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p,
+                                    c_uint, c_uint, POINTER(c_void_p), POINTER(c_void_p)]
+        src = _HLSL.encode("ascii")
+
+        def build(entry, target, slot):
+            code, err = c_void_p(), c_void_p()
+            hr = comp.D3DCompile(src, len(src), b"compositor", None, None, entry.encode(), target.encode(),
+                                 0, 0, byref(code), byref(err))
+            if hr != 0:
+                msg = ctypes.string_at(vcall(err, 3, c_void_p, [])) if err else b""
+                release(err)
+                raise OSError(f"shader {entry}: 0x{hr & 0xFFFFFFFF:08x} {msg.decode(errors='replace')[:300]}")
+            out = c_void_p()
+            ptr = vcall(code, 3, c_void_p, [])
+            size = vcall(code, 4, ctypes.c_size_t, [])
+            check(vcall(dev, slot, c_int32, [c_void_p, ctypes.c_size_t, c_void_p, POINTER(c_void_p)],
+                        ptr, size, None, byref(out)), f"create shader {entry}")
+            release(code)
+            return out
+        try:
+            self.vs = build("vs", "vs_5_0", 12)                                   # CreateVertexShader
+            self.ps_scene = build("ps_scene", "ps_5_0", 15)                       # CreatePixelShader
+            self.ps_src = build("ps_source", "ps_5_0", 15)
+            sd = SAMPLER_DESC(0x15, 3, 3, 3, 0.0, 1, 1, (ctypes.c_float * 4)(), 0.0, 3.4e38)   # linear, clamp
+            self.sampler = c_void_p()
+            check(vcall(dev, 23, c_int32, [POINTER(SAMPLER_DESC), POINTER(c_void_p)], byref(sd), byref(self.sampler)),
+                  "CreateSamplerState")
+            bd = BUFFER_DESC(32, 0, 0x4, 0, 0, 0)                                  # 8 floats, a constant buffer
+            self.cb = c_void_p()
+            check(vcall(dev, 3, c_int32, [POINTER(BUFFER_DESC), c_void_p, POINTER(c_void_p)], byref(bd), None, byref(self.cb)),
+                  "CreateBuffer")
+            self.rt = d3d.texture(width, height)
+            self.rtv = c_void_p()
+            check(vcall(dev, 9, c_int32, [c_void_p, c_void_p, POINTER(c_void_p)], self.rt, None, byref(self.rtv)),
+                  "CreateRenderTargetView")
+        except OSError:
+            self.close()
+            raise
+
+    def srv(self, tex):
+        v = self._srvs.get(tex.value)
+        if v is None:
+            if len(self._srvs) >= 16:
+                for old in self._srvs.values():
+                    release(old)
+                self._srvs = {}
+            v = c_void_p()
+            check(vcall(self.d3d.device, 7, c_int32, [c_void_p, c_void_p, POINTER(c_void_p)], tex, None, byref(v)),
+                  "CreateShaderResourceView")
+            self._srvs[tex.value] = v
+        return v
+
+    def _viewport(self, x, y, w, h):
+        vp = VIEWPORT(float(x), float(y), float(w), float(h), 0.0, 1.0)
+        vcall(self.d3d.context, 44, None, [c_uint, POINTER(VIEWPORT)], 1, byref(vp))
+
+    def draw(self, scene, placed, key_max):
+        """The scene, then each source (texture, dest rect, uv rect, mirror)
+        keyed into it; returns the render target."""
+        ctx = self.d3d.context
+        vcall(ctx, 17, None, [c_void_p], None)                                    # no input layout
+        vcall(ctx, 24, None, [c_uint], 4)                                         # triangle list
+        vcall(ctx, 11, None, [c_void_p, c_void_p, c_uint], self.vs, None, 0)
+        vcall(ctx, 10, None, [c_uint, c_uint, POINTER(c_void_p)], 0, 1, (c_void_p * 1)(self.sampler.value))
+        vcall(ctx, 35, None, [c_void_p, c_void_p, c_uint], None, None, 0xFFFFFFFF)   # no blending
+        vcall(ctx, 43, None, [c_void_p], None)
+        vcall(ctx, 33, None, [c_uint, POINTER(c_void_p), c_void_p], 1, (c_void_p * 1)(self.rtv.value), None)
+        vcall(ctx, 16, None, [c_uint, c_uint, POINTER(c_void_p)], 0, 1, (c_void_p * 1)(self.cb.value))
+        scene_srv = self.srv(scene).value
+        self._viewport(0, 0, self.width, self.height)
+        vcall(ctx, 8, None, [c_uint, c_uint, POINTER(c_void_p)], 0, 2, (c_void_p * 2)(scene_srv, 0))
+        vcall(ctx, 9, None, [c_void_p, c_void_p, c_uint], self.ps_scene, None, 0)
+        vcall(ctx, 13, None, [c_uint, c_uint], 3, 0)
+        vcall(ctx, 9, None, [c_void_p, c_void_p, c_uint], self.ps_src, None, 0)
+        for tex, dest, uv, mirror in placed:
+            consts = (ctypes.c_float * 8)(uv[0], uv[1], uv[2], uv[3], float(self.width), float(self.height),
+                                          1.0 if mirror else 0.0, key_max)
+            vcall(ctx, 48, None, [c_void_p, c_uint, c_void_p, c_void_p, c_uint, c_uint], self.cb, 0, None, consts, 0, 0)
+            vcall(ctx, 8, None, [c_uint, c_uint, POINTER(c_void_p)], 0, 2, (c_void_p * 2)(scene_srv, self.srv(tex).value))
+            self._viewport(dest[0], dest[1], dest[2] - dest[0], dest[3] - dest[1])
+            vcall(ctx, 13, None, [c_uint, c_uint], 3, 0)
+        vcall(ctx, 8, None, [c_uint, c_uint, POINTER(c_void_p)], 0, 2, (c_void_p * 2)(0, 0))
+        vcall(ctx, 33, None, [c_uint, POINTER(c_void_p), c_void_p], 1, (c_void_p * 1)(0), None)
+        return self.rt
+
+    def close(self):
+        for v in self._srvs.values():
+            release(v)
+        self._srvs = {}
+        for attr in ("rtv", "rt", "cb", "sampler", "ps_src", "ps_scene", "vs"):
+            obj = getattr(self, attr)
+            if obj:
+                release(obj)
+                setattr(self, attr, None)
+
+
+class Compositor:
+    """The frame the encoder gets, made on the GPU: the scene window's BGRA
+    texture, native sources (a camera, a captured window or screen) keyed
+    into the holes the scene left for them, and the Direct3D 11 video
+    processor turning the result into NV12. NV12 is what every H.264
+    encoder takes; handing the AMD encoder RGB made it convert internally,
+    and that path leaks ~1.7 KB per frame (measured: 3 MB/min at 30 fps)."""
 
     ID3D11VideoDevice_CreateVideoProcessor = 4
     ID3D11VideoDevice_CreateInputView = 8
@@ -186,6 +340,7 @@ class Nv12Converter:
     ID3D11VideoContext_SetStreamFrameFormat = 27
     ID3D11VideoContext_SetStreamColorSpace = 28
     ID3D11VideoContext_Blt = 53
+    KEY_MAX = 0.035            # luma (of 1.0) at or under this is a hole: black, and nothing lighter
 
     def __init__(self, d3d, width, height, fps=30, ring=3):
         self.d3d, self.width, self.height = d3d, width, height
@@ -195,6 +350,9 @@ class Nv12Converter:
         self.outputs = []          # (NV12 texture, output view), used in turn so the
         self._turn = 0             # encoder can still be reading the previous one
         self._input = (None, None)  # (source texture address, its input view)
+        self.sources = []          # see set_sources
+        self.passes = None         # built the first time a source is keyed in
+        self.composited = 0        # frames that carried at least one source
         try:
             desc = VP_CONTENT_DESC(0, (c_uint * 2)(fps, 1), width, height, (c_uint * 2)(fps, 1), width, height, 0)
             self.enum = c_void_p()
@@ -226,17 +384,59 @@ class Nv12Converter:
             self.close()
             raise
 
-    def convert(self, src):
-        """Blit `src` (BGRA, our size) into the next NV12 texture; returns it."""
-        if self._input[0] != src.value:
+    def set_sources(self, sources):
+        """What fills the scene's holes: each {"texture": fn() -> BGRA texture
+        or None, "size": fn() -> (w, h) or None, "rect": (x, y, w, h) in
+        output pixels, "fit": "contain" | "cover", "mirror": bool,
+        "flip": bool (a bottom-up picture)}."""
+        self.sources = list(sources or [])
+
+    @staticmethod
+    def _place(rect, size, fit):
+        """Where a source of `size` lands inside `rect` (x0, y0, x1, y1) and
+        which part of it (u0, v0, u1, v1): letterboxed ("contain", the rest
+        stays a hole) or cropped to fill ("cover")."""
+        x, y, w, h = rect
+        sw, sh = size or (0, 0)
+        if not (sw and sh and w and h):
+            return (x, y, x + w, y + h), (0.0, 0.0, 1.0, 1.0)
+        if fit == "cover":
+            scale = max(w / sw, h / sh)
+            cw, ch = w / scale, h / scale
+            cx, cy = (sw - cw) / 2, (sh - ch) / 2
+            return (x, y, x + w, y + h), (cx / sw, cy / sh, (cx + cw) / sw, (cy + ch) / sh)
+        scale = min(w / sw, h / sh)
+        dw, dh = int(sw * scale), int(sh * scale)
+        dx, dy = x + (w - dw) // 2, y + (h - dh) // 2
+        return (dx, dy, dx + dw, dy + dh), (0.0, 0.0, 1.0, 1.0)
+
+    def convert(self, scene):
+        """The scene (BGRA, our size) with its sources keyed in, as the next
+        NV12 texture of the ring; returns it."""
+        placed = []
+        for s in self.sources:
+            tex = s["texture"]()
+            if not tex:
+                continue
+            size = s["size"]() if s.get("size") else None
+            dest, uv = self._place(s["rect"], size, s.get("fit", "contain"))
+            if s.get("flip"):
+                uv = (uv[0], uv[3], uv[2], uv[1])
+            placed.append((tex, dest, uv, bool(s.get("mirror"))))
+        if placed:
+            if self.passes is None:
+                self.passes = _Passes(self.d3d, self.width, self.height)
+            scene = self.passes.draw(scene, placed, self.KEY_MAX)
+            self.composited += 1
+        if self._input[0] != scene.value:
             if self._input[1]:
                 release(self._input[1])
             ivd = VP_INPUT_VIEW_DESC(0, 1, 0, 0)
             iv = c_void_p()
             check(vcall(self.vdev, self.ID3D11VideoDevice_CreateInputView, c_int32,
                         [c_void_p, c_void_p, POINTER(VP_INPUT_VIEW_DESC), POINTER(c_void_p)],
-                        src, self.enum, byref(ivd), byref(iv)), "CreateVideoProcessorInputView")
-            self._input = (src.value, iv)
+                        scene, self.enum, byref(ivd), byref(iv)), "CreateVideoProcessorInputView")
+            self._input = (scene.value, iv)
         tex, ov = self.outputs[self._turn]
         self._turn = (self._turn + 1) % len(self.outputs)
         stream = VP_STREAM(1, 0, 0, 0, 0, None, self._input[1].value, None, None, None, None)
@@ -246,6 +446,9 @@ class Nv12Converter:
         return tex
 
     def close(self):
+        if self.passes:
+            self.passes.close()
+            self.passes = None
         if self._input[1]:
             release(self._input[1])
         self._input = (None, None)
@@ -258,6 +461,9 @@ class Nv12Converter:
             if obj:
                 release(obj)
                 setattr(self, attr, None)
+
+
+Nv12Converter = Compositor      # the P4 name
 
 
 def find_window(title_part):

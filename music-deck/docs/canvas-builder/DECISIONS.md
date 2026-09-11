@@ -517,6 +517,116 @@ still hold the camera on this PC). The converter feeds the encoder the
 newest frame while the previous one may still be encoding - three rotating
 textures cover it at 30 fps, P5 measures 60.
 
+## P5 - the backend measured, fixed and hardened (2026-09-11)
+
+Every template scene was measured on the rig (`tools/p5/p5rig.py`) as a
+real hosted window, Chrome's cost for the whole rig profile, 15 s each,
+warm profile, screen on. The four templates ship with a camera layer and
+(the gaming ones) a capture hole; "animated" adds the decor loop to a
+text, "camera" points the camera at the one device OBS and LIVE Studio
+leave free (the IR camera, 640x480), "window" swaps the capture to a
+browser `getDisplayMedia` of a 30 fps source window.
+
+| Template (Chrome, % of one core) | idle | animated | + camera in the page | + window source in the page |
+|---|---|---|---|---|
+| Just chatting | 13.0 | 18.4 | 35.1 | 28.1 |
+| Music + lyrics | 11.3 | 16.5 | 32.3 | 26.5 |
+| Gaming portrait (1080x1920) | 12.9 | 19.1 | 41.9 | 29.9 |
+| Gaming landscape | 10.7 | 10.2 (no text to animate) | 35.1 | 29.6 |
+
+"Idle" is not static: the embedded Now Playing and Captions pages tick
+(P3 measured the same two at 11.2%), which is where the 10-13% goes. The
+two costs that blow the budget are Chrome's: a camera through
+`getUserMedia` adds ~22% (12% of it Chrome's video-capture service, the
+rest renderer, GPU and browser process) and a window through
+`getDisplayMedia` adds ~15% (the browser process does the capture). The
+native hole costs nothing in Chrome. **So the native compositor is the
+fix** (below).
+
+| Also measured | Result |
+|---|---|
+| LIVE, animated Just chatting, 720p30 preset (at the 1920x1080 window) | Chrome 21.7%, server 16.2%, 3533 kbps, 30 fps |
+| LIVE, 1080p30 preset | Chrome 25.6%, server 22.7%, 3984 kbps, 29.8 fps |
+| Animated scene, Ultra on | 18.4% -> 2.4% (later runs 17-19% -> 4.1-4.4%) |
+| Animated scene, parked off screen | 18.4%, captured at 41 fps |
+| Minimized, before | 19.4%: Chrome keeps drawing inside a minimized host - and the host watchdog, seeing a host at -32000, rebuilt the window after ~6 s (a pre-existing bug: minimize never stuck) |
+| Minimized, after | 0.4-1.4% for a scene, 0.8-1.4% for Now Playing |
+| Seven windows (deck + 4 pop-outs + 3 outputs) | pop-outs on SSE (4), outputs on the WebSocket feed (3), the deck and its preview iframe counted as the deck's Chrome, every page followed a live switch, no six-connection warning |
+| 20 live switches every 1.2 s | no iframe rebuilt (`EmbedHost.created` stayed at 2), the camera `<video>` and the Now Playing iframe are the same elements before and after, the page shows the scene the last switch asked for |
+| Recovery (`tools/p5/p5recover.py`) | 12 of 12: the live window killed mid-stream is re-opened within 20 s and re-joins the stream (frames keep counting, `stalled` false, the recording continues); every page's renderer shot -> feeds drop, the quiet outputs are rebuilt and their feeds return; a server restart re-opens the outputs that were open, the parked one parked |
+
+What changed:
+
+- **Scene switches move boxes, not pages.** `web/scene.js` renders in one
+  stage now: on a switch, layers the next scene shares - a component (an
+  iframe reloads when rebuilt, or even when moved in the document), a
+  camera or capture (a new stream), a video - are kept and glide to their
+  new box; new layers fade in, the old fade out, the background crossfades.
+  Identity is the media (component id; camera device/size/rate; capture
+  source; video src), not the layer id, so two templates share their
+  Now Playing.
+- **Minimize means "out of the way and idle".** A hosted window is parked
+  instead of minimized for real (Chrome inside a minimized host keeps
+  drawing, and after a real minimize/restore the measurements went odd
+  while the screen was off - see the note below); every page treats its
+  own window's `minimized` flag in the snapshot like Ultra (`idleHere` in
+  motion.js; a scene passes it on to its embedded pages). The host's
+  alignment check leaves a minimized host alone, and every window action
+  broadcasts a snapshot so the pages hear about it at once.
+- **Recovery.** `remember_outputs` keeps the open outputs (parked or not)
+  in `canvas.reopen`; `_watch_outputs` re-opens one that is gone (three
+  tries in two minutes, then it is left closed), rebuilds one whose page
+  has held no feed for 15 s, re-joins the live output to the running
+  stream (`rejoin_live`: a fresh capture, the engine's clock carries on),
+  and at start brings back last time's outputs. WebSocket feeds name
+  their page (`/ws/events?page=`), so the server knows which output holds
+  which feed; `nativelive` reports `stalled` when the window stops
+  delivering. A corrupted scene file already fell back to its newest
+  readable backup at load; now there is a test for it.
+- **Security pass.** `guard.trusted` (Host must be ours, Origin ours or
+  absent) is the one door for GET, HEAD, POST and both WebSockets, with
+  tests for DNS rebinding, another origin, another port and `null`.
+  Assets and scenes never leave their folders (`os.path.basename`, ids
+  looked up in the store, backup numbers as ints - tested with `..`,
+  `%2F`, `builtin:..`). The RTMP client masks the stream key in every log
+  line, even when the server echoes it in a status.
+- **The engine's own cost.** The capture loop sleeps until the next tick
+  instead of polling the encoder every 2 ms; the audio mixer sleeps 20 ms
+  (a frame is 21). `OPENBLAS_NUM_THREADS=1` before numpy loads (its BLAS
+  reserved ~500 MB of private memory the mixer never uses).
+  `/api/debug/threads` reports CPU per thread by name for the next time
+  the server's time needs finding.
+- **The native compositor** (`capture.Compositor`, `camera.py`,
+  `scenes.native_sources`): a capture layer in native mode or a camera
+  layer with `mode: native` is a hole in the page - painted black, in the
+  layer's own shape (a circle, a rounded box) - and while LIVE the server
+  fills it: the window or screen through WGC, the camera through a Media
+  Foundation source reader (RGB32, one `UpdateSubresource` per frame),
+  keyed into the scene by a 20-line pixel shader (a source pixel lands
+  where the scene's luma is under 0.035, so a frame drawn over the hole
+  stays, and `mirror` flips the camera), then the video processor's NV12
+  conversion as before. The AMD driver has no luma key in its video
+  processor (checked), hence the shader. Verified with synthetic textures
+  (`tools/p5/comptest.py`): a mirrored source shows inside a circular
+  hole under a ring, a red square and a near-black box stay untouched,
+  60/60 frames encoded. Sources follow the live scene: set at start, on a
+  live switch, on a save of the live scene. Not mirrored natively: the
+  camera picture's masks other than the hole's shape.
+
+A note on measuring: WGC only delivers frames while DWM composes, and
+DWM stops when the screen is off - every capture-rate figure taken in
+the two hours after the display timed out read 2-4 fps for everything,
+the whole monitor included, which first looked like a park/unpark bug.
+`tools/p5/keepawake.py` holds the display on during capture tests; the
+session-lock state (`WTSQuerySessionInformation`) and
+`DwmGetCompositionTimingInfo` say whether a number is worth anything.
+
+Still to run (they need the screen on and the camera free): the 2-hour
+stress (`p5stress.py`: 60 layers, four components, a camera, a window
+source, LIVE), the 60 fps ring check (`tearcheck.py`), the server's
+per-thread profile while LIVE (`p5threads.py`), and the compositor on the
+rig with the real window and camera (`p5native.py`).
+
 ## Tools kept for later steps (`music-deck/tools/p0/`)
 
 - `wgc.py` - Windows Graphics Capture of a window or monitor, PNG + fps + CPU.

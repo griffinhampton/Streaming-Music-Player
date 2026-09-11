@@ -73,6 +73,16 @@
   const notify = () => { for (const fn of hooks) { try { fn(); } catch (_) { /* keep going */ } } };
 
   window.isUltra = () => document.documentElement.classList.contains('ultra');
+  /* A window the deck minimized idles like Ultra: the server says which
+     windows are minimized in every snapshot, and a page knows its own name.
+     Embedded and preview copies follow their host instead. */
+  const PAGE_IDS = { 'nowplaying.html': 'np', 'lyrics.html': 'lyrics', 'queue.html': 'queue', 'captions.html': 'captions' };
+  window.idleHere = (state) => {
+    const q = new URLSearchParams(location.search);
+    if (q.has('embed') || q.has('preview')) return false;
+    const w = ((state && state.windows) || {})[PAGE_IDS[location.pathname.split('/').pop()]];
+    return !!(w && w.minimized);
+  };
   // Pages redraw here when the switch flips or a frozen picture is ready.
   window.onMotionChange = (fn) => { hooks.push(fn); };
 

@@ -452,7 +452,7 @@ class AudioMixer:
                         self.frames += 1
                     produced += FRAME
                     due -= FRAME
-                time.sleep(0.01)
+                time.sleep(0.02)                  # a frame is 21 ms; the rings hold 330
         except Exception as exc:
             self.error = str(exc)
             self.log(f"audio stopped: {exc}")

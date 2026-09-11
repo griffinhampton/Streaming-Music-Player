@@ -451,7 +451,7 @@ let retry = null;
 
 function takeSnapshot(data) {
   syncUserFonts(data.fonts_v);
-  setUltra(data.ultra);
+  setUltra(data.ultra || idleHere(data));
   applyDesign(data.nowplaying);
   render(data.now);
 }
