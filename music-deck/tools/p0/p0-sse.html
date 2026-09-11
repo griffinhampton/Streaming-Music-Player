@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>P0 SSE</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 28px/1.4 system-ui; padding: 24px; }
+  b { color: #7f7; }
+</style>
+<pre id="o"></pre>
+<script>
+  // Opens ?n= EventSources to /api/events, then times one plain fetch. The
+  // outcome also goes into the window title so it can be read from outside.
+  const q = new URLSearchParams(location.search);
+  const N = +q.get('n') || 7;
+  const out = document.getElementById('o');
+  const src = [], opened = new Set();
+  const log = s => { out.textContent += s + '\n'; };
+  for (let i = 0; i < N; i++) {
+    const es = new EventSource('/api/events?p0=' + i);
+    es.onopen = () => opened.add(i);
+    es.onerror = () => log(`source ${i}: error (readyState ${es.readyState})`);
+    src.push(es);
+  }
+  setTimeout(async () => {
+    log(`after 3 s: ${opened.size} of ${N} SSE streams open: [${[...opened].sort((a, b) => a - b)}]`);
+    const t0 = performance.now();
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 6000);
+    let msg;
+    try { await fetch('/api/state', { cache: 'no-store', signal: ctl.signal }); msg = `fetch /api/state took ${(performance.now() - t0).toFixed(0)} ms`; }
+    catch (e) { msg = `fetch /api/state STALLED >6000 ms (${e.name})`; }
+    clearTimeout(timer);
+    log(msg);
+    document.title = `P0 SSE open=${opened.size}/${N} ${msg}`;
+  }, 3000);
+</script>

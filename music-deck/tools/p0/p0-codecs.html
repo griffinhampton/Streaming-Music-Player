@@ -1,0 +1,46 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>P0 Codecs</title>
+<pre id="o" style="font: 16px monospace; white-space: pre-wrap"></pre>
+<script>
+  // Can this Chrome encode a stream itself (WebCodecs), with the GPU?
+  window.probe = async () => {
+    const out = {};
+    const vids = [
+      ['h264 high 1080p60 hw', { codec: 'avc1.640028', width: 1920, height: 1080, framerate: 60, bitrate: 6e6, hardwareAcceleration: 'prefer-hardware', avc: { format: 'annexb' } }],
+      ['h264 high 1080p60 sw', { codec: 'avc1.640028', width: 1920, height: 1080, framerate: 60, bitrate: 6e6, hardwareAcceleration: 'prefer-software', avc: { format: 'annexb' } }],
+      ['h264 portrait 1080x1920 hw', { codec: 'avc1.640028', width: 1080, height: 1920, framerate: 30, bitrate: 4e6, hardwareAcceleration: 'prefer-hardware', avc: { format: 'annexb' } }],
+      ['hevc main 1080p hw', { codec: 'hvc1.1.6.L120.B0', width: 1920, height: 1080, framerate: 60, bitrate: 6e6, hardwareAcceleration: 'prefer-hardware' }],
+    ];
+    for (const [name, cfg] of vids) {
+      try { const r = await VideoEncoder.isConfigSupported(cfg); out[name] = r.supported; }
+      catch (e) { out[name] = 'ERR ' + e.message; }
+    }
+    const auds = [
+      ['aac lc 48k stereo', { codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, bitrate: 128000 }],
+      ['aac lc 44.1k stereo', { codec: 'mp4a.40.2', sampleRate: 44100, numberOfChannels: 2, bitrate: 128000 }],
+      ['opus 48k stereo', { codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 128000 }],
+    ];
+    for (const [name, cfg] of auds) {
+      try { const r = await AudioEncoder.isConfigSupported(cfg); out[name] = r.supported; }
+      catch (e) { out[name] = 'ERR ' + e.message; }
+    }
+    // A real encode: 60 frames of 1080p through the hardware encoder.
+    try {
+      const enc = new VideoEncoder({ output: () => { out.chunks = (out.chunks || 0) + 1; }, error: e => { out.encErr = e.message; } });
+      enc.configure({ codec: 'avc1.640028', width: 1920, height: 1080, framerate: 30, bitrate: 6e6, hardwareAcceleration: 'prefer-hardware', avc: { format: 'annexb' }, latencyMode: 'realtime' });
+      const c = new OffscreenCanvas(1920, 1080), g = c.getContext('2d');
+      const t0 = performance.now();
+      for (let i = 0; i < 60; i++) {
+        g.fillStyle = `hsl(${i * 6} 60% 40%)`; g.fillRect(0, 0, 1920, 1080);
+        g.fillStyle = '#fff'; g.fillRect((i * 30) % 1800, 500, 100, 100);
+        const f = new VideoFrame(c, { timestamp: i * 33333 });
+        enc.encode(f, { keyFrame: i % 30 === 0 }); f.close();
+      }
+      await enc.flush(); enc.close();
+      out.encode60frames_ms = Math.round(performance.now() - t0);
+    } catch (e) { out.encErr = String(e); }
+    document.getElementById('o').textContent = JSON.stringify(out, null, 1);
+    return out;
+  };
+</script>

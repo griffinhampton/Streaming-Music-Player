@@ -1,373 +1,346 @@
 # Canvas Builder - build plan
 
 A separate, connected page where you compose the deck's components and new
-sources into full stream layouts: a **horizontal canvas** (1920x1080, full
-screen) and a **phone canvas** (1080x1920, TikTok LIVE portrait). It works
-like OBS (sources, scenes, a live output window you capture) crossed with
-Photoshop (layers, transforms, effects, snapping). It adds text, GIFs,
-backgrounds, images that change when you speak, a camera, screen share, and
-frames for streamed content. It is built on a component registry, so new
-components can keep being added later.
+sources into full stream layouts: a **horizontal canvas** (1920x1080) and a
+**phone canvas** (1080x1920, TikTok LIVE portrait). It works like OBS
+(sources, scenes, live output) crossed with Photoshop (layers, transforms,
+effects, snapping). It adds text, GIFs, video, backgrounds, images that
+change when you speak, a camera, screen and window capture, frames for
+streamed content - and it can go LIVE to TikTok straight from the app with
+your stream key, no LIVE Studio or OBS in the loop. It is built on a
+component registry, so new components keep being added later.
 
-**How to use this file:** run the prompts below **one at a time, in order**
-(P0, P1, ...). Paste a prompt into Claude Code as written. Each one builds on
-the ones before it and ends with a commit, so the app works after every step.
-Tick the box when a step has landed.
+**Order of work (the user's rule):** backend, streaming engine, optimization
+and architecture first, frontend last. **Models:** run P1-P5 and P12 with
+**Fable** (architecture and backend), P6-P11 with **Opus** (frontend). Pick
+the model in the app before pasting the prompt.
 
-| # | Step | Status |
-|---|------|--------|
-| P0 | Groundwork: verify capture, permissions, limits; write the decisions | [ ] |
-| P1 | Component registry + scrollable components row | [ ] |
-| P2 | Embed mode for components + one shared state feed | [ ] |
-| P3 | Scene model, storage, asset library, API | [ ] |
-| P4 | Scene renderer + output windows (horizontal and phone) | [ ] |
-| P5 | Canvas Builder editor shell (its own connected page) | [ ] |
-| P6 | Canvas tools: transform, snapping, guides, groups, shortcuts | [ ] |
-| P7 | Layer types: text, image/GIF/video, backgrounds, shapes, effects | [ ] |
-| P8 | Component layers inside scenes | [ ] |
-| P9 | Mic activation: voice state + reactive images and triggers | [ ] |
-| P10 | Screen share and camera: frames tab + live sources | [ ] |
-| P11 | Phone canvas: TikTok safe zones + starter templates | [ ] |
-| P12 | Scenes, live switching, transitions, deck quick controls | [ ] |
-| P13 | Hardening: performance, QA, docs, build, release | [ ] |
+**How to use this file:** run the prompts below **one at a time, in order**.
+Paste a prompt into Claude Code as written. Each builds on the ones before it
+and ends with a commit, so the app works after every step. Tick the box when
+a step has landed. P0's findings live in `docs/canvas-builder/DECISIONS.md`;
+every later prompt reads it first.
+
+| # | Step | Model | Status |
+|---|------|-------|--------|
+| P0 | Groundwork: capture, permissions, limits, encoders measured; decisions written | Fable | [x] 2026-09-11 |
+| P1 | Streaming engine spike: capture -> encode -> RTMP, measured, go/no-go | Fable | [ ] |
+| P2 | Server architecture: registry, feeds + WebSocket, scene store, assets, outputs, capture sources, voice, key vault | Fable | [ ] |
+| P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [ ] |
+| P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [ ] |
+| P5 | Optimization and hardening of the backend | Fable | [ ] |
+| P6 | Deck integration: scrollable components row, screen-share group, Canvas Builder entry, LIVE strip | Opus | [ ] |
+| P7 | Canvas Builder editor shell | Opus | [ ] |
+| P8 | Canvas tools: transform, snapping, guides, groups, shortcuts | Opus | [ ] |
+| P9 | Inspectors for every layer type and source | Opus | [ ] |
+| P10 | Phone canvas: safe zones, templates gallery, format conversion | Opus | [ ] |
+| P11 | Go LIVE panel, studio mode, scene remote | Opus | [ ] |
+| P12 | Release: QA, import/export, docs, build | Fable, then Opus for UI fixes | [ ] |
 
 ---
 
 ## Standing rules (every prompt includes these by reference)
 
 - Local-first: the server binds `127.0.0.1` only. No audio or video leaves
-  the PC. Nothing downloads without an explicit press, and none of these
-  steps need a download.
+  the PC except the RTMP stream the user starts on purpose. Nothing
+  downloads without an explicit press, and none of these steps need one.
+- The stream key is a secret: stored DPAPI-encrypted in `cache/`, masked in
+  the UI, never logged, never in a commit. Secret-scan before every push.
 - US spelling in code and UI. Match the surrounding code's style and comment
   density.
 - Test on the isolated copy (`scratchpad/testrig`, port 8799,
-  `server.py --no-open`), never on the real app. Take headless-Chrome
-  screenshots over CDP for visual checks. Window geometry must pass the
-  DPI-aware `windiag2.py` check.
-- Performance is a feature. The user's target is about 5% total CPU on a
-  16-thread laptop with a 165 Hz screen. Measure every new animated or live
-  element on a real window (`chrometype.ps1`, and an A/B like `abtest.ps1`).
-  Endless animation runs at 30 fps (motion.js), Ultra optimized stops all
-  motion, and nothing ticks while hidden.
-- Never pop topmost windows open while the user may be gaming.
+  `server.py --no-open`, started with the Bash tool's `run_in_background`),
+  never on the real app. Headless-Chrome screenshots over CDP for visual
+  checks; window geometry must pass the DPI-aware `tools/p0/windiag2.py`;
+  capture checks with `tools/p0/wgc.py`; CPU with `tools/p0/cpuby.ps1` and
+  the scratchpad `chrometype.ps1`/`abtest.ps1` on real windows.
+- Performance is a feature: the target is about 5% total CPU on a 16-thread
+  laptop with a 165 Hz screen. Endless motion runs at 30 fps (motion.js),
+  Ultra optimized stops all motion, nothing ticks while hidden. Budgets are
+  in DECISIONS.md; every step reports its numbers in the commit message.
+- Never pop topmost windows open while the user may be gaming. Output
+  windows may be parked off screen (proven to render and capture there).
 - Don't use multi-agent Workflow runs unless absolutely needed. Self-review
   and rig tests are the default.
-- Never commit `config.json`, `cache/` or tokens. Secret-scan before pushing.
-  Commit and push at the end of each step, and watch CI.
+- Never commit `config.json`, `cache/` or tokens. Commit and push at the end
+  of each step and watch CI.
 - Keep every existing feature working: the four pop-outs, captions (CPU and
-  GPU), Spotify, lyrics, ultra mode and the deck preview.
+  GPU), Spotify, lyrics, Ultra mode and the deck preview.
 
 ## Architecture at a glance
 
 ```
-deck.html (control room)      canvas.html (Canvas Builder editor)
-   |  components row (registry-driven, scrollable)   |  layers / sources / inspector
-   |                                                  |
-   +----------- server.py (127.0.0.1:8713) -----------+
-         COMPONENTS registry   SCENES store   ASSET store   VOICE state
-         /api/events (one SSE per page)       /api/scenes/*  /api/assets/*
-                           |
-                 scene.html?id=...  (output: renders a scene)
-                 opened as a hosted pop-out window like the others,
-                 captured by TikTok LIVE Studio
-                 - component layers = component pages in embed mode (iframes),
-                   fed by the scene page over postMessage (no SSE of their own)
+deck.html (control room)             canvas.html (editor, P7+)
+  components row (registry)            layers / sources / inspector / LIVE panel
+        |                                     |
+        +--------- server.py (127.0.0.1:8713) ---------+
+          COMPONENTS registry   SCENES store   ASSETS   VOICE   CAPTURE sources (WGC)
+          /api/events (SSE, one per page)   /ws (stdlib WebSocket: media + feeds)
+          LIVE engine: FLV mux + RTMP client -> TikTok (Server URL + Stream key)
+                                |
+                     scene.html?id=...  (output window, any size, may sit off screen)
+                       layers: components (embed mode, fed by postMessage), text,
+                       images/GIF/video, backgrounds, shapes, effects, camera,
+                       window/monitor capture (getDisplayMedia, auto-selected),
+                       reactive images (VOICE)
+                       when LIVE: captures itself -> WebCodecs H.264 + AAC -> /ws
+             or captured by LIVE Studio (Window capture / Browser capture link)
 ```
 
-## Key risks and the decisions they force (P0 settles them)
+## Settled in P0 (details and numbers in DECISIONS.md)
 
-1. **Browser connection cap.** Chrome allows 6 HTTP/1.1 connections per host.
-   Every page holds one SSE stream (`/api/events`), so a scene with four
-   component iframes plus itself would starve other requests. Decision:
-   embedded components never open their own SSE. The scene page relays state
-   to them by `postMessage`, building on the preview mechanism that already
-   exists.
-2. **Transparency on capture.** Window capture usually drops per-pixel alpha.
-   A scene is therefore composed inside our canvas, as one window: camera and
-   screen share are sources in the scene. Areas meant to show something from
-   LIVE Studio underneath use a key color (chroma key) or, if LIVE Studio
-   supports a web/link source, real transparency. P0 checks which.
-3. **Portrait size.** 1080x1920 is taller than the 1440 px screen. P0 checks
-   whether Windows Graphics Capture takes a window larger than, or partly off,
-   the screen. The fallback is rendering at a lower size such as 720x1280.
-4. **Camera and screen permissions.** Local Chrome app windows are secure
-   contexts. P0 checks that permission persists per profile, and whether
-   `getDisplayMedia` needs the picker every time.
-5. **CPU.** Composing many live things is exactly what the user wants to keep
-   cheap. Each step has a measured budget. Rendering prefers CSS transforms
-   and pre-rendered sprites, and draws live video only when present.
+1. Chrome's 6-connections-per-host cap is real and SSE counts: one feed per
+   page, embedded components over `postMessage`, WebSocket for media and
+   extra feeds.
+2. Window capture never carries alpha; see-through overlays for LIVE Studio
+   go through its Browser capture (Link) source, key color as fallback.
+3. A hosted window can be 1080x1920 and fully off screen and still renders
+   and captures at 55 fps; size the host first, resize Chrome after adoption.
+4. Camera/mic: the app seeds its Chrome profile's content settings for its
+   own origin, so no prompts. Screen/window capture: auto-select flag, no
+   picker.
+5. Encoding: WebCodecs H.264/HEVC on the GPU and AAC are available in this
+   Chrome; the machine has NVIDIA, AMD and Microsoft encoders.
 
 ---
 
-## P0 - Groundwork: verify capture, permissions, limits; write the decisions
+## P1 - Streaming engine spike: capture -> encode -> RTMP (Fable)
 
 ```text
-We're starting the Canvas Builder described in music-deck/docs/CANVAS_BUILDER_PLAN.md (read it first, including
-the Standing rules and "Key risks"). This step is research and measurement only - no feature code.
+Canvas Builder step P1. Run with Fable. Read music-deck/docs/CANVAS_BUILDER_PLAN.md (Standing rules) and
+docs/canvas-builder/DECISIONS.md first. Goal: prove, with numbers, that the app can go LIVE to TikTok by itself:
+a page captures and encodes, the server muxes and pushes RTMP. No UI polish, no scene features - a spike that
+becomes the seed of P4.
 
-Find out, with evidence (web sources for TikTok LIVE Studio, small local experiments on the 8799 rig for the rest):
-1. TikTok LIVE Studio's source types today: window capture (does it keep per-pixel alpha?), a web/link/browser
-   source (does it render transparency?), chroma key availability and on which sources, image/text sources,
-   canvas sizes for landscape and portrait.
-2. Can a hosted pop-out window at 1080x1920 (taller than this 2560x1440 @150% screen) or partly off-screen be
-   window-captured whole? Test with our own HostWindow + Chrome app window and Windows Graphics Capture
-   (e.g. a small Python/WinRT or PowerShell capture test) - report what we get.
-3. In a Chrome --app window on http://127.0.0.1:8713: getUserMedia (camera + mic) and getDisplayMedia
-   behavior - permission prompts, whether the choice persists in the chrome-windows profile, relevant flags
-   (e.g. --auto-select-desktop-capture-source), and CPU cost of showing a 1080p camera in a <video> in a hosted
-   window (measure with scratchpad chrometype.ps1).
-4. The SSE connection cap: confirm 6 per host in our shared Chrome profile, and what happens with 5+ SSE pages.
-5. Baseline CPU of the current app with Now Playing + Captions open (so later steps can be compared).
-
-Write music-deck/docs/canvas-builder/DECISIONS.md: each question, the evidence, and the decision (how scenes are
-output and captured, how transparency is delivered, portrait output size, camera/screen approach, state relay,
-CPU budgets per scene). Update the "Key risks" section of the plan if a decision changes it. Commit and push.
+- web/stream-spike.html: grabs a source with getDisplayMedia (window auto-selected by title through the existing
+  pop-out flags; also accept a <canvas> test pattern), MediaStreamTrackProcessor -> VideoEncoder (avc1.640028,
+  annexb, latencyMode realtime, hardwareAcceleration prefer-hardware, keyframe every 2 s) at the LIVE Studio
+  presets from DECISIONS.md (default 720p30 3400 kbps); mic via getUserMedia -> AudioEncoder mp4a.40.2 48 kHz
+  128 kbps; optional system audio via getDisplayMedia audio. Chunks + codec descriptions go to the server over a
+  WebSocket as binary frames with a tiny header (type, timestamp, keyframe).
+- server.py: a stdlib WebSocket endpoint (RFC 6455 handshake, masked frames, ping/pong, close) on the same port
+  behind _trusted(); an FLV muxer (AVC sequence header from SPS/PPS, AAC sequence header, tags with
+  composition time); an RTMP client (handshake, connect, releaseStream/FCPublish/createStream/publish,
+  chunking 4096, window ack, onStatus handling, clean unpublish) with reconnect and backoff; a stream-key vault
+  (DPAPI via ctypes CryptProtectData, file in cache/, key never logged or broadcast).
+- Tests on the rig: use the ffmpeg in Downloads as a local RTMP sink (`ffmpeg -listen 1 -f flv -i
+  rtmp://127.0.0.1:1935/live/test -c copy out.flv`), stream 60 s at 720p30 and 1080p30, then ffprobe the file
+  (fps, bitrate, keyframe interval, A/V sync). Measure CPU with tools/p0/cpuby.ps1: Chrome (capture + encode)
+  and the server (mux + socket) separately, at 720p30 and 1080p30, 5 minutes each, memory flat. If the user
+  wants, one real 2-minute LIVE with their key (they paste it; it is never printed).
+- Write the numbers and the go/no-go into DECISIONS.md: Chrome path vs the native fallback (WGC textures +
+  chroma-keyed overlay, NVENC via Media Foundation) - build the fallback only if the Chrome path misses the
+  budget (<= 15% of one core total at 1080p30). Commit and push.
 ```
 
-## P1 - Component registry + scrollable components row
+## P2 - Server architecture (Fable)
 
 ```text
-Canvas Builder step P1 (see music-deck/docs/CANVAS_BUILDER_PLAN.md and docs/canvas-builder/DECISIONS.md).
-Goal: make "a component" a declared thing so new ones can be added without touching five places, and make the
-deck's "Pick a window to put on stream" row scroll so it holds more than four. No visible behavior change otherwise.
+Canvas Builder step P2. Run with Fable. Read the plan and DECISIONS.md. Goal: the backend every later step
+stands on. No new UI beyond what keeps the deck working. server.py is already 2000 lines: split new work into
+modules (components.py, feeds.py, scenes.py, assets.py, capture.py, voice.py, live.py) with server.py wiring them.
 
-- server.py: replace the four hardcoded Overlay objects and per-window routes (/api/window, /api/lyrics/window,
-  /api/queue/window, /api/captions/window) with a COMPONENTS registry: id, label, page, config section,
-  default size, host title, capabilities (e.g. needs Spotify). Keep the old URLs working as aliases (the deck,
-  scratchpad scripts and rebuild.ps1 use them). Route /api/components/<id>/<action> through window_action.
-  Expose the registry in the state snapshot.
-- web/deck.html + deck.js: render the component cards from the registry instead of hardcoded markup. Keep the
-  same look, keyboard access and aria. The row becomes a horizontally scrollable strip with scroll snapping,
-  edge fades, arrow buttons, wheel-to-scroll and focus-scroll-into-view. It also works at narrow widths.
-- Keep every existing flow working: open/close/snap/resize/heal, the preview, the designer tabs per component.
-- Tests on the rig: all four components open and align (windiag2.py), screenshots of the row at 1400 and 700 px
-  wide with 4 and with 8 dummy components, and no console errors. Commit and push.
+- COMPONENTS registry: id, label, page, config section, default size, host title, capabilities. Replace the four
+  hardcoded Overlay objects and per-window routes with /api/components/<id>/<action> through window_action;
+  keep the old URLs as aliases (deck, scratchpad scripts and rebuild.ps1 use them). Registry in the snapshot.
+- Feeds: keep /api/events (SSE) for existing pages; add a WebSocket feed on /ws (from P1) that carries the same
+  snapshot deltas, for output windows and anything past the cap; a per-page feed budget check with a clear log
+  line when a page would be the 7th.
+- Output-window manager: open any registered page or scene at any size (size the host first, resize Chrome after
+  adoption - the P0 rule), remember position, allow parking off screen, heal/watchdog as today, windiag2 clean.
+- Scene model (versioned JSON): id, name, format (horizontal 1920x1080 | phone 1080x1920 | custom), background,
+  transparency mode (opaque | see-through | key color), ordered layers: id, type, name, visible, locked, group,
+  transform (x, y, w, h, rotation, anchor), style (opacity, blend, radius, border, shadow, blur, crop), props,
+  triggers. Store in cache/scenes/<id>.json, atomic writes, last-5 backups, validation with clamping, migration.
+- Asset library v2 on AssetStore: images, GIFs, webm/mp4, size limits, hash dedupe, thumbnails, usage counts.
+- Capture sources: capture.py wraps tools/p0/wgc.py - list windows and monitors (title, process, size), one-shot
+  thumbnails on demand, never a running capture unless asked. /api/capture/sources.
+- Camera/mic self-grant: seed content_settings for the app's origin in the pop-out Chrome profile before the
+  first output window opens (P0 method), idempotent, port-aware.
+- VOICE state {level, speaking}: from the caption engine while it runs, else a tiny on-demand sounddevice level
+  monitor (50 ms blocks, attack/hold/release) that runs only while a client asked for it; broadcast changes of
+  speaking, level at a low rate only while a meter is open.
+- API: scenes CRUD + duplicate, assets, capture sources, voice, live (status, start/stop stubs), all behind
+  _trusted(). Python unittest for schema/migration/atomic writes/dedupe/registry/feeds, run in the build env.
+- Rig: all four components open through the registry and align; snapshot unchanged for the deck. Commit and push.
 ```
 
-## P2 - Embed mode for components + one shared state feed
+## P3 - Scene runtime (Fable)
 
 ```text
-Canvas Builder step P2 (read the plan and DECISIONS.md). Goal: each component page can run embedded inside another
-page (a scene) - transparent where the user wants, sized by its box, fed by its parent instead of its own SSE.
+Canvas Builder step P3. Run with Fable. Read the plan and DECISIONS.md. Goal: web/scene.html?id=<scene> renders any
+scene exactly and cheaply, as an output window and as the thing that goes LIVE. Scenes are authored as JSON
+templates for now (no editor yet).
 
-- nowplaying/lyrics/queue/captions pages: add ?embed=1. In embed mode: no window handles or drag areas, no
-  /api/events connection. State and design arrive by postMessage from the parent in the same shape the SSE
-  snapshot has (reuse the existing preview message path). The body background is transparent, and the page
-  fills its iframe box with ResizeObserver-driven sizing.
-- Per-component transparency options, stored per embed instance: card background on/off, background opacity,
-  card border/shadow on/off, plus hiding individual parts (art, progress, transport, label...).
-- A small shared helper web/embedhost.js for parents: creates component iframes, keeps ONE SSE connection, and
-  relays snapshots and design changes to all children, throttled to changes only. Children ack readiness.
-- Standalone pop-outs and the deck preview must behave exactly as before.
-- Tests: a scratch page embedding all four components over a checkerboard proves transparency; count
-  /api/events connections (must be 1 for the parent); run the existing screenshot scripts for the standalone
-  pages. Commit and push.
+- Renderer engine: a layer-type registry (create(el, props) / update(props) / destroy), the scene laid out at
+  native resolution and scaled with one transform, only changed layers re-rendered when the revision changes.
+  Types: background (solid, gradient, image with blur/dim, scenes.js generative), text (FontStore fonts, fill/
+  stroke/shadow, auto-fit, live variables {title} {artist} {album} {time} {caption}), image/GIF/video (fit, crop,
+  flip, loop/mute, Ultra freezes GIFs via stillOf and pauses video), shapes (rect, rounded, ellipse, line, frame
+  with a hole), effects (opacity, blend, radius, border, shadow, blur, the decor.js border loop), component
+  (embed mode), camera, capture (window/monitor), reactive image.
+- Embed mode for nowplaying/lyrics/queue/captions: ?embed=1 = no window handles, no feed of its own, state and
+  design by postMessage from web/embedhost.js (one feed per scene, throttled, children ack); transparent body;
+  per-instance options: card background on/off, opacity, border/shadow, hide parts. Standalone pages unchanged.
+- Live sources: camera (getUserMedia, device, resolution/fps caps, mirror, mask shape) and capture
+  (getDisplayMedia with the auto-select flag driven from the capture.py source list), video elements exist only
+  while the layer is visible, a "live" indicator flag in state.
+- Reactive image + triggers on VOICE: idle/talking/blink images, bounce, threshold and hold; show/hide/swap/
+  animate "while speaking" and "on speech start" for any layer.
+- Transitions and "the live scene": an output can follow the live scene id; switching swaps in place with a cut
+  or a 30 fps stepped CSS crossfade, never a window re-open; motion.js rules and Ultra everywhere; hidden = idle.
+- Templates: four starter scenes as JSON with bundled assets (just chatting, music + lyrics, gaming portrait,
+  gaming landscape) and TikTok portrait safe-zone data in the scene format.
+- Tests: rig screenshots of both formats and every layer type (golden shots), windiag2 on a 1080x1920 output,
+  WGC capture of the output shows the whole scene, CPU A/B: Now Playing + Captions embedded vs as pop-outs
+  (must not exceed), a 720p30 window source and a camera source measured, reactive image latency (< 150 ms with
+  a synthetic voice source), 20 scene switches with no flicker. Commit and push with the numbers.
 ```
 
-## P3 - Scene model, storage, asset library, API
+## P4 - Go LIVE engine (Fable)
 
 ```text
-Canvas Builder step P3 (read the plan and DECISIONS.md). Goal: the data layer for scenes, with no UI yet.
+Canvas Builder step P4. Run with Fable. Read the plan, DECISIONS.md and the P1 numbers. Goal: turn the spike into
+the app's LIVE engine, ready for a UI later.
 
-- Scene JSON schema (versioned): id, name, format (horizontal 1920x1080 | phone <size from DECISIONS> |
-  custom w x h), background, key color and transparency mode, and an ordered layers list. Each layer has
-  id, type, name, visible, locked, group id, transform (x, y, w, h, rotation, anchor), style (opacity, blend mode,
-  radius, border, shadow, blur, crop/mask), type-specific props, and optional triggers (e.g. "while speaking").
-- Store scenes as files in cache/scenes/<id>.json. Write atomically, keep a small rolling backup (last 5
-  versions), validate on load (unknown fields kept, bad values clamped), and migrate by version.
-- Asset library v2 on top of the existing AssetStore: images (png/jpg/webp/svg), GIFs, short videos
-  (webm/mp4), with size limits, hash dedupe, thumbnails, usage counts (don't delete an asset a scene uses),
-  and listing by type.
-- API: GET/POST /api/scenes (list, create from a format or template), GET/PUT/DELETE /api/scenes/<id>,
-  POST /api/scenes/<id>/duplicate, the asset routes, and a per-scene revision number on the state broadcast so
-  outputs and editors refresh cheaply. Every route stays behind the existing _trusted() check.
-- Python unit tests for schema validation, migration, atomic writes and asset dedupe (plain unittest, run with
-  the build env). Commit and push.
+- live.py: start/stop, state machine (idle, connecting, live, reconnecting, failed) broadcast in the snapshot
+  (never the key), presets table (1080P60/1080P/720P60/720P/480P with the H.264 and HEVC bitrates from LIVE
+  Studio), encoder choice with fallback (GPU H.264 -> software), keyframe interval 2 s, health stats (bitrate,
+  encoded/dropped frames, queue depth, RTT), reconnect with backoff and the "stream key updated" case surfaced
+  as an error the UI can show, clean stop that unpublishes.
+- Audio: mic + optional system audio, per-source gain and mute, a simple mixer in the output page (AudioContext),
+  meters at a low rate; nothing recorded.
+- The output page goes LIVE by capturing itself (auto-selected by its own window title) or drawing to a canvas
+  when the scene is canvas-only; scene switching while live keeps the encoder running.
+- Key vault: paste once, DPAPI-encrypted, "forget key", masked in every response; server URL stored alongside.
+- Scene remote API: /api/live/scene, next/previous, list; the deck's snapshot carries the live scene.
+- Tests: 30-minute rig stream to the local ffmpeg sink at 720p30 with two scene switches and one forced
+  disconnect (kill the sink and restart it) - the stream resumes; CPU and memory logged every minute and flat;
+  ffprobe of the file clean. Commit and push with the numbers.
 ```
 
-## P4 - Scene renderer + output windows (horizontal and phone)
+## P5 - Optimization and hardening of the backend (Fable)
 
 ```text
-Canvas Builder step P4 (read the plan and DECISIONS.md). Goal: web/scene.html?id=<scene> renders a scene exactly,
-and opens as a capturable pop-out window like the other components.
+Canvas Builder step P5. Run with Fable. Read the plan and DECISIONS.md. Goal: the backend meets every budget
+before any frontend is built on it.
 
-- Renderer: a layer-type registry (renderLayer(type) -> element + update(props)). Start with background, image,
-  text and component (the P2 embed iframes, via embedhost.js). The scene is laid out at its native resolution
-  and scaled to the window with one transform. Areas without content show the key color or real transparency,
-  per DECISIONS.md.
-- Output windows: register "Canvas: <scene name>" as dynamic components (P1 registry) using overlay.Overlay /
-  HostWindow at the scene's output size, including the portrait size decided in P0. Remember position and size,
-  and pass windiag2.py alignment.
-- Live updates: re-render only the changed layers when the scene revision changes; never rebuild everything.
-- Performance: no per-frame script; motion follows motion.js; Ultra optimized stills everything; hidden = idle.
-  Budget: an idle static scene near 0% CPU. Measure a horizontal scene with Now Playing + Captions embedded
-  against the same two as separate pop-outs (A/B on real windows).
-- Tests: rig screenshots of both formats, geometry check, CPU numbers in the commit message. Commit and push.
+- Measure on real windows (chrometype.ps1/abtest.ps1 pattern) each template scene idle, animated, with a camera,
+  with a window source, and while LIVE at 720p30 and 1080p30; fix the top costs; confirm Ultra and hidden go
+  idle; confirm the feed cap logic (deck + 4 pop-outs + 2 outputs).
+- Stress: 60 layers, 4 components, 1 camera, 1 window source, LIVE, 2 hours - memory flat, no dropped frames.
+- Recovery: an output window that dies is re-opened and re-joins the live scene; the server restart path
+  restores outputs; corrupted scene files fall back to their backup.
+- Security pass on the new routes (all behind _trusted(), no path traversal in assets/scenes, WebSocket origin
+  check), logs never carry keys. Update DECISIONS.md with the final numbers. Commit and push.
 ```
 
-## P5 - Canvas Builder editor shell (its own connected page)
+## P6 - Deck integration (Opus)
 
 ```text
-Canvas Builder step P5 (read the plan and DECISIONS.md). Goal: web/canvas.html - the editor - as a separate page
-connected to the deck, opened in its own Chrome app window like the deck, from a "Canvas Builder" button in
-the deck (plus a card in the components row listing your scenes).
+Canvas Builder step P6. Run with Opus. Read the plan and DECISIONS.md. Goal: the deck shows the new backend: no new
+pages yet.
 
-- Layout (industry-grade, keyboard friendly, dark UI consistent with the deck's theme tokens):
-  top bar (scene picker, format switcher, undo/redo, zoom, "Open output window", live status), left panel with
-  tabs Layers | Sources | Assets, center canvas (zoom to fit / 100% / wheel zoom around the cursor, space-drag pan,
-  checkerboard for transparent areas, format frame), and a right inspector for the selected layer.
-- Editor state: one store, and every change is a command (do/undo/merge), so undo/redo covers everything.
-  Autosave is a debounced PUT to /api/scenes/<id> with revision checks (refuse a stale save and reload).
-  Changes appear in the open output window within ~100 ms.
-- Layers panel: reorder by drag, visibility and lock toggles, rename, and multi-select. Sources panel: "Add"
-  menu from the layer-type registry.
-- Accessibility: focus order, visible focus, aria for panels and tree, and shortcuts listed in a help overlay.
-- Tests: headless screenshots at 1600x900 and 1280x720, undo/redo round-trips, autosave conflict test.
+- Components row rendered from the COMPONENTS registry instead of hardcoded markup, same look, keyboard access
+  and aria, now a horizontally scrollable strip (scroll snapping, edge fades, arrow buttons, wheel-to-scroll,
+  focus scrolls into view, works at narrow widths). Groups: "Music and words" (the four), "Screen sharing"
+  (Screen frame and Camera frame - decorative frames with a key-color or see-through hole where the game or
+  camera shows, border styles, the border loop, corner badges, title text; each with designer tabs like the
+  others), "Canvas" (one card per scene with Open output / Go LIVE / Edit).
+- A "Canvas Builder" button that opens web/canvas.html in its own app window (the page itself lands in P7; a
+  placeholder page is fine now), and a compact LIVE strip: status, live scene switcher, Start/Stop wired to
+  /api/live (settings come in P11).
+- Tests: rig screenshots of the row at 1400 and 700 px with 4 and with 10 components, no console errors, all
+  four components still open/close/snap/heal. Commit and push.
+```
+
+## P7 - Canvas Builder editor shell (Opus)
+
+```text
+Canvas Builder step P7. Run with Opus. Read the plan and DECISIONS.md. Goal: web/canvas.html - the editor - a
+separate page connected to the deck, dark UI on the deck's theme tokens, industry-grade and keyboard friendly.
+
+- Layout: top bar (scene picker, format switcher, undo/redo, zoom, Open output window, live status), left panel
+  with tabs Layers | Sources | Assets, center canvas (zoom to fit / 100% / wheel zoom around the cursor,
+  space-drag pan, checkerboard for see-through areas, format frame), right inspector for the selection.
+- Editor state: one store, every change a command (do/undo/merge), autosave as a debounced PUT with revision
+  checks (refuse a stale save and reload), changes visible in an open output window within ~100 ms.
+- Layers panel: drag reorder, visibility and lock, rename, multi-select, groups. Sources panel: Add menu from the
+  layer-type registry, including capture sources listed from /api/capture/sources with thumbnails.
+- Accessibility: focus order, visible focus, aria for panels and the tree, a shortcuts help overlay.
+- Tests: headless screenshots at 1600x900 and 1280x720, undo/redo round-trips, an autosave conflict test.
   Commit and push.
 ```
 
-## P6 - Canvas tools: transform, snapping, guides, groups, shortcuts
+## P8 - Canvas tools (Opus)
 
 ```text
-Canvas Builder step P6 (read the plan). Goal: Photoshop/Figma-grade direct manipulation in canvas.html.
+Canvas Builder step P8. Run with Opus. Read the plan. Goal: Photoshop/Figma-grade direct manipulation.
 
-- Select, marquee multi-select, shift/ctrl add; move with 8 resize handles plus rotate; shift keeps aspect
-  ratio, alt resizes from the center, and arrows / shift+arrows nudge.
-- Snapping, with a toggle and a hold-alt override: canvas edges and centers, other layers' edges and centers,
-  equal spacing, rulers' guides, and safe zones. Smart guides show distances while dragging.
-- Rulers with draggable guides (saved per scene); grid overlay and grid snapping; pixel-exact inspector
-  fields (x, y, w, h, rotation) that accept math ("+20", "*2").
-- Align/distribute, bring forward/back, group/ungroup (groups transform together), lock, and
-  copy/paste/duplicate across scenes. Right-click context menus.
-- Every tool action is one undoable command. Pointer handling works at any zoom and on the deck's DPI.
-- Tests: scripted CDP drags check positions and snapping; undo after each. Commit and push.
+- Select, marquee, shift/ctrl add; move with 8 resize handles plus rotate; shift keeps aspect, alt resizes from
+  the center, arrows and shift+arrows nudge.
+- Snapping with a toggle and hold-alt override: canvas edges and centers, other layers, equal spacing, guides,
+  safe zones; smart guides with distances while dragging. Rulers with draggable guides saved per scene; grid
+  overlay and grid snap; pixel-exact inspector fields that accept math ("+20", "*2").
+- Align/distribute, bring forward/back, group/ungroup, lock, copy/paste/duplicate across scenes, right-click
+  menus. Every action one undoable command; pointer math correct at any zoom and at the deck's DPI.
+- Tests: scripted CDP drags check positions and snapping, undo after each. Commit and push.
 ```
 
-## P7 - Layer types: text, image/GIF/video, backgrounds, shapes, effects
+## P9 - Inspectors for every layer type and source (Opus)
 
 ```text
-Canvas Builder step P7 (read the plan). Goal: the core creative layer types, each with an inspector section, in
-both the renderer (scene.html) and the editor.
+Canvas Builder step P9. Run with Opus. Read the plan. Goal: an inspector section for each layer type the runtime
+already renders (P3), reusing the deck's designer controls rather than copying them.
 
-- Text: any font from FontStore (and "Add font..."); size, weight, letter/line spacing, alignment, fill
-  (solid/gradient), stroke, shadow/glow, background pill, auto-fit to box, and live variables such as {title}
-  {artist} {album} {time} bound to the state feed.
-- Image / GIF / video: from the asset library (drag-drop onto the canvas uploads and places it), with fit
-  (cover/contain/stretch), crop, flip, loop/mute for video, and Ultra optimized freezing GIFs (stillOf) and
-  pausing video.
-- Backgrounds: solid, gradient (linear/radial, angle, stops), image with blur/dim, and the generative scenes
-  from scenes.js.
-- Shapes: rectangle, rounded rectangle, ellipse, line; fill/stroke; plus a "frame" shape with a cut-out hole.
-- Effects on any layer: opacity, blend mode, corner radius, border, drop shadow, blur, and the decorative border
-  loop from decor.js (reuse the canvas loop). Enter animations (fade/slide/pop, one-shot) and at most a few
-  cheap loop animations, all 30 fps and ultra-aware.
-- Tests: a golden-screenshot scene per type; CPU A/B for a scene with a GIF, a video and the border loop.
-  Commit and push.
+- Text (font picker with Add font, size, weight, spacing, alignment, fill/gradient, stroke, shadow/glow,
+  background pill, auto-fit, live variables), image/GIF/video (asset picker with drag-drop upload, fit, crop,
+  flip, loop/mute), backgrounds, shapes, effects (incl. the border loop), enter animations and the few cheap
+  loops, component layers ("Use my design" vs "Customize for this scene" with the deck's own tabs, plus the
+  transparency options), reactive image (idle/talking/blink, threshold with a live meter), camera (device,
+  resolution, mirror, mask), capture (source picker with live thumbnails, cursor on/off), triggers.
+- A clear "live" indicator whenever a camera or capture is active in the editor.
+- Tests: golden screenshots per inspector, a scene with all four components (one customized, one linked; a deck
+  design change updates the linked one live), connection count stays within the cap. Commit and push.
 ```
 
-## P8 - Component layers inside scenes
+## P10 - Phone canvas: safe zones, templates gallery, format conversion (Opus)
 
 ```text
-Canvas Builder step P8 (read the plan). Goal: Now Playing, Lyrics, Queue and Captions (and any registry
-component) as first-class layers.
+Canvas Builder step P10. Run with Opus. Read the plan. Goal: make the phone canvas great for TikTok LIVE.
 
-- "Add > Component" lists the registry. A component layer embeds the component (P2 embed mode) at the layer's
-  box. Its inspector has "Use my <component> design" (linked to the global design) or "Customize for this
-  scene" (a per-layer design override edited with the same controls as the deck's designer tabs, reused, not
-  copied).
-- Transparency controls from P2 appear in the inspector (card background on/off, opacity, parts to hide).
-- One state feed for the whole scene (embedhost.js). Captions layers must not start the microphone
-  themselves; they show the captions state the server already has.
-- Tests: a scene with all four components embedded, one customized and one linked; a design change in the
-  deck updates the linked one live; connection count stays 1; CPU A/B against the same components as
-  pop-outs. Commit and push.
+- Editor-only safe-zone overlays for portrait (top bar, comments, gifts, side buttons) from the P3 data,
+  toggleable, snapping targets, a warning badge on layers under TikTok UI.
+- Template gallery with thumbnails in the New scene dialog (the P3 templates), "Make a phone version" that
+  re-lays out a horizontal scene with anchored rules and then lets you fix it by hand.
+- Tests: screenshots of each template in its format; conversion keeps every layer inside the canvas. Commit
+  and push.
 ```
 
-## P9 - Mic activation: voice state + reactive images and triggers
+## P11 - Go LIVE panel, studio mode, scene remote (Opus)
 
 ```text
-Canvas Builder step P9 (read the plan). Goal: images that change when you talk (PNGtuber style), and "while
-speaking" triggers for any layer.
+Canvas Builder step P11. Run with Opus. Read the plan. Goal: run a show from the app.
 
-- server.py: a VOICE state {level, speaking}. While captions run it comes from the caption engine (Whisper's
-  level + VAD, or the Windows engine's). Otherwise a tiny on-demand MicLevel monitor (sounddevice, 50 ms blocks,
-  RMS with attack/hold/release) runs only while an open output window uses voice. Broadcast only changes of
-  "speaking" (plus the level at a low rate, only while the editor's meter is visible). The mic stays on this
-  PC, and the monitor stops when nothing needs it.
-- Layer type "Reactive image": idle image, talking image, optional blink image/interval and bounce on speech;
-  threshold and hold set in the inspector with a live level meter.
-- Trigger system for any layer: show/hide/swap asset/animate "while speaking" or "on speech start".
-- Tests: a synthetic voice source on the rig (feed audio like the caption bench does); latency from speech
-  start to image swap (target under 150 ms); CPU with the monitor running (target under 1% of one core).
-  Commit and push.
+- LIVE panel in the editor and the deck strip: server URL + stream key entry (masked, paste, "forget"), preset
+  picker with bitrate hints, audio sources with gains/mute/meters, Start/Stop, health (bitrate, dropped
+  frames, reconnects, uptime) and the "key updated" error with a copy-new-key hint.
+- Studio mode: edit a preview scene while another is live, "Take" with the transition; a small always-on-top
+  scene remote window; in-app keyboard shortcuts (no global hotkeys yet).
+- Tests: a rig stream to the local sink driven entirely from the UI, 20 switches, no flicker, all controls
+  keyboard-reachable. Commit and push.
 ```
 
-## P10 - Screen share and camera: frames tab + live sources
+## P12 - Release (Fable, then Opus for UI fixes)
 
 ```text
-Canvas Builder step P10 (read the plan and DECISIONS.md). Goal: frame your streamed content and camera, both as
-standalone components and as scene sources.
+Canvas Builder step P12. Run with Fable, then Opus for anything visual it flags. Read the plan. Goal: ship it.
 
-- Deck: the components row gains a "Screen share" group with new registry components - "Screen frame" (a
-  decorative frame with a key-color or transparent hole where the game or screen capture shows in LIVE
-  Studio: border styles, the border loop, corner badges, title text, scene backgrounds) and "Camera frame"
-  (the same for a face cam: shapes like circle, rounded or blob). Each gets designer tabs like the other
-  components.
-- Scene sources per DECISIONS.md: Camera (getUserMedia, device picker, resolution/fps caps, mirror, crop, shape
-  mask, optional background blur only if measured cheap) and Screen/Window capture (getDisplayMedia, with the
-  picker flow and persistence found in P0). Video elements render only while visible.
-- Privacy: nothing records or uploads, and there's a clear "live" indicator in the editor while a camera or
-  screen is in use.
-- Tests: frames align in real windows (windiag2.py); camera in a scene at 720p30 - measure CPU; screen capture
-  of one window in a scene - measure CPU. Commit and push.
-```
-
-## P11 - Phone canvas: TikTok safe zones + starter templates
-
-```text
-Canvas Builder step P11 (read the plan and DECISIONS.md). Goal: make the phone canvas great for TikTok LIVE and
-give both formats a head start.
-
-- Safe-zone overlays for the portrait canvas (the areas TikTok's UI covers: top bar, comments, gifts, side
-  buttons), editor-only and toggleable. Snapping targets for them; a warning badge when a layer sits under
-  TikTok UI.
-- Starter templates (JSON + bundled assets) for both formats, e.g. "Just chatting", "Music + lyrics",
-  "Gaming portrait (screen frame + cam)", "Gaming landscape". A template gallery with thumbnails in the "New
-  scene" dialog.
-- Format conversion: "Make a phone version" re-lays out a horizontal scene with anchored rules, then lets you
-  fix it by hand.
-- Tests: screenshots of each template in its format; conversion keeps every layer inside the canvas. Commit and
-  push.
-```
-
-## P12 - Scenes, live switching, transitions, deck quick controls
-
-```text
-Canvas Builder step P12 (read the plan). Goal: run a show - switch scenes live, cleanly and cheaply.
-
-- An output window can follow "the live scene" (not a fixed id). Switching live scenes swaps content in place
-  with a cut or a fade (a CSS opacity crossfade, a fixed short duration, stepped at 30 fps) - no window
-  re-open, so LIVE Studio's capture never breaks.
-- Studio mode in the editor: edit a preview scene while another is live, then "Take" it live.
-- Deck quick controls: a compact scene switcher strip in the deck and an optional small always-on-top
-  "scene remote" window. Keyboard shortcuts while the deck or editor has focus. No global hotkeys yet.
-- Tests: switch 20 times while capturing CPU and checking no window flicker (geometry stays aligned); memory
-  stays flat. Commit and push.
-```
-
-## P13 - Hardening: performance, QA, docs, build, release
-
-```text
-Canvas Builder step P13 (read the plan). Goal: ship it.
-
-- Performance pass: measure every template scene live (chrometype.ps1 A/B), fix the top costs, and confirm
-  Ultra optimized and hidden windows go idle. Stress test: 60 layers, 4 components, 1 camera.
 - QA pass: every inspector field, undo/redo everywhere, autosave conflicts, deleting an asset in use, missing
-  fonts, a corrupted scene file (backup restore), DPI 100/150%, the deck at narrow widths, and the editor with
-  only a keyboard.
-- Import/export a scene as one .zip (JSON + its assets), validated on import.
-- README sections (Canvas Builder, capturing in TikTok LIVE Studio, camera/screen privacy), updated
-  memories/notes, PyInstaller build check (new web files and cache/scenes), rebuild the user's app with
-  scratchpad rebuild.ps1 when they're not gaming, and tag a release if they want one.
-- Commit and push; watch CI.
+  fonts, a corrupted scene file, DPI 100/150%, the deck at narrow widths, keyboard-only editing, LIVE start/
+  stop/reconnect, the transparency test page in LIVE Studio.
+- Import/export a scene as one .zip (JSON + assets), validated on import.
+- README sections (Canvas Builder, going LIVE from the app, capturing in LIVE Studio, camera/capture privacy),
+  updated memory notes, PyInstaller build check (new web files, tools, cache/scenes), rebuild the user's app
+  with scratchpad rebuild.ps1 when they're not gaming, tag a release if they want one. Commit, push, watch CI.
 ```

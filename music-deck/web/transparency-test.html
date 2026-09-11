@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Transparency test</title>
+<style>
+  /* A see-through page for checking capture software: whatever sits under
+     a browser/link source must show through everywhere except the card,
+     the cyan block, the dot and the text. */
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  .card { position: absolute; left: 6%; top: 8%; width: 40%; height: 30%; border-radius: 24px;
+          background: rgba(255, 105, 180, .55); border: 6px solid #fff; }
+  .solid { position: absolute; right: 6%; bottom: 8%; width: 30%; height: 20%; background: #00e0ff; }
+  h1 { position: absolute; left: 6%; bottom: 10%; margin: 0; color: #fff; font: 900 64px system-ui;
+       text-shadow: 0 4px 12px #000; }
+  .dot { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px;
+         border-radius: 50%; background: #ff0; animation: spin 2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg) translateX(80px); } }
+</style>
+<div class="card"></div>
+<div class="solid"></div>
+<div class="dot"></div>
+<h1>TRANSPARENCY TEST</h1>
