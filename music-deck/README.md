@@ -39,7 +39,10 @@ Two engines, both entirely on this PC - no audio is ever sent anywhere:
   Windows' engine got 71%. It needs its model once - press **Download** (Base,
   about 150 MB, from Hugging Face; checked against the published hashes) and
   it works offline from then on. To stay fast it reads each phrase in a
-  window sized to the phrase, not Whisper's usual 30 seconds.
+  window sized to the phrase, not Whisper's usual 30 seconds. **Small** is the
+  most accurate on paper, but it is roughly three times the work of Base and
+  falls behind if you talk without pausing - on a laptop, Base is the one to
+  use live.
 - **Windows** - Windows' built-in dictation engine. Nothing to download and
   very light, but it guesses a lot.
 
@@ -53,7 +56,8 @@ across restarts.
 Captions are the one part of the app that works hard, so they keep to a
 budget: while you talk, the live line updates about once a second and uses
 at most about half of one CPU core on average, however long you talk
-without a pause - a long run of talk just updates a little less often.
+without a pause - a long run of talk just updates a little less often. The
+budget only ever slows that live line; finished lines are never held back.
 Turn off **Show words while I'm still talking** (Listening tab) and each line
 appears once you pause instead, for a fraction of that.
 
@@ -200,7 +204,11 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   watermark or in front; the card can step in from it as much as you like.
   Pick which sides it runs along, how far apart the motifs sit, and how fast
   they drift — set to move, they circulate around the frame rather than sliding
-  off the ends. Emoticons next to the label.
+  off the ends. Emoticons next to the label. Anything that keeps moving - the
+  drifting frame, a long title sliding, the equalizer bars - steps 30 times a
+  second, which is what a stream captures, instead of at your screen's refresh
+  rate (165 times a second on many gaming laptops); in testing that cut what a
+  Now Playing window costs the CPU by about three quarters.
 - **Stickers** – drop pictures onto the preview, then drag them into place. PNG,
   JPEG, SVG, WebP and **animated GIF**. Size, rotation, opacity, flip, layer
   order, in front of or behind the card, and **Tint it** to redraw one as a

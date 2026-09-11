@@ -49,6 +49,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 let artMode = false;
 let lastArtUrl = '';
+let changingTimer = 0;       // ends the entrance animation's class
 const ART_KEYS = new Set(['--accent', '--on-accent', '--title-color', '--artist-color', '--card-border-color']);
 let artPaintedFor = '';     // the art url the card background currently shows
 
@@ -379,6 +380,10 @@ function render(now) {
     el.stage.classList.remove('changing');
     void el.stage.offsetWidth;   // restart the entrance animation
     el.stage.classList.add('changing');
+    // ...and end it once it has played: `.changing .title` outranks
+    // `.marquee`, so while the class stayed on a long title never slid.
+    clearTimeout(changingTimer);
+    changingTimer = setTimeout(() => el.stage.classList.remove('changing'), 450);
     requestAnimationFrame(measureMarquee);
   }
 

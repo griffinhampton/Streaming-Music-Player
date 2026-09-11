@@ -366,8 +366,12 @@ class WhisperListener:
             # a decode runs long the queue fills; this skips partials until
             # the audio is drained, so the captions never fall behind.
             # Without live words a phrase is only read when it ends - or, if it
-            # runs on, often enough to commit its finished sentences.
-            every = self._partial_every if self.live else COMMIT_AFTER_S
+            # runs on, often enough to commit its finished sentences. The CPU
+            # budget only ever slows the live line, never those commits: with
+            # a model too slow for the budget (small.en on a laptop) it spaced
+            # reads 30 s apart, so phrases grew, each read got slower still,
+            # and a minute of non-stop talk committed a single line.
+            every = min(self._partial_every, COMMIT_AFTER_S) if self.live else COMMIT_AFTER_S
             if speaking and utt and since_partial * BLOCK_S >= every and q.empty():
                 since_partial = 0
                 utt = self._live(utt)

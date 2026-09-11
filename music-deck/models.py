@@ -24,7 +24,7 @@ MODELS = {
     "base.en":  {"repo": "Systran/faster-whisper-base.en",  "label": "Base",  "approx_mb": 150,
                  "note": "fast and accurate (recommended)"},
     "small.en": {"repo": "Systran/faster-whisper-small.en", "label": "Small", "approx_mb": 485,
-                 "note": "most accurate, uses more CPU"},
+                 "note": "most accurate, but slow: falls behind non-stop talk"},
 }
 DEFAULT = "base.en"
 
