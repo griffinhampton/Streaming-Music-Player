@@ -13,8 +13,8 @@ sources are marked as such.
 | 1 | How are scenes output? | As web pages (`scene.html`) inside hosted pop-out windows, like the four components today. Any size works, including 1080x1920 portrait, and a window can be parked entirely off screen and still renders and captures at full rate. |
 | 2 | How do scenes reach the stream? | Two ways. **A. Through LIVE Studio:** *Window capture* of the output window (opaque, with the scene's own background) or *Browser capture* (the "Link" source) of `http://127.0.0.1:8713/scene.html?id=...` when the overlay must be see-through. **B. Straight from the app:** the app encodes and pushes RTMP to TikTok with the Server URL + Stream key that LIVE Center hands out, no LIVE Studio or OBS in the loop. B is a new track in the plan. |
 | 3 | How is transparency delivered? | Browser capture (Link) for see-through overlays, a key color as the fallback. Never per-pixel alpha through window capture: our host windows are opaque, and window capture drops alpha anyway. |
-| 4 | Capture engine for screen, window, game and camera | Windows Graphics Capture, the API OBS and Discord use. Proven from Python with ctypes alone at ~0% CPU (frames stay on the GPU). Inside scene pages, Chrome's `getDisplayMedia` (also WGC underneath) with `--auto-select-window-capture-source-by-title` opens the source with no picker. Default architecture: **Chrome captures, composes and encodes; Python muxes RTMP and controls.** P1 measures it end to end; the fallback is a native compositor (WGC textures + chroma-keyed Chrome overlay) if Chrome's path misses the budget. |
-| 5 | Encoding | WebCodecs in Chrome: H.264 High (1080p60 and 1080x1920 portrait) and HEVC on the GPU, AAC-LC 48/44.1 kHz - all reported supported, and 60 frames of 1080p encoded in 1.1 s including setup. Presets copied from LIVE Studio's own table. No ffmpeg bundled (a GPL 94 MB build sits in Downloads; fine as a test sink, not shipped). |
+| 4 | Capture engine for screen, window, game and camera | Windows Graphics Capture, the API OBS and Discord use. Proven from Python with ctypes alone at ~0% CPU (frames stay on the GPU). Inside scene pages, Chrome's `getDisplayMedia` (also WGC underneath) with `--auto-select-window-capture-source-by-title` opens the source with no picker. **Decided in P1 (below): the app captures the output window itself and encodes on the GPU; Chrome renders the scene and, for now, supplies audio.** Chrome's own capture-and-encode path stays as the fallback. |
+| 5 | Encoding | **P1:** the GPU's H.264 encoder through Media Foundation, on the adapter the desktop runs on (`mfenc.py`). WebCodecs in Chrome (H.264 High incl. portrait, HEVC, AAC-LC - all supported here) is the fallback path and the audio path for now. Presets copied from LIVE Studio's own table. No ffmpeg bundled (a GPL 94 MB build sits in Downloads; fine as a test sink, not shipped). |
 | 6 | Live state feeds | Chrome allows exactly 6 connections per host:port per profile, and SSE streams count. Rule: one feed per page; embedded components get state by `postMessage`; a small stdlib WebSocket endpoint (its own pool of 255) carries encoded media from the output page and the state feed for pages past the cap. |
 | 7 | Camera and mic permission | The app grants itself camera and mic for its own origin by seeding `content_settings.exceptions` in the pop-out Chrome profile's `Preferences` (proven: no prompt). Grants are per origin including the port. Screen capture needs no grant with the auto-select flag. |
 | 8 | Portrait size | 1080x1920 native output (no downscale needed); 720x1280 as a lower preset for weak upload. |
@@ -196,6 +196,96 @@ going LIVE without LIVE Studio or OBS at all.
 3. `getDisplayMedia` capture cost, cleanly measured (P1).
 4. Whether the user's account shows a Server URL + Stream key in LIVE
    Center (needed for direct streaming; LIVE Studio access suggests yes).
+
+## P1 - the streaming engine (measured 2026-09-11)
+
+Both ways of going LIVE were built and run against a local RTMP sink
+(`ffmpeg -listen 1`) on the rig, with every recording probed afterwards.
+The publisher is `live.py` (FLV tags, RTMP handshake/connect/publish/acks/
+pings/extended timestamps/clean unpublish, reconnect with backoff, a DPAPI
+key vault, a stdlib WebSocket); connect + publish takes 20 ms.
+
+**Path A - Chrome captures and encodes** (`web/stream-spike.html`: source ->
+`VideoEncoder` H.264 on the GPU + `AudioEncoder` AAC -> WebSocket -> RTMP).
+Warm profile, no preview, source window exactly the output size, 45 s runs:
+
+| Source, preset | Chrome % of one core (gpu / browser / renderer) | Server |
+|---|---|---|
+| Window capture, 720p30 | 37.5 (21.2 / 7.4 / 6.7) | 3.0 |
+| Window capture, 1080p30 | 58.3 (34.4 / 11.7 / 9.3) | 3.6 |
+| Tab self-capture, 720p30 | 45.9, of which 12.6 is drawing the page itself | 2.8 |
+
+The cost is in Chrome's plumbing (frames copied capture -> renderer -> GPU
+process), not in the encoder, and it is the same whichever way the frames
+get in. The stream itself was fine: 28-30 fps, 3.3-5.5 Mbps, keyframes every
+2 s, AAC 48 kHz, zero drops.
+
+**Path B - native** (`capture.py` WGC -> `mfenc.py` Media Foundation ->
+`nativelive.py` -> `live.py`; the page carries only audio):
+
+| Preset | Server % of one core (capture + encode + mux) | Chrome, audio only | Result |
+|---|---|---|---|
+| 720p30, 45 s | 12.4 | 8.2 | 30.0 fps, 3.5 Mbps, 0 drops |
+| 1080p30, 45 s | 14.1 | 9.0 | 30.0 fps, 6.1 Mbps, 0 drops |
+| 720p30, 5-minute soak | 13.7 | 7.4 | 9745 frames, 15306 audio packets, 0 drops |
+| 1080p30, 5-minute soak | 14.6 | 8.2 | 9767 frames, 15322 audio packets, 0 drops |
+
+Capture and encode alone (no RTMP, standalone `tools/p1/nativetest.py`):
+9.5% of one core at 720p30, 3358 kbps against 3400 asked, every frame
+decodable, memory flat (63-66 MB over 60 s). The window being captured
+costs 14-19% in its own Chrome (that is the stand-in for the scene).
+
+**Decision: go with the native path.** It meets the budget (<= 15% of one
+core for the server at 1080p30); with audio still in Chrome the total is
+about 23%, expected to fall under 17% once audio goes native in P4. Path A
+stays as the fallback for a machine whose hardware encoder refuses the
+device.
+
+What the build taught us:
+
+- The encoder must sit on the adapter the desktop is drawn on, because
+  that is where WGC's textures live. Here that is the AMD integrated GPU:
+  `AMDh264Encoder` activates, is D3D11-aware, and takes **RGB32 textures
+  directly** (no color conversion of ours). The NVIDIA MFT answers
+  `E_UNEXPECTED` to activation in this process (the device is the other
+  GPU); Chrome manages it because its GPU process sits on the NVIDIA card.
+  P4 tries a device on the NVIDIA adapter when the desktop runs there.
+- The AMD MFT is asynchronous: it must be unlocked, then fed on
+  `METransformNeedInput` and drained on `METransformHaveOutput`. Offering a
+  frame only at the tick and dropping it if the encoder has not asked yet
+  halves the frame rate; keeping the frame until it asks gives exactly
+  30 fps. Driven without events it accepts input and returns empty samples.
+- `IMFMediaEventGenerator` is `{2CD0BD52-BCD5-4B89-B62C-EADC0C031E7D}` -
+  the last byte is 7D, not 7B; the registry (`HKCR\Interface`) is the
+  quickest source of truth for such constants without the SDK headers.
+- `MF_MT_MAX_KEYFRAME_SPACING` on the output type is ignored by the AMD
+  encoder: keyframes came every 1 s (30 frames) at both sizes. Fine for
+  streaming; P4 sets the GOP through `ICodecAPI` instead.
+- WGC trims a plain window's invisible 6 px borders (a 1280x720 window
+  captures as 1268x714); a frameless host window captures at its exact
+  size. Output windows are hosted, so the stream size is the window size.
+- One clock: the engine stamps native video by tick and re-stamps the
+  page's audio on arrival, so both share a timeline without the page
+  knowing the server's time; the recordings show continuous A/V.
+- Two COM reference leaks were found and fixed (a per-frame `IClosable`
+  and the output buffer's event list). What remains: the server's working
+  set climbs ~3 MB/min while streaming after a ~45 MB warm-up, and is not
+  returned after stop (34 -> 91 MB between soaks); standalone capture and
+  encode are flat, so it is in the engine/socket path or MF output
+  handling in the server process. **P4 finds it** (a 2-hour soak is P5's).
+- Chrome's screen capture, WebCodecs and the AAC encoder all worked as
+  documented; the `--auto-select-window-capture-source-by-title` and
+  `--auto-accept-this-tab-capture` flags skip the pickers as expected.
+  A fresh Chrome profile burns 8-10% of a core on first-run work for
+  minutes; measure on warm profiles, and add
+  `--disable-component-update --disable-background-networking` to the
+  pop-out flags in P2.
+
+Not done in P1: a real LIVE to TikTok with the user's key (the page and
+vault are ready; it needs the key pasted once). `tools/p1/` keeps
+`livetest.ps1` (the rig driver, `-Native` for path B, `-Seconds` over 120
+for a soak), `rtmptest.py`, `nativetest.py`, `mfprobe.py`, `mfdbg.py`,
+`memcap.py`.
 
 ## Tools kept for later steps (`music-deck/tools/p0/`)
 

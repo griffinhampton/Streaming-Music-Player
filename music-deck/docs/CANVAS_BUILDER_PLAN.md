@@ -24,7 +24,7 @@ every later prompt reads it first.
 | # | Step | Model | Status |
 |---|------|-------|--------|
 | P0 | Groundwork: capture, permissions, limits, encoders measured; decisions written | Fable | [x] 2026-09-11 |
-| P1 | Streaming engine spike: capture -> encode -> RTMP, measured, go/no-go | Fable | [ ] |
+| P1 | Streaming engine spike: capture -> encode -> RTMP, measured, go/no-go | Fable | [x] 2026-09-11 |
 | P2 | Server architecture: registry, feeds + WebSocket, scene store, assets, outputs, capture sources, voice, key vault | Fable | [ ] |
 | P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [ ] |
 | P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [ ] |
@@ -76,14 +76,17 @@ deck.html (control room)             canvas.html (editor, P7+)
         +--------- server.py (127.0.0.1:8713) ---------+
           COMPONENTS registry   SCENES store   ASSETS   VOICE   CAPTURE sources (WGC)
           /api/events (SSE, one per page)   /ws (stdlib WebSocket: media + feeds)
-          LIVE engine: FLV mux + RTMP client -> TikTok (Server URL + Stream key)
+          LIVE engine (live.py): FLV mux + RTMP client -> TikTok (Server URL + Stream key)
+            video: capture.py (Windows Graphics Capture) -> mfenc.py (the GPU's own
+                   H.264 encoder through Media Foundation) -> nativelive.py, no pixel on the CPU
+            audio: the output page's AAC over /ws (P4 may move it native: WASAPI + MF AAC)
                                 |
                      scene.html?id=...  (output window, any size, may sit off screen)
                        layers: components (embed mode, fed by postMessage), text,
                        images/GIF/video, backgrounds, shapes, effects, camera,
                        window/monitor capture (getDisplayMedia, auto-selected),
                        reactive images (VOICE)
-                       when LIVE: captures itself -> WebCodecs H.264 + AAC -> /ws
+                       when LIVE: the server captures this window natively (above)
              or captured by LIVE Studio (Window capture / Browser capture link)
 ```
 
@@ -101,6 +104,26 @@ deck.html (control room)             canvas.html (editor, P7+)
    picker.
 5. Encoding: WebCodecs H.264/HEVC on the GPU and AAC are available in this
    Chrome; the machine has NVIDIA, AMD and Microsoft encoders.
+
+## Settled in P1 (numbers in DECISIONS.md, "P1 - the streaming engine")
+
+1. **The native path is the engine.** Chrome's own capture-and-encode
+   (getDisplayMedia or tab self-capture -> WebCodecs) costs 37% of one core
+   at 720p30 and 58% at 1080p30 whatever the capture method, because frames
+   are copied between its processes. Capturing the output window with
+   Windows Graphics Capture and encoding on the same GPU through Media
+   Foundation (`capture.py`, `mfenc.py`, `nativelive.py`) costs ~10-14% of
+   one core at either size, 30 fps, no drops. Audio comes from the page for
+   now (~7-9% of one core in Chrome).
+2. The encoder is the one on the adapter the desktop runs on (here the AMD
+   integrated GPU, which takes RGB32 textures directly); the NVIDIA MFT
+   refuses to activate in a process whose device is the other GPU. Chrome's
+   WebCodecs stays as the fallback when no hardware MFT accepts the device.
+3. `live.py` holds the FLV/RTMP publisher (handshake, publish, acks, pings,
+   extended timestamps, clean unpublish, reconnect with backoff, key vault
+   through DPAPI) and the stdlib WebSocket; TikTok's presets are the table.
+4. Hosted output windows must be exactly the stream size: WGC trims a plain
+   window's invisible 6 px borders, a frameless host has none.
 
 ---
 
@@ -153,8 +176,9 @@ modules (components.py, feeds.py, scenes.py, assets.py, capture.py, voice.py, li
   transform (x, y, w, h, rotation, anchor), style (opacity, blend, radius, border, shadow, blur, crop), props,
   triggers. Store in cache/scenes/<id>.json, atomic writes, last-5 backups, validation with clamping, migration.
 - Asset library v2 on AssetStore: images, GIFs, webm/mp4, size limits, hash dedupe, thumbnails, usage counts.
-- Capture sources: capture.py wraps tools/p0/wgc.py - list windows and monitors (title, process, size), one-shot
-  thumbnails on demand, never a running capture unless asked. /api/capture/sources.
+- Capture sources: extend capture.py (P1) - list windows and monitors (title, process, size), one-shot
+  thumbnails on demand (a WGC frame read back once), never a running capture unless asked.
+  /api/capture/sources. Live engine modules from P1 (live.py, nativelive.py, mfenc.py) get their routes here.
 - Camera/mic self-grant: seed content_settings for the app's origin in the pop-out Chrome profile before the
   first output window opens (P0 method), idempotent, port-aware.
 - VOICE state {level, speaking}: from the caption engine while it runs, else a tiny on-demand sounddevice level
@@ -182,9 +206,11 @@ templates for now (no editor yet).
 - Embed mode for nowplaying/lyrics/queue/captions: ?embed=1 = no window handles, no feed of its own, state and
   design by postMessage from web/embedhost.js (one feed per scene, throttled, children ack); transparent body;
   per-instance options: card background on/off, opacity, border/shadow, hide parts. Standalone pages unchanged.
-- Live sources: camera (getUserMedia, device, resolution/fps caps, mirror, mask shape) and capture
-  (getDisplayMedia with the auto-select flag driven from the capture.py source list), video elements exist only
-  while the layer is visible, a "live" indicator flag in state.
+- Live sources inside a scene: camera (getUserMedia, device, resolution/fps caps, mirror, mask shape) and
+  capture (getDisplayMedia with the auto-select flag driven from the capture.py source list), video elements
+  exist only while the layer is visible, a "live" indicator flag in state. Measure both; if a window source
+  through getDisplayMedia costs too much, P4 can composite it natively instead (WGC texture under the
+  key-colored output window).
 - Reactive image + triggers on VOICE: idle/talking/blink images, bounce, threshold and hold; show/hide/swap/
   animate "while speaking" and "on speech start" for any layer.
 - Transitions and "the live scene": an output can follow the live scene id; switching swaps in place with a cut
@@ -210,8 +236,14 @@ the app's LIVE engine, ready for a UI later.
   as an error the UI can show, clean stop that unpublishes.
 - Audio: mic + optional system audio, per-source gain and mute, a simple mixer in the output page (AudioContext),
   meters at a low rate; nothing recorded.
-- The output page goes LIVE by capturing itself (auto-selected by its own window title) or drawing to a canvas
-  when the scene is canvas-only; scene switching while live keeps the encoder running.
+- The output window goes LIVE through the native path from P1: the server captures the hosted window with
+  Windows Graphics Capture and encodes on the GPU (nativelive.py); the page only supplies audio. Encoder choice
+  per adapter (the desktop's GPU first, NVIDIA when the desktop runs on it, then Chrome's WebCodecs as the
+  fallback), GOP and rate control through ICodecAPI (look the GUIDs up, the keyframe spacing hint on the media
+  type is ignored by the AMD encoder), a forced keyframe after every reconnect, and the audio/video clock from
+  P1 kept. Audio: measure a native WASAPI (mic + loopback) -> MF AAC path against the page's audio and keep the
+  cheaper one. The slow server memory growth seen in P1's soak (~3 MB/min) must be found and fixed here.
+  Scene switching while live keeps the encoder running.
 - Key vault: paste once, DPAPI-encrypted, "forget key", masked in every response; server URL stored alongside.
 - Scene remote API: /api/live/scene, next/previous, list; the deck's snapshot carries the live scene.
 - Tests: 30-minute rig stream to the local ffmpeg sink at 720p30 with two scene switches and one forced

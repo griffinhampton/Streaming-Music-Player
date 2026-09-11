@@ -1,0 +1,279 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Stream spike</title>
+<style>
+  body { margin: 0; padding: 18px; background: #101014; color: #e6e6ea; font: 14px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  form { display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; max-width: 640px; align-items: center; }
+  input, select { background: #1b1b22; color: #eee; border: 1px solid #333; border-radius: 6px; padding: 6px 8px; font: inherit; }
+  input[type=checkbox] { width: auto; justify-self: start; }
+  .row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  button { background: #ff2d6f; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.quiet { background: #2a2a33; }
+  pre { background: #16161c; border-radius: 8px; padding: 10px; white-space: pre-wrap; max-width: 640px; min-height: 40px; }
+  canvas { display: block; margin-top: 12px; width: 480px; border: 1px solid #333; }
+  video { display: block; margin-top: 12px; width: 480px; background: #000; }
+  /* Tab self-capture: the canvas fills the viewport and nothing else shows. */
+  body.bare { padding: 0; overflow: hidden; }
+  body.bare > :not(canvas) { display: none; }
+  body.bare canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; margin: 0; border: 0; }
+</style>
+<h1>Go LIVE spike</h1>
+<form onsubmit="return false">
+  <label for="source">Source</label>
+  <select id="source"><option value="pattern">Test pattern</option><option value="window">Window (auto-selected by title)</option><option value="tab">This page (tab self-capture)</option><option value="none">Audio only (video comes from the app's own capture)</option></select>
+  <label for="preset">Preset</label>
+  <select id="preset"></select>
+  <label for="mic">Microphone</label><input id="mic" type="checkbox" checked>
+  <label for="sys">System audio</label><input id="sys" type="checkbox">
+  <label for="url">Server URL</label><input id="url" placeholder="rtmp://host/app">
+  <label for="key">Stream key</label><input id="key" type="password" placeholder="from LIVE Center">
+  <label for="remember">Remember key</label><input id="remember" type="checkbox">
+  <div class="row"><button id="start" type="button">Start</button><button id="stop" class="quiet" type="button">Stop</button><span id="state"></span></div>
+</form>
+<pre id="stats"></pre>
+<pre id="log"></pre>
+<canvas id="pattern" hidden></canvas>
+<video id="preview" hidden muted autoplay playsinline></video>
+<script>
+  // Presets copied from LIVE Studio's own table (DECISIONS.md). H.264 level
+  // 4.2 is only needed for 1080p60; 4.0 covers everything else.
+  const PRESETS = {
+    '1080p60': { w: 1920, h: 1080, fps: 60, kbps: 7600, codec: 'avc1.64002a' },
+    '1080p30': { w: 1920, h: 1080, fps: 30, kbps: 6000, codec: 'avc1.640028' },
+    '720p60':  { w: 1280, h: 720,  fps: 60, kbps: 4400, codec: 'avc1.640028' },
+    '720p30':  { w: 1280, h: 720,  fps: 30, kbps: 3400, codec: 'avc1.640028' },
+    '480p30':  { w: 852,  h: 480,  fps: 30, kbps: 2000, codec: 'avc1.640028' },
+  };
+  const K_VCONFIG = 0, K_VIDEO = 1, K_ACONFIG = 2, K_AUDIO = 3, K_META = 4;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  for (const name of Object.keys(PRESETS)) $('preset').add(new Option(name, name));
+  $('preset').value = q.get('preset') || '720p30';
+  if (q.get('source')) $('source').value = q.get('source');
+  if (q.has('mic')) $('mic').checked = q.get('mic') === '1';
+  if (q.has('sys')) $('sys').checked = q.get('sys') === '1';
+  if (q.get('url')) $('url').value = q.get('url');
+  if (q.get('key')) $('key').value = q.get('key');
+  const log = s => { $('log').textContent += new Date().toLocaleTimeString() + '  ' + s + '\n'; };
+  let S = null;   // everything alive while streaming
+
+  function patternStream(p) {
+    // A moving, changing picture so the encoder has real work to do.
+    const c = $('pattern'); c.hidden = false; c.width = p.w; c.height = p.h;
+    const g = c.getContext('2d'); let n = 0;
+    const bars = ['#fff', '#ff0', '#0ff', '#0f0', '#f0f', '#f00', '#00f'];
+    S.timer = setInterval(() => {
+      n++;
+      bars.forEach((col, i) => { g.fillStyle = col; g.fillRect(i * p.w / 7, 0, p.w / 7 + 1, p.h * 0.6); });
+      g.fillStyle = `hsl(${(n * 3) % 360} 60% 30%)`; g.fillRect(0, p.h * 0.6, p.w, p.h * 0.4);
+      g.fillStyle = '#fff'; g.font = `bold ${Math.round(p.h / 12)}px system-ui`;
+      g.fillText(`${p.w}x${p.h} @${p.fps}  frame ${n}  ${new Date().toLocaleTimeString()}`, 20, p.h * 0.6 + p.h / 8);
+      g.fillStyle = '#000'; g.fillRect((n * 7) % (p.w - 60), p.h * 0.75, 60, 60);
+    }, 1000 / p.fps);
+    return c.captureStream(p.fps);
+  }
+
+  function send(kind, flags, ms, data) {
+    const ws = S && S.ws;
+    if (!ws || ws.readyState !== 1) return;
+    if (ws.bufferedAmount > 4e6 && kind === K_VIDEO && !(flags & 1)) { S.dropped++; return; }
+    const n = data.byteLength;
+    const buf = new Uint8Array(6 + n);
+    buf[0] = kind; buf[1] = flags;
+    new DataView(buf.buffer).setUint32(2, Math.max(0, Math.round(ms)) >>> 0);
+    if (data.copyTo) data.copyTo(buf.subarray(6)); else buf.set(new Uint8Array(data.buffer || data, data.byteOffset || 0, n), 6);
+    ws.send(buf);
+  }
+
+  async function runVideo(track, p) {
+    const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    S.reader = reader;
+    S.venc = new VideoEncoder({
+      output: (chunk, meta) => {
+        if (meta && meta.decoderConfig && meta.decoderConfig.description) {
+          send(K_VCONFIG, 0, 0, new Uint8Array(meta.decoderConfig.description));
+        }
+        const ms = S.vbase + (chunk.timestamp - S.v0) / 1000;
+        send(K_VIDEO, chunk.type === 'key' ? 1 : 0, ms, chunk);
+        S.vout++;
+      },
+      error: e => log('video encoder: ' + e.message),
+    });
+    let n = 0;
+    while (S && S.running) {
+      const { value: frame, done } = await reader.read();
+      if (done || !frame) break;
+      if (!S.vconfigured) {
+        const w = frame.displayWidth & ~1, h = frame.displayHeight & ~1;
+        const cfg = { codec: p.codec, width: w, height: h, framerate: p.fps, bitrate: p.kbps * 1000,
+                      bitrateMode: 'constant', latencyMode: 'realtime',
+                      hardwareAcceleration: 'prefer-hardware', avc: { format: 'avc' } };
+        let sup = await VideoEncoder.isConfigSupported(cfg);
+        if (!sup.supported) { delete cfg.bitrateMode; sup = await VideoEncoder.isConfigSupported(cfg); }
+        if (!sup.supported) { cfg.hardwareAcceleration = 'no-preference'; sup = await VideoEncoder.isConfigSupported(cfg); }
+        if (!sup.supported) { frame.close(); log('no usable H.264 encoder config'); break; }
+        S.venc.configure(cfg);
+        S.vconfigured = true; S.v0 = frame.timestamp; S.vbase = performance.now() - S.t0;
+        S.size = `${w}x${h}`;
+        log(`video ${w}x${h} @${p.fps} ${p.kbps} kbps, ${cfg.hardwareAcceleration}`);
+        send(K_META, 0, 0, new TextEncoder().encode(JSON.stringify({
+          width: w, height: h, framerate: p.fps, videodatarate: p.kbps, videocodecid: 7,
+          ...(S.audio ? { audiodatarate: 128, audiosamplerate: S.audio.rate, audiosamplesize: 16,
+                           stereo: S.audio.channels === 2, audiocodecid: 10 } : {}),
+          encoder: 'Awesome Streaming Deck' })));
+      }
+      if (S.venc.encodeQueueSize > 2) { frame.close(); S.dropped++; continue; }
+      S.venc.encode(frame, { keyFrame: n % (p.fps * 2) === 0 });
+      frame.close();
+      n++; S.vin++;
+    }
+  }
+
+  async function runAudio(track) {
+    const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    S.areader = reader;
+    S.aenc = new AudioEncoder({
+      output: (chunk, meta) => {
+        if (meta && meta.decoderConfig && meta.decoderConfig.description) {
+          send(K_ACONFIG, 0, 0, new Uint8Array(meta.decoderConfig.description));
+          S.asent = true;
+        } else if (!S.asent) {
+          send(K_ACONFIG, 0, 0, asc(S.audio.rate, S.audio.channels));
+          S.asent = true;
+        }
+        const ms = S.abase + S.adur / 1000;
+        S.adur += chunk.duration || (1024 / S.audio.rate * 1e6);
+        send(K_AUDIO, 0, ms, chunk);
+        S.aout++;
+      },
+      error: e => log('audio encoder: ' + e.message),
+    });
+    while (S && S.running) {
+      const { value: data, done } = await reader.read();
+      if (done || !data) break;
+      if (!S.aconfigured) {
+        S.audio = { rate: data.sampleRate, channels: data.numberOfChannels };
+        S.aenc.configure({ codec: 'mp4a.40.2', sampleRate: data.sampleRate, numberOfChannels: data.numberOfChannels, bitrate: 128000 });
+        S.aconfigured = true; S.abase = performance.now() - S.t0; S.adur = 0;
+        log(`audio AAC ${data.sampleRate} Hz x${data.numberOfChannels}`);
+      }
+      S.aenc.encode(data);
+      data.close();
+    }
+  }
+
+  function asc(rate, channels) {
+    const rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+    const idx = Math.max(0, rates.indexOf(rate));
+    const bits = (2 << 11) | (idx << 7) | (channels << 3);
+    return new Uint8Array([bits >> 8, bits & 255]);
+  }
+
+  window.startLive = async function () {
+    if (S) return 'already running';
+    const p = PRESETS[$('preset').value];
+    const url = $('url').value.trim(), key = $('key').value;
+    const r = await (await fetch('/api/live/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, key, remember: $('remember').checked }) })).json();
+    if (!r.ok) { log('server: ' + r.error); return 'start failed: ' + r.error; }
+    S = { running: true, t0: performance.now(), dropped: 0, vin: 0, vout: 0, aout: 0, tracks: [] };
+    try {
+      S.ws = await new Promise((ok, no) => {
+        const ws = new WebSocket(`ws://${location.host}/ws/live`);
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = () => ok(ws); ws.onerror = () => no(new Error('websocket failed'));
+        ws.onmessage = e => { try { paint(JSON.parse(e.data)); } catch {} };
+      });
+      let stream;
+      if ($('source').value === 'none') stream = new MediaStream();
+      else if ($('source').value === 'pattern') stream = patternStream(p);
+      else if ($('source').value === 'tab') {
+        // What a scene page will do: draw, then capture its own tab.
+        patternStream(p);
+        document.body.classList.add('bare');
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: p.fps, width: { ideal: p.w }, height: { ideal: p.h } }, audio: false,
+          preferCurrentTab: true, selfBrowserSurface: 'include' });
+      } else {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: p.fps, width: { ideal: p.w }, height: { ideal: p.h } }, audio: $('sys').checked });
+        // A preview costs a decode-and-composite per frame; only on request.
+        if (q.get('preview') === '1') { $('preview').hidden = false; $('preview').srcObject = new MediaStream([stream.getVideoTracks()[0]]); }
+      }
+      stream.getTracks().forEach(t => S.tracks.push(t));
+      // Audio: everything mixes in one AudioContext, so the encoder sees one
+      // clock, two channels, one sample rate.
+      const wantMic = $('mic').checked, sysTrack = stream.getAudioTracks()[0];
+      if (wantMic || sysTrack) {
+        S.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+        await S.ctx.resume();
+        const dest = S.ctx.createMediaStreamDestination();
+        if (wantMic) {
+          const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+          mic.getTracks().forEach(t => S.tracks.push(t));
+          S.ctx.createMediaStreamSource(mic).connect(dest);
+        }
+        if (sysTrack) S.ctx.createMediaStreamSource(new MediaStream([sysTrack])).connect(dest);
+        runAudio(dest.stream.getAudioTracks()[0]);
+      }
+      if (stream.getVideoTracks().length) runVideo(stream.getVideoTracks()[0], p);
+      else send(K_META, 0, 0, new TextEncoder().encode(JSON.stringify(S.audio ? { audiodatarate: 128,
+        audiosamplerate: 48000, audiosamplesize: 16, stereo: true, audiocodecid: 10 } : {})));
+      $('state').textContent = 'running';
+      return 'started';
+    } catch (e) {
+      log('start: ' + e.message);
+      await stopLive();
+      return 'start failed: ' + e.message;
+    }
+  };
+
+  window.stopLive = async function () {
+    if (!S) return 'not running';
+    const s = S; S = null; s.running = false;
+    clearInterval(s.timer);
+    try { s.reader && await s.reader.cancel(); } catch {}
+    try { s.areader && await s.areader.cancel(); } catch {}
+    try { s.venc && s.venc.state !== 'closed' && await s.venc.flush(); } catch {}
+    try { s.venc && s.venc.close(); } catch {}
+    try { s.aenc && s.aenc.close(); } catch {}
+    s.tracks.forEach(t => t.stop());
+    try { s.ctx && await s.ctx.close(); } catch {}
+    try { s.ws && s.ws.close(); } catch {}
+    await fetch('/api/live/stop', { method: 'POST' }).catch(() => {});
+    $('state').textContent = 'stopped'; $('preview').hidden = true; $('pattern').hidden = true;
+    return 'stopped';
+  };
+
+  // For the A/B: draw the pattern (or show the captured window) without
+  // encoding or sending anything, so the source's own cost can be measured.
+  window.drawOnly = async function () {
+    if (S) return 'already running';
+    const p = PRESETS[$('preset').value];
+    S = { running: true, t0: performance.now(), dropped: 0, vin: 0, vout: 0, aout: 0, tracks: [] };
+    if ($('source').value === 'pattern') patternStream(p);
+    else if ($('source').value === 'tab') { patternStream(p); document.body.classList.add('bare'); }
+    else {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: p.fps, width: { ideal: p.w }, height: { ideal: p.h } } });
+      stream.getTracks().forEach(t => S.tracks.push(t));
+      $('preview').hidden = false; $('preview').srcObject = stream;
+    }
+    return 'drawing only';
+  };
+
+  window.liveInfo = () => S ? { in: S.vin, out: S.vout, audio: S.aout, dropped: S.dropped, size: S.size,
+    queue: S.venc ? S.venc.encodeQueueSize : 0, buffered: S.ws ? S.ws.bufferedAmount : 0 } : null;
+
+  function paint(st) {
+    const s = st.stats || {};
+    $('stats').textContent = `server: ${st.state}${st.error ? ' - ' + st.error : ''}\n` +
+      `${s.kbps} kbps  video ${s.vfps} fps  audio ${s.afps}/s  queue ${s.queue}  dropped ${s.dropped}  ` +
+      `reconnects ${s.reconnects}  up ${s.uptime}s  sent ${(s.bytes / 1e6).toFixed(1)} MB\n` +
+      (S ? `page: in ${S.vin} out ${S.vout} audio ${S.aout} dropped ${S.dropped} encoder queue ${S.venc ? S.venc.encodeQueueSize : 0} socket buffer ${S.ws ? S.ws.bufferedAmount : 0}` : '');
+  }
+
+  $('start').onclick = () => startLive().then(log);
+  $('stop').onclick = () => stopLive().then(log);
+  if (q.get('auto') === '1') startLive().then(log);
+</script>

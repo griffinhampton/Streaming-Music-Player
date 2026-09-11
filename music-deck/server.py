@@ -37,7 +37,9 @@ from captions import CaptionBridge
 from captions_whisper import gpu_failure, list_microphones
 import fonts
 import gpu
+import live
 import models
+import nativelive
 
 import paths
 
@@ -1051,6 +1053,7 @@ class Hub:
             "captions": CAPTIONS.get(),
             "captions_models": MODEL_STORE.status(),
             "captions_gpu": dict(GPU_STORE.status(), failed=gpu_failure()),
+            "live": LIVE.snapshot_status(),
             # Fonts people added: the families for the pickers, and a version
             # every page watches to reload /fonts.css when the set changes.
             "fonts": FONT_STORE.families(),
@@ -1198,6 +1201,10 @@ LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
 BROWSER = overlay_mod.find_browser()
+# Going LIVE from the app: the output page encodes, this pushes RTMP.
+LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
+LIVE.on_change = lambda: HUB.broadcast()
+NATIVE = nativelive.NativeVideo(LIVE, log=lambda msg: print("  " + msg))
 
 
 def window_action(ov, cfg, page, action, data):
@@ -1670,6 +1677,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/events":
             return self._sse()
 
+        if path == "/ws/live":
+            return LIVE.serve_websocket(self)
+        if path == "/api/live/status":
+            return self._json(dict(LIVE.status(), native=NATIVE.status()))
+
         # Last resort: a file we ship in web/. This has to come after every
         # real route, or a route whose path ends in something dot-shaped
         # (/asset/abc.png) gets mistaken for a static file.
@@ -1914,6 +1926,29 @@ class Handler(BaseHTTPRequestHandler):
                 target = (QUEUE_WIN, CONFIG["queue"], "queue.html")
             return self._json(window_action(*target, action, data))
 
+        if path == "/api/live/start":
+            return self._json(LIVE.start(data.get("url"), data.get("key"),
+                                         remember=bool(data.get("remember"))))
+        if path == "/api/live/stop":
+            NATIVE.stop()
+            LIVE.restamp_audio = False
+            return self._json(LIVE.stop())
+        if path == "/api/live/native":
+            # Video captured and encoded in this process; the page then only
+            # carries audio, stamped on our clock as it arrives.
+            if data.get("action") == "stop":
+                NATIVE.stop()
+                LIVE.restamp_audio = False
+                return self._json({"ok": True})
+            LIVE.restamp_audio = True
+            return self._json(NATIVE.start(title=data.get("title"), hwnd=data.get("hwnd"),
+                                           monitor=data.get("monitor"), fps=data.get("fps", 30),
+                                           kbps=data.get("kbps", 3400)))
+        if path == "/api/live/key":
+            return self._json(LIVE.vault.save(data.get("url", ""), data.get("key", "")))
+        if path == "/api/live/key/forget":
+            return self._json(LIVE.vault.forget())
+
         if path == "/api/quit":
             self._json({"ok": True})
 
@@ -1925,6 +1960,8 @@ class Handler(BaseHTTPRequestHandler):
                 CAPTIONS_WIN.close()
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
                 CAPTIONS.stop()      # likewise the one holding the microphone
+                NATIVE.stop()
+                LIVE.stop()          # unpublish cleanly rather than vanish
                 time.sleep(0.4)
                 os._exit(0)
             threading.Thread(target=shutdown, daemon=True).start()
