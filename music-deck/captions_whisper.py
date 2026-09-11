@@ -67,6 +67,12 @@ FINAL_BEAM = 5                 # beam width for finished lines; 1 = greedy
 # a second to 5.3% - with no change at all in accuracy. Finished lines only
 # (no live words) is 1.7%.
 THREADS = 2                    # CPU threads for Whisper; 0 = pick from the machine
+# Live re-reads (the words shown while you still talk) run on a one-thread copy
+# of the model. Base.en barely speeds up on a second thread, so one thread does
+# the same work at half the peak, and the budget then affords more re-reads -
+# live words came sooner. Finished lines keep THREADS, where beam search does
+# use them. 0 = one model for everything.
+LIVE_THREADS = 1
 LIVE_PARTIALS = True           # default for re-reading the phrase while it is spoken
 # Real conversation barely pauses, so every re-read covers a long stretch and
 # costs more than the test recording's short sentences: measured live at 9%
@@ -210,6 +216,7 @@ class WhisperListener:
         # Half the machine at most, and never all of it: there is a game and
         # an encoder running too. 16 threads -> 6, 8 -> 3, 4 -> 2.
         self.threads = threads or THREADS or max(2, min(6, (os.cpu_count() or 4) // 2 - 1))
+        self.live_threads = LIVE_THREADS if 0 < LIVE_THREADS < self.threads else 0
         self.label = label
         self.context = ""            # what was just said: a prompt for the next line
         # Live words: re-read the phrase while it is spoken. Off, a line is
@@ -232,10 +239,17 @@ class WhisperListener:
         self.np = np
         self.model = WhisperModel(self.model_dir, device="cpu", compute_type="int8",
                                   cpu_threads=self.threads, num_workers=1)
+        self.live_model = self.model
+        if self.live_threads:
+            self.live_model = WhisperModel(self.model_dir, device="cpu", compute_type="int8",
+                                           cpu_threads=self.live_threads, num_workers=1)
+        self._use = self.model
         self.vad = StreamingVAD(get_vad_model)
         # The first decode pays for setting everything up. Pay it now, not
         # on the first thing someone says.
         self._decode(np.zeros(RATE, dtype=np.float32), final=False)
+        if self.live_model is not self.model:
+            self._decode(np.zeros(RATE, dtype=np.float32), final=True)
 
     def open_source(self, q):
         """Start the microphone feeding 16 kHz mono float blocks into q."""
@@ -390,7 +404,7 @@ class WhisperListener:
         spent = time.monotonic() - started
         # Keep live words inside their CPU budget: the next re-read waits
         # until this one's cost, spread over the wait, fits it.
-        self._partial_every = max(PARTIAL_EVERY_S, spent * self.threads / LIVE_BUDGET_CORES)
+        self._partial_every = max(PARTIAL_EVERY_S, spent * (self.live_threads or self.threads) / LIVE_BUDGET_CORES)
         if long:
             words = [w for s in segs for w in (s.words or [])]
             ends = [i for i, w in enumerate(words[:-1])
@@ -418,7 +432,7 @@ class WhisperListener:
     def _read(self, audio, opts, full_window=False):
         _window["full"] = full_window
         try:
-            segments, _info = self.model.transcribe(audio, **opts)
+            segments, _info = self._use.transcribe(audio, **opts)
             return list(segments)
         finally:
             _window["full"] = False
@@ -439,9 +453,14 @@ class WhisperListener:
             opts.update(beam_size=FINAL_BEAM, best_of=1, temperature=[0.0, 0.2, 0.4])
         else:
             opts.update(beam_size=1, best_of=1, temperature=0.0)
+        self._use = self.model if final else self.live_model
         segments = self._read(audio, opts)
         if SHORT_WINDOW and _looks_stuck(segments, dur):
-            # Read that phrase again the standard way, over a full window.
+            # Read that phrase again the standard way, over a full window. That
+            # read is the heavy one, so it gets every thread even when a live
+            # re-read started it: on one thread it held up the next finished
+            # line by several seconds.
+            self._use = self.model
             segments = self._read(audio, opts, full_window=True)
         keep = []
         for s in segments:

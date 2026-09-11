@@ -58,6 +58,8 @@ budget: while you talk, the live line updates about once a second and uses
 at most about half of one CPU core on average, however long you talk
 without a pause - a long run of talk just updates a little less often. The
 budget only ever slows that live line; finished lines are never held back.
+The live line is read on a single CPU thread, so it never takes more than one
+core at a time; finished lines get two, so they are not held up either.
 Turn off **Show words while I'm still talking** (Listening tab) and each line
 appears once you pause instead, for a fraction of that.
 
@@ -118,7 +120,9 @@ player and every design setting on the right.
 - **From source** – double-click `Start Awesome Streaming Deck.bat` (needs Python 3.10+).
   Close the black window to stop.
 
-Chrome or Edge has to be installed (Edge always is on Windows 10/11).
+Chrome or Edge has to be installed (Edge always is on Windows 10/11). The pop-out
+windows all share one Chrome, so opening another adds a page rather than a
+whole new browser.
 
 ## Put it on stream (TikTok Studio)
 
@@ -222,7 +226,9 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   off the ends. Emoticons next to the label. Anything that keeps moving - the
   drifting frame, a long title sliding, the equalizer bars - steps 30 times a
   second, which is what a stream captures, instead of at your screen's refresh
-  rate (165 times a second on many gaming laptops). While the deck is behind
+  rate (165 times a second on many gaming laptops), and so do longer one-off
+  movements like the lyrics gliding to the next line or a caption fading out.
+  While the deck is behind
   other windows, the moving parts in its preview hold still until you click
   back into it; the pop-out windows keep moving.
 - **Stickers** – drop pictures onto the preview, then drag them into place. PNG,

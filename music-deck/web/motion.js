@@ -30,6 +30,36 @@
   function queue() { if (!queued) { queued = true; setTimeout(stepAll, 0); } }
   document.addEventListener('animationstart', queue, true);
   document.addEventListener('animationiteration', queue, true);
+
+  // Transitions too - lyrics gliding to the next line, a caption fading out -
+  // when they run long enough to matter; short hover feedback stays smooth.
+  // The easing moves onto the keyframes, so the curve is kept and only
+  // sampled 30 times a second.
+  function stepTransitions(e) {
+    const el = e.target;
+    if (!el || !el.getAnimations || !window.CSSTransition) return;
+    for (const anim of el.getAnimations()) {
+      if (!(anim instanceof CSSTransition) || stepped.has(anim)) continue;
+      if (e.propertyName && anim.transitionProperty !== e.propertyName) continue;
+      const fx = anim.effect;
+      if (!fx) continue;
+      const dur = Number(fx.getComputedTiming().duration);
+      stepped.set(anim, dur);
+      if (!(dur >= 200)) continue;
+      try {
+        const easing = fx.getTiming().easing || 'linear';
+        if (easing !== 'linear') {
+          const frames = fx.getKeyframes();
+          const first = (frames[0] && frames[0].easing) || 'linear';
+          if (frames.length !== 2 || first !== 'linear') continue;   // an unusual shape: leave it be
+          frames[0].easing = easing;
+          fx.setKeyframes(frames);
+        }
+        fx.updateTiming({ easing: `steps(${Math.max(2, Math.round(dur * FPS / 1000))})` });
+      } catch (_) { /* leave it smooth */ }
+    }
+  }
+  document.addEventListener('transitionrun', stepTransitions, true);
   queue();
 })();
 

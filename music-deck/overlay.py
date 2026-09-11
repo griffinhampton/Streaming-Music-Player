@@ -34,6 +34,12 @@ STREAM_FLAGS = [
     "--force-device-scale-factor=1",
 ]
 
+# One Chrome for every pop-out window. Opening a window then asks the browser
+# that is already running for one more page, instead of starting a whole new
+# browser, GPU process and helpers for each. The deck keeps its own, since it
+# draws at the screen's own scale and these are pinned to 1.
+SHARED_PROFILE = "chrome-windows"
+
 
 def find_browser():
     for path in (
@@ -136,7 +142,7 @@ class Overlay:
                 return {"ok": False, "reason": "no Chrome or Edge found"}
 
             self.metrics = {}
-            profile = os.path.join(self.cache, f"chrome-{self.kind}")
+            profile = os.path.join(self.cache, SHARED_PROFILE)
             os.makedirs(profile, exist_ok=True)
 
             # First guess at the outer size; we correct it once the page measures itself.
@@ -171,7 +177,9 @@ class Overlay:
             self.insets = (rect["w"] - metrics["inner_w"],
                            rect["h"] - metrics["inner_h"])
             stamp = metrics["ts"]
-            winwin.move_resize(child, None, None,
+            # A window added to a browser that is already running ignores
+            # --window-position, so put it where it belongs here.
+            winwin.move_resize(child, int(x), int(y),
                                width + self.insets[0], height + self.insets[1])
             metrics = self._wait_metrics(timeout=4, after=stamp) or metrics
             time.sleep(0.25)
