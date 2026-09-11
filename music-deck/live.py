@@ -139,6 +139,20 @@ def audio_specific_config(sample_rate, channels):
 
 # ------------------------------------------------------------------ RTMP publisher
 
+SIO_TCP_INFO = 0xD8000027       # _WSAIORW(IOC_VENDOR, 39): what the TCP stack knows about a socket
+
+
+class _TCP_INFO(ctypes.Structure):
+    # TCP_INFO_v0 from mstcpip.h (Windows 10 1703+)
+    _fields_ = [("State", ctypes.c_int), ("Mss", ctypes.c_uint), ("ConnectionTimeMs", ctypes.c_ulonglong),
+                ("TimestampsEnabled", ctypes.c_ubyte), ("RttUs", ctypes.c_uint), ("MinRttUs", ctypes.c_uint),
+                ("BytesInFlight", ctypes.c_uint), ("Cwnd", ctypes.c_uint), ("SndWnd", ctypes.c_uint),
+                ("RcvWnd", ctypes.c_uint), ("RcvBuf", ctypes.c_uint), ("BytesOut", ctypes.c_ulonglong),
+                ("BytesIn", ctypes.c_ulonglong), ("BytesReordered", ctypes.c_uint), ("BytesRetrans", ctypes.c_uint),
+                ("FastRetrans", ctypes.c_uint), ("DupAcksIn", ctypes.c_uint), ("TimeoutEpisodes", ctypes.c_uint),
+                ("SynRetrans", ctypes.c_ubyte)]
+
+
 class RtmpError(Exception):
     pass
 
@@ -195,6 +209,25 @@ class RtmpClient:
         with self._wlock:
             self.sock.sendall(data)
         self.bytes_out += len(data)
+
+    def tcp_info(self):
+        """Round trip, bytes in flight and retransmits straight from the TCP
+        stack - the network health a viewer would feel. None if unavailable."""
+        sock = self.sock
+        if not sock:
+            return None
+        try:
+            ioctl = ctypes.windll.ws2_32.WSAIoctl
+            ioctl.restype = ctypes.c_int
+            ioctl.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p,
+                              ctypes.c_uint, ctypes.POINTER(ctypes.c_uint), ctypes.c_void_p, ctypes.c_void_p]
+            info, version, got = _TCP_INFO(), ctypes.c_uint(0), ctypes.c_uint(0)
+            if ioctl(ctypes.c_void_p(sock.fileno()), SIO_TCP_INFO, ctypes.byref(version), 4, ctypes.byref(info),
+                     ctypes.sizeof(info), ctypes.byref(got), None, None) != 0:
+                return None
+            return info
+        except Exception:
+            return None
 
     def _handshake(self):
         c1 = struct.pack(">II", int(time.time()) & 0xFFFFFFFF, 0) + os.urandom(1528)
@@ -560,6 +593,19 @@ K_VCONFIG, K_VIDEO, K_ACONFIG, K_AUDIO, K_META = 0, 1, 2, 3, 4
 QUEUE_MAX = 600          # about 7 s of 30 fps video plus AAC frames
 BACKOFF_MAX_S = 30
 
+# LIVE Studio's own quality table: the sizes, rates and bitrates TikTok
+# expects. A portrait scene streams at its own size with the preset's rate.
+PRESETS = {
+    "1080p60": {"width": 1920, "height": 1080, "fps": 60, "kbps": 7600, "hevc_kbps": 6400},
+    "1080p30": {"width": 1920, "height": 1080, "fps": 30, "kbps": 6000, "hevc_kbps": 5200},
+    "720p60": {"width": 1280, "height": 720, "fps": 60, "kbps": 4400, "hevc_kbps": 3800},
+    "720p30": {"width": 1280, "height": 720, "fps": 30, "kbps": 3400, "hevc_kbps": 3000},
+    "480p30": {"width": 852, "height": 480, "fps": 30, "kbps": 2000, "hevc_kbps": 1800},
+}
+AUDIO_KBPS = 128
+KEY_ROTATED_HINT = ("TikTok refused the stream key after it had been live - LIVE Center may have "
+                    "issued a new key; copy it, paste it here and start again")
+
 
 class LiveEngine:
     """Owns the RTMP connection and the queue between the page and the wire."""
@@ -568,6 +614,8 @@ class LiveEngine:
         self.vault = Vault(cache_dir)
         self.log = log or (lambda *_: None)
         self.on_change = None
+        self.on_reconnect = None   # the video source forces a keyframe here
+        self.preset = "720p30"
         self.state = "idle"        # idle | connecting | live | reconnecting | failed
         self.error = ""
         self.url = ""
@@ -580,8 +628,9 @@ class LiveEngine:
         self._sender = None
         self._stop = threading.Event()
         self._session = None
-        self.stats = {"bytes": 0, "kbps": 0, "vfps": 0, "afps": 0, "queue": 0,
-                      "dropped": 0, "reconnects": 0, "uptime": 0, "connected_at": 0}
+        self.stats = {"bytes": 0, "kbps": 0, "vfps": 0, "afps": 0, "queue": 0, "delay_ms": 0,
+                      "dropped": 0, "reconnects": 0, "uptime": 0, "connected_at": 0,
+                      "rtt_ms": 0, "inflight_kb": 0, "retrans_kb": 0}
         self._counts = {"v": 0, "a": 0, "bytes": 0, "at": time.monotonic()}
         # One clock for everything: video encoded in this process and audio
         # arriving from the page are both stamped against it when the native
@@ -601,12 +650,12 @@ class LiveEngine:
         if self.state == "live" and s["connected_at"]:
             s["uptime"] = int(time.time() - s["connected_at"])
         return {"state": self.state, "error": self.error, "has_key": self.vault.has_key(),
-                "url": self.url, "page": bool(self._session), "stats": s}
+                "url": self.url, "page": bool(self._session), "preset": self.preset, "stats": s}
 
     def snapshot_status(self):
         """What the deck's state feed carries: nothing that changes every second."""
         return {"state": self.state, "error": self.error, "has_key": self.vault.has_key(),
-                "url": self.url, "reconnects": self.stats["reconnects"]}
+                "url": self.url, "preset": self.preset, "reconnects": self.stats["reconnects"]}
 
     def _set_state(self, state, error=""):
         if state == self.state and error == self.error:
@@ -621,7 +670,7 @@ class LiveEngine:
 
     # ------------------------------------------------ start / stop
 
-    def start(self, url=None, key=None, remember=False):
+    def start(self, url=None, key=None, remember=False, preset=None):
         if self._sender and self._sender.is_alive():
             return {"ok": True, "already": True, "state": self.state}
         saved_url, saved_key = self.vault.load()
@@ -631,8 +680,11 @@ class LiveEngine:
             return {"ok": False, "error": "a Server URL and a Stream key are needed"}
         if remember:
             self.vault.save(url, key)
+        if preset in PRESETS:
+            self.preset = preset
         self.url, self.key = url, key
-        self.stats.update(bytes=0, kbps=0, vfps=0, afps=0, dropped=0, reconnects=0, uptime=0, connected_at=0)
+        self.stats.update(bytes=0, kbps=0, vfps=0, afps=0, dropped=0, reconnects=0, uptime=0,
+                          connected_at=0, delay_ms=0, rtt_ms=0, inflight_kb=0, retrans_kb=0)
         self._t0 = time.monotonic()
         self._last_audio_ms = -1
         self.meta = None
@@ -693,6 +745,7 @@ class LiveEngine:
 
     def _run(self):
         backoff = 1
+        was_live = False
         while not self._stop.is_set():
             client = None
             try:
@@ -701,6 +754,14 @@ class LiveEngine:
                 self.stats["connected_at"] = time.time()
                 self._set_state("live")
                 backoff = 1
+                if was_live and self.on_reconnect:
+                    # Back on the air: the next frame out must be a keyframe,
+                    # or a viewer waits out the GOP looking at nothing.
+                    try:
+                        self.on_reconnect()
+                    except Exception:
+                        pass
+                was_live = True
                 self._stream(client)
                 return
             except (OSError, RtmpError, ValueError) as exc:
@@ -710,7 +771,7 @@ class LiveEngine:
                 if self._stop.is_set():
                     return
                 if _is_fatal(text):
-                    self._set_state("failed", text)
+                    self._set_state("failed", (KEY_ROTATED_HINT + " (" + text + ")") if was_live else text)
                     return
                 self.stats["reconnects"] += 1
                 self._set_state("reconnecting", text)
@@ -757,6 +818,8 @@ class LiveEngine:
                 need_key = False
                 client.send_video(ts, video_tag(key, 1, payload))
                 self._counts["v"] += 1
+                # How far behind its capture a frame goes out: encoder plus queue.
+                self.stats["delay_ms"] = max(0, self.clock_ms() - int(ts))
             elif kind == K_AUDIO:
                 client.send_audio(ts, audio_tag(1, payload))
                 self._counts["a"] += 1
@@ -774,6 +837,11 @@ class LiveEngine:
         self.stats["afps"] = round(c["a"] / span, 1)
         self.stats["bytes"] = client.bytes_out
         self._counts = {"v": 0, "a": 0, "bytes": client.bytes_out, "at": now}
+        tcp = client.tcp_info()
+        if tcp:
+            self.stats["rtt_ms"] = round(tcp.RttUs / 1000, 1)
+            self.stats["inflight_kb"] = round(tcp.BytesInFlight / 1024, 1)
+            self.stats["retrans_kb"] = round(tcp.BytesRetrans / 1024, 1)
 
     # ------------------------------------------------ the page's socket
 

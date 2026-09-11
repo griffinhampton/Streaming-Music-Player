@@ -46,6 +46,7 @@ import gpu
 import live
 import models
 import nativelive
+import audio as audio_mod
 
 import paths
 
@@ -65,6 +66,16 @@ DEFAULT_CONFIG = {
         "live": "",                  # the scene the "Canvas (live)" output follows
         "transition": "fade",        # fade | cut, when the live scene changes
         "duration": 300,             # ms, for the fade
+    },
+    "live": {
+        "preset": "720p30",          # see live.PRESETS
+        "source": "live",            # the component whose window goes on stream ("page" = the browser path)
+        "audio": {
+            "mic": True, "mic_device": "",   # "" = the Windows default microphone
+            "system": False,                 # what the PC plays (WASAPI loopback)
+            "gain": {"mic": 1.0, "system": 1.0},
+            "mute": {"mic": False, "system": False},
+        },
     },
     "source_mode": "auto",          # auto | local | spotify
     "theme": "",                    # last full theme applied, so the picker can show it
@@ -1069,11 +1080,111 @@ def capture_flags_for(page):
     return []
 
 
+AUDIO = [None]                  # the native mixer while streaming
+
+
+def live_status():
+    return dict(LIVE.status(), native=NATIVE.status(),
+                audio=AUDIO[0].status() if AUDIO[0] else {"running": False},
+                config=CONFIG.get("live", {}))
+
+
+def live_start(data):
+    """Go LIVE: the RTMP publisher, then the native capture of the output
+    window and the native audio mixer - or, for the browser path, the page
+    does capture and audio itself."""
+    cfg = CONFIG.setdefault("live", {})
+    for key in ("preset", "source"):
+        if data.get(key):
+            cfg[key] = str(data[key])
+    if isinstance(data.get("audio"), dict):
+        _merge_into(cfg.setdefault("audio", {}), data["audio"])
+    save_config(CONFIG)
+    preset = live.PRESETS.get(cfg.get("preset") or "720p30") or live.PRESETS["720p30"]
+    res = LIVE.start(data.get("url"), data.get("key"), remember=bool(data.get("remember")),
+                     preset=cfg.get("preset"))
+    if not res.get("ok"):
+        return res
+    if cfg.get("source") == "page":
+        LIVE.restamp_audio = False
+        return dict(res, path="page")
+    comp = COMPONENTS.get(cfg.get("source") or "live")
+    if not comp:
+        LIVE.stop()
+        return {"ok": False, "error": f"no output called {cfg.get('source')!r}"}
+    if not comp.overlay.is_open():
+        opened = window_action(comp.overlay, comp.config(CONFIG), comp.page, "open", {})
+        if not opened.get("ok"):
+            LIVE.stop()
+            return {"ok": False, "error": "the output window would not open: " + str(opened.get("reason", ""))}
+    hwnd = comp.overlay.host.hwnd if comp.overlay.host and comp.overlay.host.alive() else None
+    if not hwnd:
+        LIVE.stop()
+        return {"ok": False, "error": "the output window is not hosted, so it cannot be captured"}
+    LIVE.restamp_audio = False
+    LIVE.on_reconnect = NATIVE.force_keyframe
+    NATIVE.start(hwnd=hwnd, fps=preset["fps"], kbps=preset["kbps"])
+    if not NATIVE.wait_ready():
+        # No capture or no encoder: say so now rather than stream silence.
+        why = NATIVE.error or "the output window gave no frame"
+        live_stop()
+        return {"ok": False, "error": "the output could not be captured: " + why}
+    a = cfg.get("audio") or {}
+    if a.get("mic", True) or a.get("system"):
+        mixer = audio_mod.AudioMixer(LIVE, mic=bool(a.get("mic", True)), mic_device=a.get("mic_device", ""),
+                                     system=bool(a.get("system")), kbps=live.AUDIO_KBPS, log=_log)
+        for src in ("mic", "system"):
+            mixer.set(src, gain=(a.get("gain") or {}).get(src), mute=(a.get("mute") or {}).get(src))
+        mixer.start()
+        AUDIO[0] = mixer
+    HUB.broadcast()
+    return dict(res, path="native", source=comp.id, size=list(comp.size))
+
+
+def live_stop():
+    NATIVE.stop()
+    if AUDIO[0]:
+        AUDIO[0].stop()
+        AUDIO[0] = None
+    LIVE.restamp_audio = False
+    res = LIVE.stop()
+    HUB.broadcast()
+    return res
+
+
+def live_audio(data):
+    """Gains and mutes, live, and remembered."""
+    a = CONFIG.setdefault("live", {}).setdefault("audio", {})
+    src = data.get("source")
+    if src in ("mic", "system"):
+        if "gain" in data:
+            a.setdefault("gain", {})[src] = max(0.0, min(4.0, float(data["gain"])))
+        if "mute" in data:
+            a.setdefault("mute", {})[src] = bool(data["mute"])
+        if AUDIO[0]:
+            AUDIO[0].set(src, gain=data.get("gain"), mute=data.get("mute"))
+        save_config(CONFIG)
+    return {"ok": True, "audio": a, "live": AUDIO[0].status() if AUDIO[0] else None}
+
+
+def streaming_size():
+    """The size the stream is locked to while the native path runs, or None."""
+    st = NATIVE.status()
+    if LIVE.state in ("connecting", "live", "reconnecting") and st.get("running") and st.get("size"):
+        w, h = st["size"].split("x")
+        return int(w), int(h)
+    return None
+
+
 def set_live_scene(sid, transition=None, duration=None):
     """Point the live output at a scene; resize it if the format differs."""
     scene = SCENES.get(sid) if sid else None
     if sid and not scene:
         return {"ok": False, "reason": "no such scene"}
+    locked = streaming_size()
+    if scene and locked and (scene["width"], scene["height"]) != locked:
+        return {"ok": False, "reason": f"the stream is running at {locked[0]}x{locked[1]}; "
+                                       f"{scene['name']} is {scene['width']}x{scene['height']} - stop the stream first"}
     canvas = CONFIG.setdefault("canvas", {})
     canvas["live"] = sid or ""
     if transition in ("fade", "cut"):
@@ -1593,9 +1704,52 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/ws/events":
             return feeds.serve_ws_feed(self, HUB, FEEDS)
         if path == "/api/live/status":
-            return self._json(dict(LIVE.status(), native=NATIVE.status()))
+            return self._json(live_status())
+        if path == "/api/live/presets":
+            return self._json({"presets": live.PRESETS, "current": CONFIG.get("live", {}).get("preset")})
+        if path == "/api/live/devices":
+            try:
+                return self._json(audio_mod.list_devices())
+            except Exception as exc:
+                return self._json({"capture": [], "render": [], "error": str(exc)})
         if path == "/api/feeds":
             return self._json(FEEDS.status())
+        if path == "/api/debug/mem":
+            # Where memory goes while streaming: working set, and Python's own
+            # allocations by source line once tracing is on (?start=1).
+            import gc
+            import tracemalloc
+            out = {"working_set_mb": 0, "gc_objects": len(gc.get_objects()), "tracing": tracemalloc.is_tracing(),
+                   "threads": threading.active_count()}
+            try:
+                import ctypes as _ct
+                class _PMC(_ct.Structure):
+                    _fields_ = [("cb", _ct.c_uint32), ("PageFaultCount", _ct.c_uint32)] + \
+                        [(n, _ct.c_size_t) for n in ("PeakWorkingSet", "WorkingSet", "QPeakPaged", "QPaged",
+                                                    "QPeakNonPaged", "QNonPaged", "Pagefile", "PeakPagefile")]
+                pmc = _PMC(); pmc.cb = _ct.sizeof(_PMC)
+                # The current-process pseudo handle is -1 as a full 64-bit
+                # HANDLE; passed as a plain int it gets truncated to 32 bits
+                # and the call fails quietly, so hand it over as a pointer.
+                gpmi = _ct.windll.psapi.GetProcessMemoryInfo
+                gpmi.argtypes = [_ct.c_void_p, _ct.c_void_p, _ct.c_uint32]
+                if gpmi(_ct.c_void_p(-1), _ct.byref(pmc), pmc.cb):
+                    out["working_set_mb"] = round(pmc.WorkingSet / 1048576, 1)
+                    out["private_mb"] = round(pmc.Pagefile / 1048576, 1)
+            except Exception:
+                pass
+            if query.get("start") and not tracemalloc.is_tracing():
+                tracemalloc.start(12)
+                out["tracing"] = True
+            if tracemalloc.is_tracing():
+                snap = tracemalloc.take_snapshot()
+                prev = getattr(Handler, "_mem_snap", None)
+                stats = snap.compare_to(prev, "lineno") if prev else snap.statistics("lineno")
+                out["top"] = [f"{s.size_diff / 1024:+.0f} KB {s.size / 1024:.0f} KB {s.count} {s.traceback}"
+                              if prev else f"{s.size / 1024:.0f} KB {s.count} {s.traceback}" for s in stats[:15]]
+                out["traced_mb"] = round(sum(s.size for s in snap.statistics("filename")) / 1048576, 1)
+                Handler._mem_snap = snap
+            return self._json(out)
 
         if path == "/api/components":
             return self._json({"components": COMPONENTS.describe_all(),
@@ -1937,12 +2091,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(window_action(comp.overlay, comp.config(CONFIG), comp.page, action, data))
 
         if path == "/api/live/start":
-            return self._json(LIVE.start(data.get("url"), data.get("key"),
-                                         remember=bool(data.get("remember"))))
+            return self._json(live_start(data))
         if path == "/api/live/stop":
-            NATIVE.stop()
-            LIVE.restamp_audio = False
-            return self._json(LIVE.stop())
+            return self._json(live_stop())
+        if path == "/api/live/audio":
+            return self._json(live_audio(data))
+        if path == "/api/live/scene":
+            # The scene remote: a scene by id, or next/previous in the list.
+            order = [s["id"] for s in SCENES.list()]
+            target = data.get("id")
+            if data.get("step") and order:
+                cur = CONFIG["canvas"].get("live", "")
+                i = order.index(cur) if cur in order else -1
+                target = order[(i + int(data["step"])) % len(order)]
+            res = set_live_scene(target or "", data.get("transition"), data.get("duration"))
+            return self._json(dict(res, scenes=order))
         if path == "/api/live/native":
             # Video captured and encoded in this process; the page then only
             # carries audio, stamped on our clock as it arrives.
@@ -1968,8 +2131,7 @@ class Handler(BaseHTTPRequestHandler):
                 VOICE.stop()
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
                 CAPTIONS.stop()      # likewise the one holding the microphone
-                NATIVE.stop()
-                LIVE.stop()          # unpublish cleanly rather than vanish
+                live_stop()          # unpublish cleanly rather than vanish
                 time.sleep(0.4)
                 os._exit(0)
             threading.Thread(target=shutdown, daemon=True).start()

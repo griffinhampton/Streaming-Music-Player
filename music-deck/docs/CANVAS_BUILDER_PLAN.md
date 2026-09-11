@@ -27,7 +27,7 @@ every later prompt reads it first.
 | P1 | Streaming engine spike: capture -> encode -> RTMP, measured, go/no-go | Fable | [x] 2026-09-11 |
 | P2 | Server architecture: registry, feeds + WebSocket, scene store, assets, outputs, capture sources, voice, key vault | Fable | [x] 2026-09-11 |
 | P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [x] 2026-09-11 |
-| P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [ ] |
+| P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [x] 2026-09-11 |
 | P5 | Optimization and hardening of the backend | Fable | [ ] |
 | P6 | Deck integration: scrollable components row, screen-share group, Canvas Builder entry, LIVE strip | Opus | [ ] |
 | P7 | Canvas Builder editor shell | Opus | [ ] |
@@ -265,6 +265,10 @@ before any frontend is built on it.
   iframes and camera/capture streams alive across a switch when the next scene uses the same ones, so a switch
   moves boxes instead of rebuilding pages.
 - Stress: 60 layers, 4 components, 1 camera, 1 window source, LIVE, 2 hours - memory flat, no dropped frames.
+- From P4: the encoder is fed NV12 from capture.Nv12Converter (a ring of three textures); check the ring holds
+  at 60 fps (a torn frame would show as a flicker in the recording), and decide whether a software H.264
+  fallback (Microsoft's MFT wants NV12 in system memory: one staging copy + Map per frame) is worth having for
+  machines without a usable hardware encoder, or whether Chrome's WebCodecs page path stays the fallback.
 - Recovery: an output window that dies is re-opened and re-joins the live scene; the server restart path
   restores outputs; corrupted scene files fall back to their backup.
 - Security pass on the new routes (all behind _trusted(), no path traversal in assets/scenes, WebSocket origin

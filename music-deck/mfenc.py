@@ -1,7 +1,8 @@
 ﻿"""
 Hardware H.264 encoding through Media Foundation - ctypes only.
 
-Feeds Direct3D textures (the ones `capture.py` fills) to the graphics card's
+Feeds Direct3D textures (NV12 from `capture.Nv12Converter`, or the BGRA
+capture texture for an encoder that converts itself) to the graphics card's
 own encoder and hands back FLV-ready H.264: length-prefixed NAL units plus
 the AVCDecoderConfigurationRecord for the stream header. The GPU does the
 color conversion and the encoding; this thread only shuffles handles.
@@ -17,7 +18,10 @@ from ctypes import c_void_p, POINTER, byref, c_int32, c_uint, c_uint64, c_ushort
 
 from capture import GUID, guid, vcall, qi, release, check
 
-mfplat = ctypes.windll.mfplat
+try:
+    mfplat = ctypes.windll.mfplat
+except OSError:            # Windows N without the Media Feature Pack
+    mfplat = None
 
 # IMFAttributes slots: 7 GetUINT32, 10 GetGUID, 11 GetStringLength, 12 GetString,
 # 21 SetUINT32, 22 SetUINT64, 24 SetGUID, 27 SetUnknown. IMFActivate: 33 ActivateObject,
@@ -48,9 +52,14 @@ MF_MT_ALL_SAMPLES_INDEPENDENT = guid("c9173739-5e56-461c-b713-46fb995cb95f")
 MFSampleExtension_CleanPoint = guid("9cdf01d8-a0f0-43ba-b077-eaa06cbd728a")
 CODECAPI_AVEncCommonRateControlMode = guid("1c0608e9-370c-4710-8a58-cb6181c42423")
 CODECAPI_AVEncCommonMeanBitRate = guid("f7222374-2144-4815-b550-a37f8e12ee52")
+CODECAPI_AVEncMPVGOPSize = guid("95f31b26-95a4-41aa-9303-246a7fc6eef1")
+CODECAPI_AVEncVideoForceKeyFrame = guid("398c1b98-8353-475a-9ef2-8f265d260345")
 # Four-byte-per-pixel formats in the order we like them: both match the
 # B8G8R8A8 layout of the capture textures.
-RGB_FORMATS = ("00000016", "00000015")          # MFVideoFormat_RGB32, MFVideoFormat_ARGB32
+# Input formats we can feed, best first: NV12 (converted on the GPU by
+# capture.Nv12Converter, what every encoder takes), then RGB32/ARGB32 (the
+# encoder converts itself - the AMD one leaks doing so).
+INPUT_FORMATS = (("3231564e", "nv12"), ("00000016", "rgb32"), ("00000015", "rgb32"))
 MFT_MESSAGE_SET_D3D_MANAGER = 0x00000002
 MFT_MESSAGE_NOTIFY_BEGIN_STREAMING = 0x10000000
 MFT_MESSAGE_NOTIFY_END_STREAMING = 0x10000001
@@ -138,12 +147,17 @@ class H264Encoder:
         self.d3d, self.width, self.height, self.fps, self.kbps = d3d, width, height, fps, kbps
         self.log = log or (lambda *_: None)
         self.name = ""
+        self.input_format = ""     # "nv12" or "rgb32": what submit() must be given
+        self.api = None
+        self.codec_settings = {}
         self.mft = self.activate = self.events = self.manager = None
         self.provides_samples = False
         self.need_input = 0
         self.avcc = None
         self.sps = self.pps = None
         self.frames_in = self.frames_out = 0
+        if mfplat is None:
+            raise OSError("Media Foundation is missing - on Windows N, install the Media Feature Pack")
         mfplat.MFStartup.restype = c_int32
         check(mfplat.MFStartup(0x00020070, 0), "MFStartup")
         self._open()
@@ -167,7 +181,7 @@ class H264Encoder:
             try:
                 self._try(act, name)
                 self.activate, self.name = act, name
-                self.log(f"encoder: {name}")
+                self.log(f"encoder: {name} ({self.input_format} in)")
                 return
             except OSError as exc:
                 errors.append(f"{name}: {exc}")
@@ -199,19 +213,26 @@ class H264Encoder:
         # Output first (encoders decide their inputs from it), then an RGB input.
         out = self._output_type()
         check(vcall(mft, 16, c_int32, [c_uint, c_void_p, c_uint], 0, out, 0), "SetOutputType")
-        chosen = None
+        offered = {}
         for j in range(32):
             mt = c_void_p()
             if vcall(mft, 13, c_int32, [c_uint, c_uint, POINTER(c_void_p)], 0, j, byref(mt)) != 0 or not mt:
                 break
             sub = GUID()
             vcall(mt, 10, c_int32, [POINTER(GUID), POINTER(GUID)], byref(MF_MT_SUBTYPE), byref(sub))
-            if _guid_text(sub)[:8] in RGB_FORMATS and chosen is None:
-                chosen = mt
+            key = _guid_text(sub)[:8]
+            if key in dict(INPUT_FORMATS) and key not in offered:
+                offered[key] = mt
             else:
                 release(mt)
+        chosen = None
+        for key, name in INPUT_FORMATS:
+            if key in offered and chosen is None:
+                chosen, self.input_format = offered.pop(key), name
+        for mt in offered.values():
+            release(mt)
         if chosen is None:
-            raise OSError("takes no RGB input")
+            raise OSError("takes neither NV12 nor RGB input")
         _set_uint64(chosen, MF_MT_FRAME_SIZE, (self.width << 32) | self.height)
         _set_uint64(chosen, MF_MT_FRAME_RATE, (self.fps << 32) | 1)
         _set_uint64(chosen, MF_MT_PIXEL_ASPECT_RATIO, (1 << 32) | 1)
@@ -249,16 +270,30 @@ class H264Encoder:
         return mt
 
     def _codec_api(self, mft):
-        """Constant bitrate at the asked rate, when the encoder lets us say so."""
+        """Constant bitrate at the asked rate and a keyframe every two
+        seconds, when the encoder lets us say so. The AMD encoder ignores
+        the keyframe spacing on the media type but honors this."""
         try:
-            api = qi(mft, IID_ICodecAPI)
+            self.api = qi(mft, IID_ICodecAPI)
         except OSError:
+            self.api = None
             return
-        for key, vt, value in ((CODECAPI_AVEncCommonRateControlMode, 19, 0),
-                               (CODECAPI_AVEncCommonMeanBitRate, 19, self.kbps * 1000)):
-            var = VARIANT(vt=vt, val=value)
-            vcall(api, 9, c_int32, [POINTER(GUID), POINTER(VARIANT)], byref(key), byref(var))
-        release(api)
+        self.codec_settings = {}
+        for name, key, value in (("rate_control", CODECAPI_AVEncCommonRateControlMode, 0),
+                                 ("bitrate", CODECAPI_AVEncCommonMeanBitRate, self.kbps * 1000),
+                                 ("gop", CODECAPI_AVEncMPVGOPSize, self.fps * 2)):
+            var = VARIANT(vt=19, val=value)
+            hr = vcall(self.api, 9, c_int32, [POINTER(GUID), POINTER(VARIANT)], byref(key), byref(var))
+            self.codec_settings[name] = hr == 0
+
+    def force_keyframe(self):
+        """The next frame in is a keyframe - after a reconnect, a viewer
+        joining the stream must not wait out the GOP."""
+        if not self.api:
+            return False
+        var = VARIANT(vt=19, val=1)
+        return vcall(self.api, 9, c_int32, [POINTER(GUID), POINTER(VARIANT)],
+                     byref(CODECAPI_AVEncVideoForceKeyFrame), byref(var)) == 0
 
     # ------------------------------------------------ running
 
@@ -396,7 +431,7 @@ class H264Encoder:
                 vcall(self.mft, 23, c_int32, [c_uint, c_void_p], MFT_MESSAGE_NOTIFY_END_STREAMING, None)
             except OSError:
                 pass
-        for attr in ("events", "mft", "manager"):
+        for attr in ("api", "events", "mft", "manager"):
             obj = getattr(self, attr)
             if obj:
                 release(obj)

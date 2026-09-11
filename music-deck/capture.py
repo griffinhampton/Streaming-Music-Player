@@ -113,8 +113,8 @@ class D3D:
         check(d3d11.CreateDirect3D11DeviceFromDXGIDevice(dxgi, byref(self.winrt)), "WinRT device")
         release(dxgi)
 
-    def texture(self, width, height, bind=0x8 | 0x20, usage=0, cpu=0):
-        desc = TEX2D_DESC(width, height, 1, 1, DXGI_FORMAT_B8G8R8A8_UNORM, 1, 0, usage, bind, cpu, 0)
+    def texture(self, width, height, bind=0x8 | 0x20, usage=0, cpu=0, fmt=DXGI_FORMAT_B8G8R8A8_UNORM):
+        desc = TEX2D_DESC(width, height, 1, 1, fmt, 1, 0, usage, bind, cpu, 0)
         tex = c_void_p()
         check(vcall(self.device, 5, c_int32, [POINTER(TEX2D_DESC), c_void_p, POINTER(c_void_p)],
                     byref(desc), None, byref(tex)), "CreateTexture2D")
@@ -142,6 +142,122 @@ class D3D:
 
 class MAPPED(ctypes.Structure):
     _fields_ = [("pData", c_void_p), ("RowPitch", c_uint), ("DepthPitch", c_uint)]
+
+
+# ------------------------------------------------------------------ BGRA -> NV12 on the GPU
+
+IID_ID3D11VideoDevice = guid("10EC4D5B-975A-4689-B9E4-D0AAC30FE333")
+IID_ID3D11VideoContext = guid("61F21C45-3C0E-4A74-9CEA-67100D9AD5E4")
+DXGI_FORMAT_NV12 = 103
+
+
+class VP_CONTENT_DESC(ctypes.Structure):
+    _fields_ = [("InputFrameFormat", c_uint), ("InputFrameRate", c_uint * 2), ("InputWidth", c_uint),
+                ("InputHeight", c_uint), ("OutputFrameRate", c_uint * 2), ("OutputWidth", c_uint),
+                ("OutputHeight", c_uint), ("Usage", c_uint)]
+
+
+class VP_INPUT_VIEW_DESC(ctypes.Structure):
+    _fields_ = [("FourCC", c_uint), ("ViewDimension", c_uint), ("MipSlice", c_uint), ("ArraySlice", c_uint)]
+
+
+class VP_OUTPUT_VIEW_DESC(ctypes.Structure):
+    _fields_ = [("ViewDimension", c_uint), ("MipSlice", c_uint), ("FirstArraySlice", c_uint), ("ArraySize", c_uint)]
+
+
+class VP_STREAM(ctypes.Structure):
+    _fields_ = [("Enable", c_int32), ("OutputIndex", c_uint), ("InputFrameOrField", c_uint), ("PastFrames", c_uint),
+                ("FutureFrames", c_uint), ("ppPastSurfaces", c_void_p), ("pInputSurface", c_void_p),
+                ("ppFutureSurfaces", c_void_p), ("ppPastSurfacesRight", c_void_p), ("pInputSurfaceRight", c_void_p),
+                ("ppFutureSurfacesRight", c_void_p)]
+
+
+class Nv12Converter:
+    """BGRA textures -> NV12 through the Direct3D 11 video processor, on the
+    GPU, no shader of ours. NV12 is what every H.264 encoder takes natively;
+    handing the AMD encoder RGB instead makes it convert internally, and
+    that path leaks ~1.7 KB per frame (measured: 3 MB/min at 30 fps)."""
+
+    ID3D11VideoDevice_CreateVideoProcessor = 4
+    ID3D11VideoDevice_CreateInputView = 8
+    ID3D11VideoDevice_CreateOutputView = 9
+    ID3D11VideoDevice_CreateEnumerator = 10
+    ID3D11VideoContext_SetOutputColorSpace = 15
+    ID3D11VideoContext_SetStreamFrameFormat = 27
+    ID3D11VideoContext_SetStreamColorSpace = 28
+    ID3D11VideoContext_Blt = 53
+
+    def __init__(self, d3d, width, height, fps=30, ring=3):
+        self.d3d, self.width, self.height = d3d, width, height
+        self.vdev = qi(d3d.device, IID_ID3D11VideoDevice, "ID3D11VideoDevice")
+        self.vctx = qi(d3d.context, IID_ID3D11VideoContext, "ID3D11VideoContext")
+        self.enum = self.vp = None
+        self.outputs = []          # (NV12 texture, output view), used in turn so the
+        self._turn = 0             # encoder can still be reading the previous one
+        self._input = (None, None)  # (source texture address, its input view)
+        try:
+            desc = VP_CONTENT_DESC(0, (c_uint * 2)(fps, 1), width, height, (c_uint * 2)(fps, 1), width, height, 0)
+            self.enum = c_void_p()
+            check(vcall(self.vdev, self.ID3D11VideoDevice_CreateEnumerator, c_int32,
+                        [POINTER(VP_CONTENT_DESC), POINTER(c_void_p)], byref(desc), byref(self.enum)),
+                  "CreateVideoProcessorEnumerator")
+            self.vp = c_void_p()
+            check(vcall(self.vdev, self.ID3D11VideoDevice_CreateVideoProcessor, c_int32,
+                        [c_void_p, c_uint, POINTER(c_void_p)], self.enum, 0, byref(self.vp)), "CreateVideoProcessor")
+            # Full-range RGB in; BT.709 limited-range video out, as HD streams expect.
+            # The color space is a bitfield: Usage:1 RGB_Range:1 YCbCr_Matrix:1 xvYCC:1 Nominal_Range:2.
+            out_cs = c_uint((1 << 2) | (1 << 4))
+            vcall(self.vctx, self.ID3D11VideoContext_SetOutputColorSpace, None, [c_void_p, POINTER(c_uint)],
+                  self.vp, byref(out_cs))
+            in_cs = c_uint(2 << 4)
+            vcall(self.vctx, self.ID3D11VideoContext_SetStreamColorSpace, None, [c_void_p, c_uint, POINTER(c_uint)],
+                  self.vp, 0, byref(in_cs))
+            vcall(self.vctx, self.ID3D11VideoContext_SetStreamFrameFormat, None, [c_void_p, c_uint, c_uint],
+                  self.vp, 0, 0)                                                      # progressive
+            for _ in range(ring):
+                tex = d3d.texture(width, height, fmt=DXGI_FORMAT_NV12)
+                ovd = VP_OUTPUT_VIEW_DESC(1, 0, 0, 0)
+                ov = c_void_p()
+                check(vcall(self.vdev, self.ID3D11VideoDevice_CreateOutputView, c_int32,
+                            [c_void_p, c_void_p, POINTER(VP_OUTPUT_VIEW_DESC), POINTER(c_void_p)],
+                            tex, self.enum, byref(ovd), byref(ov)), "CreateVideoProcessorOutputView")
+                self.outputs.append((tex, ov))
+        except OSError:
+            self.close()
+            raise
+
+    def convert(self, src):
+        """Blit `src` (BGRA, our size) into the next NV12 texture; returns it."""
+        if self._input[0] != src.value:
+            if self._input[1]:
+                release(self._input[1])
+            ivd = VP_INPUT_VIEW_DESC(0, 1, 0, 0)
+            iv = c_void_p()
+            check(vcall(self.vdev, self.ID3D11VideoDevice_CreateInputView, c_int32,
+                        [c_void_p, c_void_p, POINTER(VP_INPUT_VIEW_DESC), POINTER(c_void_p)],
+                        src, self.enum, byref(ivd), byref(iv)), "CreateVideoProcessorInputView")
+            self._input = (src.value, iv)
+        tex, ov = self.outputs[self._turn]
+        self._turn = (self._turn + 1) % len(self.outputs)
+        stream = VP_STREAM(1, 0, 0, 0, 0, None, self._input[1].value, None, None, None, None)
+        check(vcall(self.vctx, self.ID3D11VideoContext_Blt, c_int32,
+                    [c_void_p, c_void_p, c_uint, c_uint, POINTER(VP_STREAM)],
+                    self.vp, ov, 0, 1, byref(stream)), "VideoProcessorBlt")
+        return tex
+
+    def close(self):
+        if self._input[1]:
+            release(self._input[1])
+        self._input = (None, None)
+        for tex, ov in self.outputs:
+            release(ov)
+            release(tex)
+        self.outputs = []
+        for attr in ("vp", "enum", "vctx", "vdev"):
+            obj = getattr(self, attr)
+            if obj:
+                release(obj)
+                setattr(self, attr, None)
 
 
 def find_window(title_part):

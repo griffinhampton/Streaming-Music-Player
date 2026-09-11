@@ -404,6 +404,119 @@ Findings:
 - The captures are read with the app's own WGC path, not screenshots, so
   what was checked is what a stream would carry.
 
+## P4 - the Go LIVE engine (2026-09-11)
+
+The spike is now the app's engine: `POST /api/live/start` connects the RTMP
+publisher, captures the hosted output window with WGC, converts each frame
+to NV12 on the GPU, encodes it with the hardware H.264 encoder, mixes the
+microphone and (optionally) what the PC plays into AAC, and pushes it all
+on one clock - in the server process, nothing in Chrome but the scene
+itself. `/api/live/stop` unpublishes cleanly. State (`idle | connecting |
+live | reconnecting | failed`), error, preset and reconnect count ride the
+deck's snapshot; the key never does.
+
+Routes: `GET /api/live/status` (state, stats, native video, audio, config),
+`/api/live/presets`, `/api/live/devices`; `POST /api/live/start`
+(`url`, `key`, `remember`, `preset`, `source`, `audio`), `/stop`, `/audio`
+(`source`, `gain` 0-4, `mute`), `/scene` (`id` or `step` +1/-1, with
+`transition`/`duration`), `/key`, `/key/forget`. `GET /api/debug/mem` reads
+the working set (and, with `?start=1`, Python's allocations by line).
+
+Presets are LIVE Studio's table (`live.PRESETS`: 1080p60 7600 kbps, 1080p30
+6000, 720p60 4400, 720p30 3400, 480p30 2000; HEVC rates alongside for
+later), audio 128 kbps AAC-LC 48 kHz stereo. The stream is the output
+window's size at the preset's rate; a scene of another size cannot be made
+live while streaming (`set_live_scene` says so), same-size switches keep
+the encoder running.
+
+Measured on the rig (`tools/p4/p4soak.py`), 1920x1080 window, 720p30 preset:
+
+| What | Result |
+|---|---|
+| Native audio (WASAPI mic + loopback -> numpy mix -> Windows AAC MFT) | 5.7% of one core in the server, 48 kHz stereo 132 kbps, ffprobe clean; the page's audio path costs 7-9% in Chrome, so **native it is** |
+| GOP through `ICodecAPI` (`AVEncMPVGOPSize`), CBR (`AVEncCommonRateControlMode`) | keyframes every 2.00 s exactly (the media-type hint gave 1 s); 3400 kbps on the nose |
+| Forced keyframe after a reconnect (`AVEncVideoForceKeyFrame`) | first frame after the reconnect is a keyframe 0.57 s in, instead of up to 2 s of nothing |
+| Sink killed and restarted mid-stream | back live after 2 attempts (1 s, 2 s backoff), 16 stale frames dropped, recording resumes |
+| Two live scene switches (fade 300 ms) | encoder untouched, 30 fps throughout |
+| Whole server while live (capture + convert + encode + audio + mux) | 17-21% of one core, see the soak |
+
+The 30-minute soak (`p4soak.py 30 720p30 10,20 15`: scene switches at 10 and
+20 minutes, the sink killed and restarted at 15), with the NV12 fix in:
+
+| Minute | Working set | Threads | CPU % of one core | Video / audio fps | Queue | Drops | State |
+|---|---|---|---|---|---|---|---|
+| 1 | 116 MB | 41 | 18.4 | 30.0 / 46.9 | 0 | 0 | live |
+| 10 -> switch | 108 MB | 40 | 19.5 | 30.6 / 46.5 | 0 | 0 | live |
+| 15 -> sink killed | 110 MB | 46 | 18.8 | 29.5 / 47.3 | 0 | 0 | live |
+| 16 | 110 MB | 47 | 19.0 | 29.5 / 47.3 | 0 | 41 | live again, 2 attempts |
+| 20 -> switch | 111 MB | 45 | 19.0 | 29.7 / 46.5 | 0 | 41 | live |
+| 30 | 111 MB | 39 | 19.7 | 29.8 / 46.7 | 0 | 41 | live |
+| after stop | 97 MB | | | | | | idle |
+
+Memory flat for half an hour (P1's run would have added ~90 MB), 30 fps
+throughout, the only drops the 41 stale frames flushed at the reconnect,
+`delay_ms` 0, threads and handles steady. The recordings: before the kill
+27429 frames / 458 keyframes every 2.00 s / 42849 AAC packets; after it
+909.9 s, 27252 frames, keyframes 1.73-2.00 s apart (the forced one after
+the reconnect), audio continuous. Private bytes sit near 590 MB the whole
+time: numpy's OpenBLAS reserves that at import (the standalone mixer shows
+the same 512 MB) - P5 can cap it with `OPENBLAS_NUM_THREADS=1` before
+importing numpy.
+
+**The memory growth from P1 - found and fixed.** Tracing Python's heap
+(`/api/debug/mem?start=1`) showed 0.4 MB flat while the working set climbed
+2.8 MB/min, so it was native. Bisected with standalone runs
+(`tools/p4/audiomem.py`, `videomem.py`):
+
+| Run (3 min each) | Memory |
+|---|---|
+| Audio mixer alone (mic + loopback -> AAC) | flat (46.2 -> 46.4 MB) |
+| WGC capture alone, 30 fps | flat (41.2 MB) |
+| Capture + encoder, RGB32 in | **+3.0 MB/min** |
+| Same, one input sample reused for every frame | +3.0 MB/min |
+| Same, output samples released without reading them | +2.0 MB/min |
+| Encoder alone, one static RGB32 texture | +2.9 MB/min |
+| Encoder alone, one static **NV12** texture | **flat (46.1 MB)**, and 23 MB less at start |
+
+The AMD encoder's own RGB -> NV12 conversion leaks about 1.7 KB per frame
+and never gives it back (only ~4 MB returned after stop). The fix is to
+convert ourselves: `capture.Nv12Converter` runs the Direct3D 11 video
+processor (`ID3D11VideoContext::VideoProcessorBlt`, full-range RGB in,
+BT.709 limited out, a ring of three NV12 textures so the encoder may still
+be reading the previous one), and `mfenc` now prefers NV12 input over
+RGB32. A decoded frame matches the WGC capture of the same window. NV12
+is also what the NVIDIA and Microsoft encoders take, so the encoder chain
+is now: any D3D11-aware hardware encoder on the desktop's adapter (AMD,
+Intel, NVIDIA when the desktop runs on it), then Chrome's WebCodecs page
+path (`source: "page"`, which has its own software fallback); the software
+MFT would need a CPU readback per frame - P5 if anyone needs it.
+
+Also in P4:
+
+- `/api/live/start` waits for the native path to deliver (encoder up, first
+  frame in) and fails with the reason instead of streaming silence.
+- Health stats gained `rtt_ms`, `inflight_kb`, `retrans_kb` straight from
+  the TCP stack (`SIO_TCP_INFO`), next to kbps, fps, queue, `delay_ms`
+  (capture-to-wire) and drops.
+- A fatal RTMP error after the stream had been live is reported as
+  "TikTok refused the stream key after it had been live - LIVE Center may
+  have issued a new key ..." (`live.KEY_ROTATED_HINT`), the case the UI
+  must show.
+- `/api/debug/mem` read 0 MB at first: the current-process pseudo handle
+  (-1) passed as a plain int is truncated to 32 bits by ctypes; it goes in
+  as a pointer now.
+- Media Foundation missing (Windows N) no longer breaks the import of
+  `mfenc`/`audio`; going live says what to install.
+- `tests/test_p4.py` (10 tests): presets, AMF0/FLV/ASC bytes, the fatal
+  error list, the queue's drop order, meta merging, and the reconnect ->
+  forced keyframe -> rotated-key path against a fake RTMP client.
+
+Not done: a real LIVE to TikTok with the user's key (needs the key pasted
+and the user's app rebuilt); the camera's CPU cost (OBS and LIVE Studio
+still hold the camera on this PC). The converter feeds the encoder the
+newest frame while the previous one may still be encoding - three rotating
+textures cover it at 30 fps, P5 measures 60.
+
 ## Tools kept for later steps (`music-deck/tools/p0/`)
 
 - `wgc.py` - Windows Graphics Capture of a window or monitor, PNG + fps + CPU.
