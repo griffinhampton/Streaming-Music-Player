@@ -3418,6 +3418,67 @@ previewEl.addEventListener('load', pushPreview);
 window.addEventListener('resize', layoutPreview);
 new ResizeObserver(layoutPreview).observe($('previewStage'));
 
+/* The preview only has to move while you work in the deck. Once the deck is
+   behind your game or TikTok Studio, its endless animations - the drifting
+   decoration frame, a sliding title, the equalizer - pause, so Chrome stops
+   redrawing a window nobody is watching. Everything else still updates and
+   finite animations still finish; click back into the deck and the motion
+   carries on. The pop-out windows are separate pages and keep moving. */
+let deckStill = null;
+const stilled = new Set();
+function previewDoc() {
+  try { return previewEl.contentDocument; } catch (_) { return null; }
+}
+function stillDoc(doc) {
+  if (!doc) return;
+  for (const a of doc.getAnimations()) {
+    if (a.playState === 'running' && a.effect && a.effect.getTiming().iterations === Infinity) {
+      a.pause();
+      stilled.add(a);
+    }
+  }
+}
+function syncStill() {
+  if (!document.hasFocus()) {
+    // Also catches animations that began since, in either page.
+    deckStill = true;
+    stillDoc(document);
+    stillDoc(previewDoc());
+    return;
+  }
+  if (deckStill === false) return;
+  deckStill = false;
+  // Resume only what is still on the page: an animation its element has
+  // dropped since must not come back.
+  const live = new Set(document.getAnimations());
+  const pd = previewDoc();
+  if (pd) for (const a of pd.getAnimations()) live.add(a);
+  for (const a of stilled) if (live.has(a)) a.play();
+  stilled.clear();
+}
+const stillSoon = () => setTimeout(syncStill, 0);
+function hookPreview() {
+  try {
+    // Clicking into the preview moves focus into its frame: follow it there.
+    // Marked per page, not per window: the frame's first page load keeps the
+    // window object and swaps the document, which would look hooked already.
+    const w = previewEl.contentWindow;
+    const d = w && w.document;
+    if (!d || d.__stillHooked) return;
+    d.__stillHooked = true;
+    w.addEventListener('focus', syncStill);   // same function each time, so never added twice
+    w.addEventListener('blur', stillSoon);
+    d.addEventListener('animationstart', stillSoon, true);
+  } catch (_) {}
+}
+window.addEventListener('focus', syncStill);
+window.addEventListener('blur', stillSoon);
+document.addEventListener('animationstart', stillSoon, true);
+previewEl.addEventListener('load', () => { hookPreview(); syncStill(); });
+hookPreview();
+setInterval(syncStill, 1000);   // catches focus moves that fire no event
+syncStill();
+
 const events = new EventSource('/api/events');
 events.onmessage = (e) => { try { paintSpotify(JSON.parse(e.data)); } catch (_) {} };
 

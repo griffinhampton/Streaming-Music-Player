@@ -207,8 +207,9 @@ Everything in the **Design** panel changes the pop-out live in the preview.
   off the ends. Emoticons next to the label. Anything that keeps moving - the
   drifting frame, a long title sliding, the equalizer bars - steps 30 times a
   second, which is what a stream captures, instead of at your screen's refresh
-  rate (165 times a second on many gaming laptops); in testing that cut what a
-  Now Playing window costs the CPU by about three quarters.
+  rate (165 times a second on many gaming laptops). While the deck is behind
+  other windows, the moving parts in its preview hold still until you click
+  back into it; the pop-out windows keep moving.
 - **Stickers** – drop pictures onto the preview, then drag them into place. PNG,
   JPEG, SVG, WebP and **animated GIF**. Size, rotation, opacity, flip, layer
   order, in front of or behind the card, and **Tint it** to redraw one as a
