@@ -39,6 +39,10 @@ STREAM_FLAGS = [
 # browser, GPU process and helpers for each. The deck keeps its own, since it
 # draws at the screen's own scale and these are pinned to 1.
 SHARED_PROFILE = "chrome-windows"
+# Flags that only matter for the next launch of the shared Chrome - the
+# capture source a scene wants auto-selected, say. The server fills this
+# right before an open when no pop-out is running yet.
+LAUNCH_EXTRA = []
 
 
 def find_browser():
@@ -154,7 +158,7 @@ class Overlay:
             guess_w, guess_h = width + 16, height + 80
             args = [self.browser, f"--app={url}", f"--user-data-dir={profile}",
                     f"--window-size={guess_w},{guess_h}",
-                    f"--window-position={int(x)},{int(y)}"] + STREAM_FLAGS
+                    f"--window-position={int(x)},{int(y)}"] + STREAM_FLAGS + list(LAUNCH_EXTRA)
             subprocess.Popen(
                 args, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -1,0 +1,19 @@
+/* A component page inside a scene: the scene paints the background, so the
+   page's own is see-through; window handles never show; and the scene can
+   switch off the card's background or frame and leave parts out. */
+html.embed, html.embed body { background: transparent !important; }
+html.embed .stage { background: transparent !important; }
+html.embed:not(.keep-bg) .stage > .bg-image,
+html.embed:not(.keep-bg) .stage > .bg-dim { display: none !important; }
+html.embed .handles, html.embed .offline { display: none !important; }
+html.embed .card-bg { opacity: var(--embed-card-alpha, 1); }
+html.embed.no-card .card-bg { display: none !important; }
+html.embed.no-frame .card { border-color: transparent !important; box-shadow: none !important; }
+html.embed.hide-art .art-wrap { display: none !important; }
+html.embed.hide-progress .progress { display: none !important; }
+html.embed.hide-transport .transport-row { display: none !important; }
+html.embed.hide-label .label-row { display: none !important; }
+html.embed.hide-header .header { display: none !important; }
+html.embed.hide-times .times { display: none !important; }
+html.embed.hide-kaomoji .kaomoji { display: none !important; }
+html.embed.hide-source .source-badge { display: none !important; }

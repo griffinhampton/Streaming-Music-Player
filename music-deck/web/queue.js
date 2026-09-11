@@ -5,6 +5,9 @@
    never asks Spotify for anything. */
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+// Inside a scene (embed.js): the scene feeds us and owns the window.
+const EMBED = !!window.EMBED;
+const STANDALONE = !PREVIEW && !EMBED;
 const API = '/api/queue/window';
 
 let lastPlaying = false;
@@ -215,18 +218,22 @@ function followQueue(q, now) {
 /* ------------------------------------------------------------- transport */
 
 let source = null, retry = null;
+function takeSnapshot(data) {
+  syncUserFonts(data.fonts_v);
+  setUltra(data.ultra);
+  applyDesign(data.nowplaying, data.queue_cfg);
+  followPlaying(data.now);
+  followQueue(data.spotify_queue, data.now);
+}
+
 function connect() {
+  if (EMBED) return;                 // the scene relays its own feed
   if (source) source.close();
   source = new EventSource('/api/events');
   source.onopen = () => el.stage.classList.remove('offline-on');
   source.onmessage = (e) => {
     try {
-      const data = JSON.parse(e.data);
-      syncUserFonts(data.fonts_v);
-      setUltra(data.ultra);
-      applyDesign(data.nowplaying, data.queue_cfg);
-      followPlaying(data.now);
-      followQueue(data.spotify_queue, data.now);
+      takeSnapshot(JSON.parse(e.data));
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -241,6 +248,7 @@ window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying, e.data.queue_cfg);
   if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
 });
+if (EMBED) onEmbedState(takeSnapshot);
 
 /* Ultra optimized switched, or a frozen picture is ready: draw it again. */
 onMotionChange(() => {
@@ -252,7 +260,7 @@ onMotionChange(() => {
 
 /* ------------------------------------------------------------- boot */
 
-if (!PREVIEW) {
+if (STANDALONE) {
   attachWindowControls({
     stage: el.stage,
     grip: document.getElementById('grip'),
@@ -266,11 +274,13 @@ window.addEventListener('resize', () => {
   lastKey = '';            // force a repaint so the row count is recomputed
   if (PREVIEW) render({ ...DEMO, connected: true });
   else if (lastQueue) render(lastQueue);
-  if (!PREVIEW) reportWindowMetrics(API);
+  if (STANDALONE) reportWindowMetrics(API);
 });
 
-fetch('/api/state').then((r) => r.json())
-  .then((d) => applyDesign(d.nowplaying, d.queue_cfg)).catch(() => {});
+if (!EMBED) {
+  fetch('/api/state').then((r) => r.json())
+    .then((d) => applyDesign(d.nowplaying, d.queue_cfg)).catch(() => {});
+}
 
 connect();
 if (PREVIEW) render({ ...DEMO, connected: true });
@@ -285,4 +295,4 @@ function followPlaying(now) {
                   (opts || {}).interactive !== false);
 }
 
-if (!PREVIEW) wireTransport(el.transport, () => (opts || {}).interactive !== false);
+if (STANDALONE) wireTransport(el.transport, () => (opts || {}).interactive !== false);

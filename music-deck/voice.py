@@ -116,6 +116,13 @@ class Voice:
         self._lock = threading.Lock()
         self._seq = 0
         self._last_speaking = None
+        self.force = None           # tests: a speaking state set by hand
+
+    def override(self, speaking):
+        """For tests on a rig without a microphone: None lifts it."""
+        self.force = None if speaking is None else bool(speaking)
+        self.tick()
+        return self.status()
 
     def _captions_listening(self):
         try:
@@ -126,6 +133,9 @@ class Voice:
 
     def status(self):
         """Everything, level included - for meters that poll."""
+        if self.force is not None:
+            return {"level": 1.0 if self.force else 0.0, "speaking": self.force,
+                    "source": "override", "error": ""}
         listening, c = self._captions_listening()
         if listening:
             return {"level": float(c.get("level") or 0), "speaking": c.get("audio") == "speech",

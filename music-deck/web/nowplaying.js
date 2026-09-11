@@ -8,6 +8,9 @@
    shows a demo track and takes design updates by postMessage for zero lag. */
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+// Inside a scene (embed.js): the scene feeds us and owns the window.
+const EMBED = !!window.EMBED;
+const STANDALONE = !PREVIEW && !EMBED;
 
 const el = {
   stage: document.getElementById('stage'),
@@ -446,18 +449,22 @@ function tick() {
 let source = null;
 let retry = null;
 
+function takeSnapshot(data) {
+  syncUserFonts(data.fonts_v);
+  setUltra(data.ultra);
+  applyDesign(data.nowplaying);
+  render(data.now);
+}
+
 function connect() {
+  if (EMBED) return;                 // the scene relays its own feed
   if (source) source.close();
   source = new EventSource('/api/events');
 
   source.onopen = () => el.stage.classList.remove('offline-on');
   source.onmessage = (event) => {
     try {
-      const data = JSON.parse(event.data);
-      syncUserFonts(data.fonts_v);
-      setUltra(data.ultra);
-      applyDesign(data.nowplaying);
-      render(data.now);
+      takeSnapshot(JSON.parse(event.data));
     } catch (_) { /* a torn frame just means we wait for the next one */ }
   };
   source.onerror = () => {
@@ -473,6 +480,7 @@ window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying);
   if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
 });
+if (EMBED) onEmbedState(takeSnapshot);
 
 /* Ultra optimized switched, or a frozen picture is ready: draw it all again
    under the new rules - stickers rebuilt, marquee and clock decided afresh. */
@@ -521,7 +529,7 @@ function wireSeeking() {
 }
 
 function interactive() {
-  return !PREVIEW && !(design && design.interactive === false);
+  return STANDALONE && !(design && design.interactive === false);
 }
 
 /* Whether the buttons show at all. On an inert window they would only
@@ -552,7 +560,7 @@ if (window.ResizeObserver) {
 
 /* No title bar means dragging is the only way to move it: windowctl.js
    forwards pointer deltas to the server, which drives the host window. */
-if (!PREVIEW) {
+if (STANDALONE) {
   wireSeeking();
   attachWindowControls({ stage: el.stage, close: el.close, api: '/api/window' });
   reportWindowMetrics('/api/window');
@@ -562,15 +570,17 @@ if (!PREVIEW) {
 
 window.addEventListener('resize', () => {
   refreshLayout();
-  if (!PREVIEW) reportWindowMetrics('/api/window');
+  if (STANDALONE) reportWindowMetrics('/api/window');
 });
 
-fetch('/api/state')
-  .then((r) => r.json())
-  .then((d) => { applyDesign(d.nowplaying); render(d.now); })
-  .catch(() => {});
+if (!EMBED) {
+  fetch('/api/state')
+    .then((r) => r.json())
+    .then((d) => { applyDesign(d.nowplaying); render(d.now); })
+    .catch(() => {});
+}
 
 connect();
-if (!PREVIEW) reportWindowMetrics('/api/window');
+if (STANDALONE) reportWindowMetrics('/api/window');
 tick();
 setInterval(measureMarquee, 4000);

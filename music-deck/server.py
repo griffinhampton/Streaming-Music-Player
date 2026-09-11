@@ -62,6 +62,9 @@ DEFAULT_CONFIG = {
     "music_dirs": [],
     "canvas": {
         "outputs": {},               # per-scene output window settings, keyed "scene:<id>"
+        "live": "",                  # the scene the "Canvas (live)" output follows
+        "transition": "fade",        # fade | cut, when the live scene changes
+        "duration": 300,             # ms, for the fade
     },
     "source_mode": "auto",          # auto | local | spotify
     "theme": "",                    # last full theme applied, so the picker can show it
@@ -877,6 +880,10 @@ class Hub:
             # the editor and every output read one model.
             "components": COMPONENTS.describe_all(),
             "scenes": SCENES.list(),
+            "canvas": {"live": CONFIG["canvas"].get("live", ""),
+                       "transition": CONFIG["canvas"].get("transition", "fade"),
+                       "duration": CONFIG["canvas"].get("duration", 300),
+                       "at": CANVAS_SWITCHED[0]},
             "voice": VOICE.snapshot(),
             "feeds": FEEDS.counts(),
             "lyrics_info": self._lyrics_info(now),
@@ -1038,6 +1045,55 @@ COMPONENTS.sync_scenes(SCENES.list())
 VOICE = voice.Voice(CAPTIONS, mic_name=CONFIG["captions"].get("mic"),
                     on_change=lambda: HUB.broadcast(), log=_log)
 FEEDS = feeds.Feeds(log=_log)
+CANVAS_SWITCHED = [0.0]         # when the live scene last changed
+
+
+def capture_flags_for(page):
+    """The shared Chrome can auto-select one capture source per launch. If
+    the scene about to open wants a window or screen through the browser,
+    this is the flag that names it."""
+    sid = ""
+    if page.startswith("scene.html?id="):
+        sid = page.split("=", 1)[1]
+    elif page.startswith("scene.html?follow"):
+        sid = CONFIG["canvas"].get("live", "")
+    scene = SCENES.get(sid) if sid else None
+    for layer in (scene or {}).get("layers", []):
+        if layer.get("type") != "capture" or (layer.get("props") or {}).get("mode") == "native":
+            continue
+        src = (layer.get("props") or {}).get("source") or {}
+        if src.get("kind") == "monitor":
+            return ["--auto-select-desktop-capture-source=Screen"]
+        if src.get("title"):
+            return [f"--auto-select-window-capture-source-by-title={src['title']}"]
+    return []
+
+
+def set_live_scene(sid, transition=None, duration=None):
+    """Point the live output at a scene; resize it if the format differs."""
+    scene = SCENES.get(sid) if sid else None
+    if sid and not scene:
+        return {"ok": False, "reason": "no such scene"}
+    canvas = CONFIG.setdefault("canvas", {})
+    canvas["live"] = sid or ""
+    if transition in ("fade", "cut"):
+        canvas["transition"] = transition
+    if duration is not None:
+        canvas["duration"] = max(60, min(3000, int(duration)))
+    CANVAS_SWITCHED[0] = time.time()
+    save_config(CONFIG)
+    comp = COMPONENTS.get("live")
+    if scene and comp:
+        size = (scene["width"], scene["height"])
+        cfg = comp.config(CONFIG)
+        if comp.size != size or (cfg.get("width"), cfg.get("height")) != size:
+            comp.size = size
+            cfg["width"], cfg["height"] = size
+            if comp.overlay.is_open():
+                comp.overlay.apply(width=size[0], height=size[1])
+    HUB.broadcast()
+    return {"ok": True, "live": canvas["live"], "transition": canvas.get("transition"),
+            "duration": canvas.get("duration")}
 LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
@@ -1057,9 +1113,11 @@ def window_action(ov, cfg, page, action, data):
         url = f"http://127.0.0.1:{CONFIG['port']}/{page}"
         if not COMPONENTS.any_open():
             # No pop-out Chrome is running, so its profile can be seeded: the
-            # camera and the microphone are allowed for our own pages.
+            # camera and the microphone are allowed for our own pages, and a
+            # scene's capture source can be named for the launch.
             components.seed_media_permissions(os.path.join(CACHE, overlay_mod.SHARED_PROFILE),
                                               CONFIG["port"], _log)
+            overlay_mod.LAUNCH_EXTRA[:] = capture_flags_for(page)
         res = ov.open(url, cfg["width"], cfg["height"], cfg["x"], cfg["y"],
                       borderless=bool(cfg.get("borderless", True)),
                       topmost=bool(cfg.get("topmost", True)))
@@ -1551,6 +1609,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/scenes":
             return self._json({"scenes": SCENES.list()})
+        if path == "/api/scenes/formats":
+            return self._json({"formats": {k: list(v) for k, v in scenes.FORMATS.items()},
+                               "safe_zones": scenes.SAFE_ZONES, "templates": scenes.template_list()})
         m = re.match(r"^/api/scenes/([^/]+)(/backups)?$", path)
         if m:
             scene = SCENES.get(m.group(1))
@@ -1745,9 +1806,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(dict(res, assets=ASSET_STORE.list()))
 
         if path == "/api/scenes":
+            if data.get("template"):
+                if data["template"] not in scenes.TEMPLATES:
+                    return self._json({"ok": False, "reason": "no such template"}, 404)
+                scene = scenes.from_template(data["template"])
+                if data.get("name"):
+                    scene["name"] = str(data["name"])[:80]
+                return self._json({"ok": True, "scene": SCENES.add(scene)})
             scene = SCENES.create(data.get("name") or "New scene", data.get("format") or "horizontal",
                                   data.get("width"), data.get("height"))
             return self._json({"ok": True, "scene": scene})
+
+        if path == "/api/canvas/live":
+            return self._json(set_live_scene(data.get("id", ""), data.get("transition"), data.get("duration")))
+
+        if path == "/api/voice/override":
+            # A test hook: a rig without a microphone can still say "speaking".
+            return self._json(VOICE.override(data.get("speaking")))
         m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore))?$", path)
         if m:
             sid, what = m.groups()

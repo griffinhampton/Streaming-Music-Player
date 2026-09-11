@@ -1,30 +1,25 @@
-<!doctype html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
+<!-- The exact title is how the app finds this window to host it; scene.js
+     sets it from the scene id before the window is looked for. -->
 <title>Awesome Streaming Deck - Canvas (source)</title>
-<link rel="stylesheet" href="/fonts.css">
-<style>
-  /* The output window of a scene. Until the renderer lands (P3) it shows
-     the scene's name over its own background, at its exact size. */
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
-  #stage { position: fixed; inset: 0; display: grid; place-items: center; color: #f0f0f4;
-           font: 500 32px/1.3 "Segoe UI", system-ui, sans-serif; text-align: center; }
-  #stage small { display: block; font-size: 16px; color: #9a9aa8; margin-top: 8px; }
-</style>
-<div id="stage"><div><span id="name">Canvas</span><small id="meta"></small></div></div>
-<script src="/windowctl.js"></script>
-<script>
-  const id = new URLSearchParams(location.search).get('id') || '';
-  const api = '/api/components/scene:' + id;
-  // The exact title is how the app finds this window to host it.
-  document.title = 'Awesome Streaming Deck - Canvas ' + id + ' (source)';
-  reportWindowMetrics(api);
-  addEventListener('resize', () => reportWindowMetrics(api));
-  fetch('/api/scenes/' + id).then((r) => r.json()).then((s) => {
-    if (!s || !s.id) { document.getElementById('name').textContent = 'No such scene'; return; }
-    document.getElementById('name').textContent = s.name;
-    document.getElementById('meta').textContent = `${s.width} x ${s.height} - ${s.layers.length} layer${s.layers.length === 1 ? '' : 's'}`;
-    const bg = s.background || {};
-    document.body.style.background = s.transparency === 'key' ? s.key_color
-      : bg.mode === 'gradient' ? `linear-gradient(${bg.angle}deg, ${bg.color}, ${bg.color2})` : bg.color;
-  }).catch(() => {});
-</script>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="stylesheet" href="scene.css">
+<script src="fonts.js"></script>
+<script src="motion.js"></script>
+</head>
+<body>
+<div id="root">
+  <div id="stageA" class="stage"></div>
+  <div id="stageB" class="stage"></div>
+</div>
+<div id="banner" class="banner" hidden></div>
+<script src="scenes.js"></script>
+<script src="decor.js"></script>
+<script src="windowctl.js"></script>
+<script src="embedhost.js"></script>
+<script src="scene.js"></script>
+</body>
+</html>

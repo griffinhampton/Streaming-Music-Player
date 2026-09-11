@@ -56,9 +56,10 @@ def new_id():
     return secrets.token_hex(4)
 
 
-def new_layer(kind, name=None, **props):
+def new_layer(ltype, name=None, **props):
+    # `ltype`, not `kind`: a shape's own props carry a `kind` of their own.
     return {
-        "id": new_id(), "type": str(kind), "name": name or str(kind).capitalize(),
+        "id": new_id(), "type": str(ltype), "name": name or str(ltype).capitalize(),
         "visible": True, "locked": False, "group": "",
         "transform": {"x": 0, "y": 0, "w": 400, "h": 300, "rotation": 0, "anchor": "tl"},
         "style": {"opacity": 1, "blend": "normal", "radius": 0,
@@ -174,6 +175,121 @@ def migrate(raw):
     return validate(scene)
 
 
+# Where TikTok's own LIVE interface sits over a portrait stream on a viewer's
+# phone (top bar, side buttons, the comment column, the input bar). Measured
+# by eye from the app; approximate, and only guidance for placing things.
+SAFE_ZONES = {
+    "phone": [
+        {"name": "Top bar", "x": 0, "y": 0, "w": 1080, "h": 230},
+        {"name": "Side buttons", "x": 880, "y": 980, "w": 200, "h": 760},
+        {"name": "Comments", "x": 0, "y": 1330, "w": 780, "h": 420},
+        {"name": "Bottom bar", "x": 0, "y": 1750, "w": 1080, "h": 170},
+    ],
+    "horizontal": [],
+}
+
+
+def _placed(ltype, name, x, y, w, h, **props):
+    layer = new_layer(ltype, name, **props)
+    layer["transform"].update({"x": x, "y": y, "w": w, "h": h})
+    return layer
+
+
+def _component(name, cid, x, y, w, h, **options):
+    return _placed("component", name, x, y, w, h, component=cid, design="linked", options=options)
+
+
+def _text(name, x, y, w, h, text, size=48, **more):
+    props = dict(text=text, size=size, weight=700, color="#ffffff", align="left", valign="center",
+                 shadow={"x": 0, "y": 2, "blur": 12, "color": "rgba(0,0,0,.6)"})
+    props.update(more)
+    return _placed("text", name, x, y, w, h, **props)
+
+
+def _camera(name, x, y, w, h, mask="rounded"):
+    return _placed("camera", name, x, y, w, h, width=1280, height=720, fps=30, mirror=True, mask=mask)
+
+
+def _capture(name, x, y, w, h):
+    return _placed("capture", name, x, y, w, h, mode="native",
+                   source={"kind": "window", "title": ""}, fps=30, fit="contain")
+
+
+def template_just_chatting():
+    s = new_scene("Just chatting", "horizontal")
+    s["background"] = {"mode": "gradient", "color": "#141026", "color2": "#2b1b4d", "angle": 160}
+    s["layers"] = [
+        _placed("shape", "Camera frame", 1140, 120, 720, 840, kind="frame", pad=18, hole_radius=28,
+                fill="rgba(255,255,255,.12)", stroke={"w": 3, "color": "#c9a7ff"}),
+        _camera("Camera", 1158, 138, 684, 804, mask="rounded"),
+        _text("Title", 60, 60, 1000, 110, "Just chatting", size=80, letter=0.02),
+        _text("Now", 60, 180, 1000, 60, "{title} - {artist}", size=34, weight=500, color="#d9cffc"),
+        _component("Now Playing", "np", 60, 820, 760, 190),
+        _component("Captions", "captions", 60, 640, 1000, 160, card_bg=False, frame=False),
+    ]
+    return validate(s)
+
+
+def template_music_lyrics():
+    s = new_scene("Music + lyrics", "horizontal")
+    s["background"] = {"mode": "scene", "color": "#1a0f1f", "color2": "#241a3d", "angle": 135, "image": "",
+                       "fit": "cover", "scene": {"id": "sakura", "c1": "", "c2": "", "c3": "",
+                                                 "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 3}}
+    s["layers"] = [
+        _component("Now Playing", "np", 60, 60, 760, 190),
+        _component("Queue", "queue", 60, 300, 760, 560),
+        _component("Lyrics", "lyrics", 900, 60, 960, 640),
+        _text("Song", 900, 760, 960, 120, "{title}", size=64, fit=True, align="center"),
+        _text("Artist", 900, 880, 960, 80, "{artist}", size=40, weight=500, align="center", color="#e9ddff"),
+    ]
+    return validate(s)
+
+
+def template_gaming_portrait():
+    s = new_scene("Gaming portrait", "phone")
+    s["background"] = {"mode": "gradient", "color": "#0b0b10", "color2": "#1c1230", "angle": 180}
+    s["layers"] = [
+        _capture("Game", 0, 230, 1080, 1080),
+        _placed("shape", "Camera frame", 40, 1330, 380, 380, kind="frame", pad=10, hole_radius=190,
+                fill="rgba(255,255,255,.14)", stroke={"w": 3, "color": "#ffffff"}),
+        _camera("Camera", 50, 1340, 360, 360, mask="circle"),
+        _component("Captions", "captions", 440, 1330, 600, 150, card_bg=False, frame=False),
+        _component("Now Playing", "np", 60, 1500, 760, 190, hide=["progress", "transport"]),
+        _text("Handle", 60, 120, 900, 90, "{title}", size=44, weight=600, color="#ffffff", fit=True),
+    ]
+    return validate(s)
+
+
+def template_gaming_landscape():
+    s = new_scene("Gaming landscape", "horizontal")
+    s["background"] = {"mode": "solid", "color": "#000000"}
+    s["layers"] = [
+        _capture("Game", 0, 0, 1920, 1080),
+        _placed("shape", "Camera frame", 1590, 30, 300, 300, kind="frame", pad=8, hole_radius=150,
+                fill="rgba(0,0,0,.35)", stroke={"w": 3, "color": "#ffffff"}),
+        _camera("Camera", 1598, 38, 284, 284, mask="circle"),
+        _component("Now Playing", "np", 60, 830, 760, 190),
+        _component("Captions", "captions", 860, 930, 1000, 120, card_bg=False, frame=False),
+    ]
+    return validate(s)
+
+
+TEMPLATES = {
+    "just_chatting": ("Just chatting", "horizontal", template_just_chatting),
+    "music_lyrics": ("Music + lyrics", "horizontal", template_music_lyrics),
+    "gaming_portrait": ("Gaming portrait", "phone", template_gaming_portrait),
+    "gaming_landscape": ("Gaming landscape", "horizontal", template_gaming_landscape),
+}
+
+
+def template_list():
+    return [{"id": k, "name": v[0], "format": v[1]} for k, v in TEMPLATES.items()]
+
+
+def from_template(key):
+    return TEMPLATES[key][2]()
+
+
 def summary(scene):
     return {"id": scene["id"], "name": scene["name"], "format": scene["format"],
             "width": scene["width"], "height": scene["height"], "rev": scene["rev"],
@@ -261,11 +377,16 @@ class SceneStore:
             return {sid: s["rev"] for sid, s in self._scenes.items()}
 
     def create(self, name, fmt="horizontal", width=None, height=None):
-        scene = new_scene(name, fmt, width, height)
+        return self.add(new_scene(name, fmt, width, height))
+
+    def add(self, scene):
+        """Store a prepared scene (a template's, an import) as a new one."""
+        scene = validate(scene)
         with self._lock:
-            while scene["id"] in self._scenes:
+            while not scene["id"] or scene["id"] in self._scenes:
                 scene["id"] = new_id()
             scene["rev"] = 1
+            scene["created"] = scene["updated"] = round(time.time())
             self._write(scene)
             self._scenes[scene["id"]] = scene
         self._changed()

@@ -343,6 +343,67 @@ whole snapshots like SSE does (deltas are P5's); the rig's Python has no
 `sounddevice`, so the live microphone monitor is exercised by the built app
 only (its error is reported in the voice status).
 
+## P3 - the scene runtime (2026-09-11)
+
+`web/scene.html?id=<scene>` (or `?follow=1` for whatever scene is live)
+renders a scene at its own size and scales it with one transform; the
+output window is that size, so the scale is 1. `web/scene.js` is the
+engine: a registry of layer types (`create` / `update` / `destroy`, plus
+`state`, `voice` and `motion` hooks), layers diffed by their JSON so only
+what changed is touched when a revision moves, two stages so a live switch
+crossfades in place, and one WebSocket feed (`/ws/events`) for the whole
+scene - embedded components get it by `postMessage` through
+`web/embedhost.js`, never a feed of their own (measured: one feed open for
+a scene with two components).
+
+Layer types: background (solid, gradient, image, the generative scenes),
+text (fonts, size/weight/spacing, fill or gradient, stroke, shadow, pill,
+auto-fit, live `{title} {artist} {album} {source} {elapsed} {duration}
+{time} {date} {caption} {caption_live}`), image/GIF/video (fit, tile,
+flip, loop/mute; Ultra stills GIFs and pauses video), shape (rect, ellipse,
+line, frame with a see-through hole), component (the four pages in embed
+mode: `?embed=1`, transparent stage, card background/frame/opacity and
+parts to hide, linked or per-scene design), camera (device, size, fps,
+mirror, mask), capture (a window or screen through `getDisplayMedia`, or
+a native hole for P4's compositor), reactive image (idle/talking/blink
+pictures, bounce). Any layer can carry the decor.js border loop, and
+"while speaking" / "silent" / "speech start" triggers (show, hide, bounce,
+class, pop). Voice state rides the feed; the page holds a lease only while
+something reacts to it. Four templates (`scenes.py`: just chatting, music
++ lyrics, gaming portrait, gaming landscape) and approximate TikTok safe
+zones for the phone canvas.
+
+Measured on the rig (`tools/p3/p3rig.py`, 44 checks):
+
+| What | Result |
+|---|---|
+| A scene with every layer type (sakura background, 4 texts, image, 4 shapes, reactive image, border loop, camera, capture hole, Now Playing + Captions embedded) | 23-28% of one core, captured at 46 fps (the loop animates) |
+| Now Playing + Captions embedded in one 1920x1080 scene vs the two pop-outs | **11.2% vs 18.2%** of one core: one window is cheaper than two |
+| Phone template output | 1080x1920, aligned, captured whole at 30 fps |
+| Reactive image, voice change on the server -> picture swapped on the page | 8-31 ms (median ~10); with the monitor's 100 ms attack, ~110-130 ms end to end |
+| 20 live switches with a 300 ms fade, every 1.2 s | window never re-opened, 29.5 fps captured throughout; the live output resized itself to the phone scene |
+| A 1600x900 window source through `getDisplayMedia`, auto-selected at Chrome's launch | painted, 22 fps captured, 15.3% of one core for the whole scene |
+
+Findings:
+
+- Chrome's auto-select flags name **one** capture source per launch of the
+  shared Chrome, so a scene's first browser-mode capture layer is passed
+  when the pop-out Chrome starts (`overlay.LAUNCH_EXTRA`). Scenes opened
+  later cannot change it; the native hole (`mode: native`) is the general
+  answer and P4's compositor fills it.
+- Switching scenes every 1.2 s cost ~66% of one core for the burst: each
+  switch rebuilds the embedded component pages and asks for the camera
+  again. Steady state is the scene's own cost. **P5:** keep component
+  iframes and camera streams alive across a switch when the next scene
+  uses the same ones.
+- The camera on this PC was held by OBS and LIVE Studio during the tests
+  (`NotReadableError`), shown as a dashed box with the reason; the camera's
+  CPU cost is still to be measured (P4, with the camera free).
+- Auto-fit text measured a detached element as fitting: layers are now
+  attached before they are built, and fit again once connected.
+- The captures are read with the app's own WGC path, not screenshots, so
+  what was checked is what a stream would carry.
+
 ## Tools kept for later steps (`music-deck/tools/p0/`)
 
 - `wgc.py` - Windows Graphics Capture of a window or monitor, PNG + fps + CPU.

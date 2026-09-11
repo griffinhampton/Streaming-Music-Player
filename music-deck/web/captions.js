@@ -6,6 +6,9 @@
    them, in the pop-out's colors and font unless given its own. */
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+// Inside a scene (embed.js): the scene feeds us and owns the window.
+const EMBED = !!window.EMBED;
+const STANDALONE = !PREVIEW && !EMBED;
 const API = '/api/captions/window';
 
 const el = {
@@ -173,17 +176,21 @@ function demoTick() {
 /* ------------------------------------------------------------- transport */
 
 let source = null, retry = null;
+function takeSnapshot(data) {
+  syncUserFonts(data.fonts_v);
+  setUltra(data.ultra);
+  applyDesign(data.nowplaying, data.captions_cfg);
+  if (!PREVIEW) render(data.captions, data.server_time);
+}
+
 function connect() {
+  if (EMBED) return;                 // the scene relays its own feed
   if (source) source.close();
   source = new EventSource('/api/events');
   source.onopen = () => el.stage.classList.remove('offline-on');
   source.onmessage = (event) => {
     try {
-      const data = JSON.parse(event.data);
-      syncUserFonts(data.fonts_v);
-      setUltra(data.ultra);
-      applyDesign(data.nowplaying, data.captions_cfg);
-      if (!PREVIEW) render(data.captions, data.server_time);
+      takeSnapshot(JSON.parse(event.data));
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -198,6 +205,7 @@ window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying, e.data.captions_cfg);
   if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
 });
+if (EMBED) onEmbedState(takeSnapshot);
 
 /* Ultra optimized switched, or a frozen picture is ready: draw it again. */
 onMotionChange(() => {
@@ -209,7 +217,7 @@ onMotionChange(() => {
 
 /* ------------------------------------------------------------- boot */
 
-if (!PREVIEW) {
+if (STANDALONE) {
   attachWindowControls({
     stage: el.stage,
     grip: document.getElementById('grip'),
@@ -220,13 +228,15 @@ if (!PREVIEW) {
 }
 window.addEventListener('resize', () => {
   sizeRoot();
-  if (!PREVIEW) reportWindowMetrics(API);
+  if (STANDALONE) reportWindowMetrics(API);
 });
 
-fetch('/api/state').then((r) => r.json()).then((d) => {
-  applyDesign(d.nowplaying, d.captions_cfg);
-  if (!PREVIEW) render(d.captions, d.server_time);
-}).catch(() => {});
+if (!EMBED) {
+  fetch('/api/state').then((r) => r.json()).then((d) => {
+    applyDesign(d.nowplaying, d.captions_cfg);
+    if (!PREVIEW) render(d.captions, d.server_time);
+  }).catch(() => {});
+}
 
 connect();
 if (PREVIEW) { demoTick(); setInterval(demoTick, 2200); }

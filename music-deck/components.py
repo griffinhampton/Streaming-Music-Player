@@ -152,6 +152,11 @@ def builtin(cache_dir):
                       capabilities=("music", "spotify", "designer")))
     reg.add(Component("captions", "Captions", "captions.html", "captions", (900, 200),
                       capabilities=("microphone", "designer")))
+    # The output that follows whatever scene is live; it takes the live
+    # scene's size when the switch happens.
+    reg.add(Component("live", "Canvas (live)", "scene.html?follow=1", None, (1920, 1080),
+                      group="canvas", capabilities=("scene", "live"),
+                      page_title=f"{TITLE} - Canvas live (source)"))
     return reg
 
 

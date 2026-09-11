@@ -1,0 +1,109 @@
+/* The scene output: a stage at the scene's own size, layers as absolute
+   boxes, one scale on the root. Two stages exist so a live switch can
+   crossfade in place. Nothing here animates endlessly except what a layer
+   asks for, and motion.js steps that at 30 fps. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+body.see-through { background: transparent; }
+
+#root { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.stage {
+  position: absolute; left: 0; top: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 300ms steps(9);
+}
+.stage.shown { opacity: 1; }
+.scene-bg, .scene-bg-fill, .scene-bg-art, .scene-layers { position: absolute; inset: 0; }
+.scene-bg[hidden] { display: none; }
+.scene-bg-art { background-position: center; background-repeat: no-repeat; background-size: cover; }
+
+.layer { position: absolute; box-sizing: border-box; overflow: hidden; }
+.layer.hidden { display: none; }
+.layer > .media { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
+.layer > div.media { background-position: 0 0; }
+.type-background .bg-fill, .type-background .bg-art, .type-background .bg-dim { position: absolute; inset: 0; }
+.type-background .bg-art { background-position: center; background-repeat: no-repeat; background-size: cover; }
+
+/* text */
+.text-box { position: absolute; inset: 0; display: flex; }
+.text-pill { display: inline-block; max-width: 100%; }
+.text-body { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
+.text-body.gradient { -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* shapes */
+.shape-line { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); }
+.shape-ellipse { border-radius: 50% !important; }
+.shape-hole { position: absolute; }
+
+/* components, camera, capture */
+.type-component iframe.embed {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  border: 0; display: block; background: transparent;
+}
+.mask-circle { border-radius: 50% !important; }
+.mask-rounded { border-radius: 28px !important; }
+.source-note {
+  position: absolute; left: 8px; bottom: 8px;
+  font: 12px/1.4 "Segoe UI", system-ui, sans-serif; color: #fff;
+  background: rgba(0, 0, 0, .6); padding: 2px 7px; border-radius: 6px;
+  pointer-events: none;
+}
+.source-note[hidden] { display: none; }
+.source-error { outline: 2px dashed #f87171; outline-offset: -2px; }
+
+/* speech: a bounce while talking, a pop when speech starts. The individual
+   transform properties leave the layer's rotation alone. */
+.bounce { animation: bob .5s steps(15) infinite; }
+@keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 calc(-1 * var(--bounce, 0px)); } }
+.pop { animation: pop .6s steps(18) 1; }
+@keyframes pop { 0% { scale: 1; } 30% { scale: 1.12; } 100% { scale: 1; } }
+
+.banner {
+  position: fixed; left: 12px; top: 12px; z-index: 50;
+  font: 14px/1.4 "Segoe UI", system-ui, sans-serif; color: #fff;
+  background: rgba(200, 40, 40, .85); padding: 6px 10px; border-radius: 8px;
+}
+.banner[hidden] { display: none; }
+
+/* A decorative border loop on any layer: decor.js paints it, the same way it
+   frames the Now Playing window. */
+.layer > .decor {
+  position: absolute; inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  display: none;
+  color: var(--decor-color, #fff);
+  opacity: var(--decor-opacity, .85);
+  font-size: var(--decor-font, .62em);
+  letter-spacing: var(--decor-gap, .5em);
+  line-height: 1;
+}
+.layer.has-decor > .decor { display: block; }
+.layer .decor-strip { position: absolute; display: none; align-items: center; overflow: hidden; white-space: nowrap; }
+.layer .decor-strip span { display: inline-block; flex: 0 0 auto; }
+.layer.decor-top .decor > .decor-top,
+.layer.decor-bottom .decor > .decor-bottom,
+.layer.decor-left .decor > .decor-left,
+.layer.decor-right .decor > .decor-right { display: flex; }
+.layer .decor > .decor-top    { top: 0;    left: 0; right: 0; height: var(--decor-px, 1.5em); padding: 0 .4em; }
+.layer .decor > .decor-bottom { bottom: 0; left: 0; right: 0; height: var(--decor-px, 1.5em); padding: 0 .4em; }
+.layer .decor > .decor-left, .layer .decor > .decor-right {
+  top: 0; bottom: 0; width: var(--decor-px, 1.5em); padding: .4em 0;
+  writing-mode: vertical-rl; text-orientation: upright;
+}
+.layer .decor > .decor-left  { left: 0; }
+.layer .decor > .decor-right { right: 0; }
+.layer.decor-animate .decor-strip span  { animation: drift var(--decor-time, 24s) linear infinite; }
+.layer.decor-animate .decor-right span  { animation-name: drift-v; }
+.layer.decor-animate .decor-bottom span { animation-name: drift-back; }
+.layer.decor-animate .decor-left span   { animation-name: drift-v-back; }
+@keyframes drift        { from { transform: translateX(0); }    to { transform: translateX(-50%); } }
+@keyframes drift-back   { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@keyframes drift-v      { from { transform: translateY(0); }    to { transform: translateY(-50%); } }
+@keyframes drift-v-back { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+.layer.decor-motif .decor > .decor-strip > span { position: absolute; top: 0; left: 0; }
+.layer.decor-motif .decor-strip { letter-spacing: 0; }
+.layer.decor-motif .decor > .decor-top,
+.layer.decor-motif .decor > .decor-bottom { height: var(--decor-px, 24px); left: 0; right: 0; }
+.layer.decor-motif .decor > .decor-left,
+.layer.decor-motif .decor > .decor-right  { width: var(--decor-px, 24px); top: 0; bottom: 0; writing-mode: horizontal-tb; }

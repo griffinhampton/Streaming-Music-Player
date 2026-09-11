@@ -26,7 +26,7 @@ every later prompt reads it first.
 | P0 | Groundwork: capture, permissions, limits, encoders measured; decisions written | Fable | [x] 2026-09-11 |
 | P1 | Streaming engine spike: capture -> encode -> RTMP, measured, go/no-go | Fable | [x] 2026-09-11 |
 | P2 | Server architecture: registry, feeds + WebSocket, scene store, assets, outputs, capture sources, voice, key vault | Fable | [x] 2026-09-11 |
-| P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [ ] |
+| P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [x] 2026-09-11 |
 | P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [ ] |
 | P5 | Optimization and hardening of the backend | Fable | [ ] |
 | P6 | Deck integration: scrollable components row, screen-share group, Canvas Builder entry, LIVE strip | Opus | [ ] |
@@ -261,6 +261,9 @@ before any frontend is built on it.
 - Measure on real windows (chrometype.ps1/abtest.ps1 pattern) each template scene idle, animated, with a camera,
   with a window source, and while LIVE at 720p30 and 1080p30; fix the top costs; confirm Ultra and hidden go
   idle; confirm the feed cap logic (deck + 4 pop-outs + 2 outputs).
+- Scene switches (P3 measured ~66% of one core during a burst of switches every 1.2 s): keep embedded component
+  iframes and camera/capture streams alive across a switch when the next scene uses the same ones, so a switch
+  moves boxes instead of rebuilding pages.
 - Stress: 60 layers, 4 components, 1 camera, 1 window source, LIVE, 2 hours - memory flat, no dropped frames.
 - Recovery: an output window that dies is re-opened and re-joins the live scene; the server restart path
   restores outputs; corrupted scene files fall back to their backup.

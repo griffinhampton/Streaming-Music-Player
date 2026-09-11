@@ -6,6 +6,9 @@
    exactly; plain lyrics glide through in proportion to how far the song is. */
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+// Inside a scene (embed.js): the scene feeds us and owns the window.
+const EMBED = !!window.EMBED;
+const STANDALONE = !PREVIEW && !EMBED;
 const API = '/api/lyrics/window';
 
 let lastPlaying = false;
@@ -295,18 +298,22 @@ function onState(now) {
 /* ------------------------------------------------------------- transport */
 
 let source = null, retry = null;
+function takeSnapshot(data) {
+  syncUserFonts(data.fonts_v);
+  setUltra(data.ultra);
+  applyDesign(data.nowplaying, data.lyrics_cfg);
+  onState(data.now);
+  followPlaying(data.now);
+}
+
 function connect() {
+  if (EMBED) return;                 // the scene relays its own feed
   if (source) source.close();
   source = new EventSource('/api/events');
   source.onopen = () => el.stage.classList.remove('offline-on');
   source.onmessage = (event) => {
     try {
-      const data = JSON.parse(event.data);
-      syncUserFonts(data.fonts_v);
-      setUltra(data.ultra);
-      applyDesign(data.nowplaying, data.lyrics_cfg);
-      onState(data.now);
-      followPlaying(data.now);
+      takeSnapshot(JSON.parse(event.data));
     } catch (_) { /* wait for the next frame */ }
   };
   source.onerror = () => {
@@ -321,6 +328,7 @@ window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'design') applyDesign(e.data.nowplaying, e.data.lyrics_cfg);
   if (e.data && e.data.type === 'ultra') setUltra(e.data.on);
 });
+if (EMBED) onEmbedState(takeSnapshot);
 
 /* Ultra optimized switched, or a frozen picture is ready: draw it again. */
 onMotionChange(() => {
@@ -336,7 +344,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 /* ------------------------------------------------------------- boot */
 
-if (!PREVIEW) {
+if (STANDALONE) {
   attachWindowControls({
     stage: el.stage,
     grip: document.getElementById('grip'),
@@ -348,15 +356,17 @@ if (!PREVIEW) {
 window.addEventListener('resize', () => {
   sizeRoot();
   centerActive(true);
-  if (!PREVIEW) reportWindowMetrics(API);
+  if (STANDALONE) reportWindowMetrics(API);
 });
 
-fetch('/api/state').then((r) => r.json()).then((d) => {
-  applyDesign(d.nowplaying, d.lyrics_cfg);
-  onState(d.now);
-}).catch(() => {});
+if (!EMBED) {
+  fetch('/api/state').then((r) => r.json()).then((d) => {
+    applyDesign(d.nowplaying, d.lyrics_cfg);
+    onState(d.now);
+  }).catch(() => {});
+}
 
-wireLineSeek();
+if (STANDALONE) wireLineSeek();
 connect();
 tick();
 
@@ -369,4 +379,4 @@ function followPlaying(now) {
                   (opts || {}).interactive !== false);
 }
 
-if (!PREVIEW) wireTransport(el.transport, () => (opts || {}).interactive !== false);
+if (STANDALONE) wireTransport(el.transport, () => (opts || {}).interactive !== false);
