@@ -185,7 +185,12 @@ going LIVE without LIVE Studio or OBS at all.
 
 ## Open items
 
-1. **Manual 30-second check (Link transparency):** in LIVE Studio, Add
+1. **Done 2026-09-12 - the Link source keeps transparency.** The user added
+   the test page as a Link in their LIVE Studio (1.35.2), with the app
+   running, and the scene behind it showed through: see-through overlays
+   reach LIVE Studio through Link, as decisions 2 and 3 assumed, and LIVE
+   Studio's pre-check accepted the app's answer. The check as it was set:
+   **Manual 30-second check (Link transparency):** in LIVE Studio, Add
    source > **Link**, URL `http://127.0.0.1:8713/transparency-test.html`, with
    the app running. (The user's LIVE Studio menu, 2026-09-12, has no entry
    called "Browser capture" - that name came from its internal strings; the

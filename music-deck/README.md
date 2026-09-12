@@ -260,14 +260,15 @@ Rather stream with LIVE Studio (or OBS)? Capture a scene's window instead:
    Do not minimize a window you are capturing: a minimized window rests to
    save power, and the app will not minimize the one that is on air.
 
-For see-through parts, set the scene's **Transparency** to **See-through**
-when your capture keeps a window's transparency, or to **Key color** and add a
-chroma key in LIVE Studio when it does not. To see what your capture software
-does, start the app, then add a **Link** source in LIVE Studio (**Add source →
-Link**) with `http://127.0.0.1:8713/transparency-test.html`: whatever is under it should
-show through everywhere except the pink card, the cyan block, the yellow dot
-and the words. If it comes out black, use **Key color**. Delete the test
-source afterwards.
+**See-through parts.** LIVE Studio's **Window capture** never keeps a window's
+transparency: whatever should be see-through comes out solid. A **Link** source
+does keep it - checked in LIVE Studio 1.35.2 with the app's test page. To see
+it yourself, start the app, then **Add source → Link** with
+`http://127.0.0.1:8713/transparency-test.html`: whatever is under it shows
+through everywhere except the pink card, the cyan block, the yellow dot and the
+words (delete the test source afterwards). A scene with see-through parts looks
+right on stream when the app goes LIVE itself, since it draws the whole scene;
+through a window capture, give such a scene a solid background.
 
 ## Camera, capture and privacy
 
