@@ -946,6 +946,8 @@ class Hub:
                 self._subs.remove(q)
 
     HEARTBEAT = 2.0      # seconds between sends when nothing changes
+    sends = 0            # counted for /api/debug/mem
+    sent_bytes = 0
 
     @staticmethod
     def _change_key(snap):
@@ -976,6 +978,8 @@ class Hub:
         with self._lock:
             self._last_payload, self._last_key, self._last_sent = payload, key, time.time()
             subs = list(self._subs)
+            self.sends += 1
+            self.sent_bytes += len(payload)
         for q in subs:
             try:
                 q.put_nowait(payload)
@@ -1838,7 +1842,8 @@ class Handler(BaseHTTPRequestHandler):
             import gc
             import tracemalloc
             out = {"working_set_mb": 0, "gc_objects": len(gc.get_objects()), "tracing": tracemalloc.is_tracing(),
-                   "threads": threading.active_count()}
+                   "threads": threading.active_count(),
+                   "hub": {"sends": HUB.sends, "bytes": HUB.sent_bytes, "subscribers": len(HUB._subs)}}
             try:
                 import ctypes as _ct
                 class _PMC(_ct.Structure):
@@ -1869,6 +1874,21 @@ class Handler(BaseHTTPRequestHandler):
                 Handler._mem_snap = snap
             return self._json(out)
 
+        if path == "/api/debug/snapshot":
+            # What one snapshot costs, and where: 50 builds under cProfile.
+            import cProfile
+            import io as _io
+            import pstats
+            prof = cProfile.Profile()
+            t0 = time.perf_counter()
+            prof.enable()
+            for _ in range(50):
+                HUB._change_key(HUB.snapshot())
+            prof.disable()
+            ms = (time.perf_counter() - t0) * 1000 / 50
+            buf = _io.StringIO()
+            pstats.Stats(prof, stream=buf).sort_stats("cumulative").print_stats(18)
+            return self._json({"ms_per_build": round(ms, 2), "profile": buf.getvalue()[-6000:]})
         if path == "/api/debug/threads":
             # CPU seconds per thread of this process, by the thread's name:
             # two reads apart say where the server's time goes.

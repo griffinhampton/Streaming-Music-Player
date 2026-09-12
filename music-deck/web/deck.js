@@ -3527,11 +3527,27 @@ new ResizeObserver(layoutPreview).observe($('previewStage'));
    carries on. The pop-out windows are separate pages and keep moving. */
 let deckStill = null;
 const stilled = new Set();
+/* ...and while you are not using it: ten seconds without the pointer or the
+   keyboard and the preview holds still with the deck in front, too. Measured
+   2026-09-12: a focused, idle deck cost Chrome 86% of a core - the preview's
+   equalizer and sliding title, stepped to 30 a second but redrawn at 150%
+   scale every step. Any input brings the motion back at once. */
+const IDLE_STILL_MS = 10000;
+let lastInput = performance.now();
+function noteInput() {
+  lastInput = performance.now();
+  if (deckStill) syncStill();
+}
+const INPUTS = ['pointermove', 'pointerdown', 'keydown', 'wheel'];
 function previewDoc() {
   try { return previewEl.contentDocument; } catch (_) { return null; }
 }
 function stillDoc(doc) {
   if (!doc) return;
+  // The preview's own clock reads this and moves once a second while still:
+  // its progress bar redrew a few times a second, and every redraw repainted
+  // the scaled preview (6 layouts a second in a deck with nothing moving).
+  doc.documentElement.setAttribute('data-still', '');
   for (const a of doc.getAnimations()) {
     if (a.playState === 'running' && a.effect && a.effect.getTiming().iterations === Infinity) {
       a.pause();
@@ -3540,7 +3556,7 @@ function stillDoc(doc) {
   }
 }
 function syncStill() {
-  if (!document.hasFocus()) {
+  if (!document.hasFocus() || performance.now() - lastInput > IDLE_STILL_MS) {
     // Also catches animations that began since, in either page.
     deckStill = true;
     stillDoc(document);
@@ -3549,6 +3565,7 @@ function syncStill() {
   }
   if (deckStill === false) return;
   deckStill = false;
+  for (const d of [document, previewDoc()]) if (d) d.documentElement.removeAttribute('data-still');
   // Resume only what is still on the page: an animation its element has
   // dropped since must not come back.
   const live = new Set(document.getAnimations());
@@ -3570,11 +3587,13 @@ function hookPreview() {
     w.addEventListener('focus', syncStill);   // same function each time, so never added twice
     w.addEventListener('blur', stillSoon);
     d.addEventListener('animationstart', stillSoon, true);
+    for (const ev of INPUTS) d.addEventListener(ev, noteInput, { capture: true, passive: true });
   } catch (_) {}
 }
 window.addEventListener('focus', syncStill);
 window.addEventListener('blur', stillSoon);
 document.addEventListener('animationstart', stillSoon, true);
+for (const ev of INPUTS) document.addEventListener(ev, noteInput, { capture: true, passive: true });
 previewEl.addEventListener('load', () => { hookPreview(); syncStill(); });
 hookPreview();
 setInterval(syncStill, 1000);   // catches focus moves that fire no event

@@ -34,7 +34,7 @@ def post(path, data=None):
 
 
 def ps(script, timeout=120):
-    return subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
+    return subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
 
 
 def ev(expr):
@@ -73,7 +73,7 @@ idle_out = ps(f'& "{S}\\cpuby.ps1" -Match prof-p5 -Seconds 12')
 print("   " + idle_out.strip().replace("\n", "\n   "))
 idle_total = [l for l in idle_out.splitlines() if "TOTAL" in l]
 idle = float(idle_total[0].split()[1]) if idle_total else -1
-meter = subprocess.Popen(["powershell", "-NoProfile", "-Command", f'& "{S}\\cpuby.ps1" -Match prof-p5 -Seconds 24'],
+meter = subprocess.Popen(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\\cpuby.ps1" -Match prof-p5 -Seconds 24'],
                          stdout=subprocess.PIPE, text=True)
 t0 = time.time()
 for i in range(20):

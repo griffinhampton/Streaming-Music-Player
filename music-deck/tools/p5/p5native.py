@@ -37,7 +37,7 @@ def post(path, data=None):
 
 
 def ps(script, timeout=120):
-    return subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
+    return subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
 
 
 def cpu(match, secs=12):
@@ -104,7 +104,7 @@ print("   Chrome, scene with native holes only (no LIVE yet):", f"{cpu('testrig'
 out = os.path.join(S, "live", "p5native.flv")
 if os.path.exists(out):
     os.remove(out)
-sk = subprocess.Popen([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1", "-timeout", "60",
+sk = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1", "-timeout", "60",
                        "-i", "rtmp://127.0.0.1:1935/live/test", "-c", "copy", "-f", "flv", out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
 r = post("/api/live/start", {"url": "rtmp://127.0.0.1:1935/live", "key": "test", "preset": "1080p30", "source": "live",
@@ -126,7 +126,7 @@ check("Chrome pays nothing for the sources (<= 22% of one core with the animated
 time.sleep(max(0, seconds - 20))
 post("/api/live/stop")
 sk.wait(20)
-subprocess.run([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "error", "-y", "-ss", "10", "-i", out,
+subprocess.run(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "error", "-y", "-ss", "10", "-i", out,
                 "-frames:v", "1", "-update", "1", "-vf", "scale=960:-1", os.path.join(S, "live", "p5native.png")])
 print("   frame:", os.path.join(S, "live", "p5native.png"), os.path.exists(os.path.join(S, "live", "p5native.png")))
 post("/api/components/live/close")

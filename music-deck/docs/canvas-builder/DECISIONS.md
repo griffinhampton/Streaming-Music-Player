@@ -692,6 +692,105 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Efficiency pass (2026-09-12, after P5)
+
+A check that everything runs as lightly as it should, against the user's
+~5%-of-a-core goal: every piece measured alone on the rig, Chrome by
+process type and the server by thread (`tools/p5/optrun.py`), no game
+running. It measures; the two fixes it made are below.
+
+The matrix (no game running; Chrome by process type, the server by
+thread; each figure is % of one core):
+
+| Piece | Chrome | server |
+|---|---|---|
+| server at rest, no windows | - | 1.2 |
+| Now Playing, nothing playing | 11.8 | 1.8 |
+| Now Playing, Ultra | 6.8 | 2.0 |
+| Now Playing, minimized | ~1 (a browser burst apart) | 1.7 |
+| Lyrics / Queue / Captions, idle | 0.5-0.9 | 1.6-2.0 |
+| the deck alone | 34.5 | 0.2 |
+| the deck, a live scene in its preview | 38.1 | 1.2 |
+| the deck + the four pop-outs, idle | 56.6 | 2.0 |
+| the deck + the four pop-outs, Ultra | 24.2 | 2.4 |
+| scene output, idle (just_chatting, as shipped) | 13.5 | 1.9 |
+| scene output, idle, camera layer hidden | 1.9 | 1.8 |
+| scene output, Ultra | ~1 (a browser burst apart) | 2.5 |
+| scene output, minimized | 0.9 | 2.2 |
+| LIVE 1080p30, no native source | - | 12.7 (audio 4.3, video 3.8) |
+| LIVE 1080p30, native window | - | 12.8 |
+| LIVE 1080p30, native camera | - | 11.9 (+ camera reader 2.2) |
+| LIVE 1080p30, both | - | 15.6 |
+
+The LIVE numbers are the true ones (the P5 tables ran with a game on the
+other monitor and read 23-33% - the game, not the stream). Everything the
+user pays for the actual stream is the server column; a native source in
+the page would have cost Chrome 22-42% (P5), the native compositor costs
+the server 0-3.
+
+What was found and fixed:
+
+- **The state snapshot spent 90% of its time looking for windows.** Every
+  snapshot asks every component whether its window is open; a component
+  whose window is closed fell through to `winwin.find_window`, one pass
+  over every top-level window on the desktop (~350) - 17 passes per
+  snapshot on the rig, 2.5 snapshots a second from the feed pump, plus
+  every broadcast and every `/api/state`. `find_window` takes a `max_age`
+  now: the status lookups share one pass (0.3 s), and anything that acts
+  on the answer still asks fresh. A snapshot build fell from **5.87 ms to
+  0.34 ms** (`/api/debug/snapshot` profiles it); `find_window` no longer
+  shows in the profile at all. This is heaviest on the rig (45 scene
+  outputs in its config); the user's app has a handful, so its saving is
+  smaller - but the cost grew with every scene, and now it does not.
+- **The deck's preview moved all the time the deck was in front** - the
+  priciest window: 34.5% alone, 41-86% of a core focused (fresh), 56.6%
+  with the four pop-outs. Its embedded Now Playing shows a demo track
+  "playing": the equalizer bounces, a long title slides, the progress bar
+  creeps a few times a second, and each change repaints the preview scaled
+  into a large window at 150% (`perfprobe.js`: 60 layouts and 470 style
+  recalculations in 10 s, from the preview alone). The deck paused the
+  endless animations only while it was behind another window. Now it also
+  pauses them after 10 s without the pointer or the keyboard (any input
+  resumes at once; `IDLE_STILL_MS` in deck.js), and a paused preview's
+  clock moves once a second, as in Ultra (`data-still` set by the deck,
+  read by `tick` in nowplaying.js). The preview's decoration ring is a
+  canvas drawn by a 30-a-second timer in decor.js, which no CSS pause
+  reaches: it now stops on `data-still` too, and a ring standing still is
+  drawn once (it used to be cleared and redrawn twice a second while the
+  deck was behind another window).
+
+  | The deck, Chrome, % of one core | |
+  |---|---|
+  | in front, preview moving (real window) | 41 |
+  | in front, 20 s without input, before the ring fix (real window) | 13.7 |
+  | behind other windows, long idle (real window) | 1.4 |
+  | in front, 20 s without input, after the ring fix (headless) | compositor frames 61 -> 2.6 a second, the ring's timer 27.5 -> 2 calls a second with no redraw, the preview clock 5 -> 1 tick a second, paint 7.8 -> 1.8 ms a second |
+
+  The last row is headless only: the second monitor, where every test
+  window goes, was unplugged before the real window could be measured
+  again, and headless Chrome rasterizes in software, so its CPU figure
+  (8.3%) does not compare with a real window's.
+
+Checked and left alone, with the reason:
+
+- **The feed pump's sends:** 0.5 a second at rest and while LIVE - the
+  2-second heartbeat; `LIVE.snapshot_status` already leaves out the
+  per-second stream stats, so a stream does not make every page re-read
+  the state. A send counter on `/api/debug/mem` confirmed it.
+- **Now Playing idle at 11.8%** was Chrome settling right after the
+  window opened. Probed on the real window through a DevTools port (a
+  rig-only flag), settled and idle it costs 1.4% of a core: its page's main
+  thread 0.00% over 12 s, no animation, GPU 0.0%. The marquee runs only
+  when a title overflows (it does not at the pop-out's 315-of-644 px), the
+  equalizer only while playing, the clock stops when nothing plays.
+- **Chrome's browser process sometimes spends one to two seconds of CPU
+  at once** - seen after minimizing, after an Ultra switch, and at random
+  while test windows were being opened. Sampled side by side for two
+  minutes, the rig's hosted Now Playing window and a plain, not reparented
+  Chrome window with the same flags: neither burst at all (0.4% and 1.0%
+  of a core on average). It is Chrome's own, not the hosting's, and the
+  minimized and Ultra states themselves cost ~1%.
+
 ## Tools kept for later steps (`music-deck/tools/p0/`)
 
 - `wgc.py` - Windows Graphics Capture of a window or monitor, PNG + fps + CPU.

@@ -26,7 +26,7 @@ post("/api/components/live/restore"); time.sleep(4)
 st = get("/api/components/live/status")
 check("restored where it was, at full size", not st.get("minimized") and (st.get("rect") or {}).get("x", 0) >= 2560
       and (st.get("viewport") or [0])[0] >= 1900, f"{json.dumps(st.get('rect'))} viewport {st.get('viewport')}")
-sk = subprocess.Popen([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "error", "-y", "-listen", "1", "-timeout", "60",
+sk = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "error", "-y", "-listen", "1", "-timeout", "60",
                        "-i", "rtmp://127.0.0.1:1935/live/test", "-c", "copy", "-f", "flv", os.path.join(S, "live", "onair.flv")],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)

@@ -72,7 +72,7 @@ print(f"encoded {st['frames']} frames at {st['fps']} fps, dropped {st['dropped']
 
 # Decode to small gray frames and look at row-wise change between neighbors.
 W, H = 320, 180
-raw = subprocess.run([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "error", "-r", str(fps), "-i", out,
+raw = subprocess.run(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "error", "-r", str(fps), "-i", out,
                       "-vf", f"scale={W}:{H}", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
 frames = np.frombuffer(raw, dtype=np.uint8).reshape(-1, H, W).astype(np.int16)
 print(f"decoded {len(frames)} frames")

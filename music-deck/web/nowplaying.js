@@ -440,8 +440,10 @@ function tick() {
   if (!clock.playing || !(dur > 0) || pos >= dur) return;
   const toSecond = (1 - (pos % 1)) * 1000 + 10;
   const halfPixel = (dur / trackW) * 500;
-  // Ultra optimized moves the bar with the seconds, once a second.
-  tickTimer = setTimeout(tick, Math.max(40, isUltra() ? toSecond : Math.min(toSecond, halfPixel)));
+  // Ultra optimized moves the bar with the seconds, once a second - and so
+  // does a preview the deck has stilled (data-still, set by the deck).
+  const slow = isUltra() || document.documentElement.hasAttribute('data-still');
+  tickTimer = setTimeout(tick, Math.max(40, slow ? toSecond : Math.min(toSecond, halfPixel)));
 }
 
 /* ------------------------------------------------------------- transport */

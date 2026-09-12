@@ -8,6 +8,7 @@ the difference between a clean overlay and a browser chrome sandwich.
 """
 
 import ctypes
+import time
 from ctypes import wintypes
 
 try:
@@ -69,11 +70,11 @@ def available():
 BROWSER_CLASSES = ("Chrome_WidgetWin_1", "MozillaWindowClass")
 
 
-def find_window(title, classes=BROWSER_CLASSES):
-    """HWND of the first visible browser window with exactly this title."""
-    if not _HAVE_WIN32:
-        return None
-    found = []
+_WINDOWS = (0.0, [])       # (when, [(hwnd, title, class)]) - see find_window's max_age
+
+
+def _visible_windows():
+    out = []
 
     def cb(hwnd, _lparam):
         if not user32.IsWindowVisible(hwnd):
@@ -83,21 +84,40 @@ def find_window(title, classes=BROWSER_CLASSES):
             return True
         buf = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buf, length + 1)
-        if buf.value != title:
-            return True
-        if classes:
-            cls = ctypes.create_unicode_buffer(256)
-            user32.GetClassNameW(hwnd, cls, 256)
-            if cls.value not in classes:
-                return True
-        found.append(hwnd)
-        return False
+        cls = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, cls, 256)
+        out.append((hwnd, buf.value, cls.value))
+        return True
 
+    user32.EnumWindows(_ENUMPROC(cb), 0)
+    return out
+
+
+def find_window(title, classes=BROWSER_CLASSES, max_age=0.0):
+    """HWND of the first visible browser window with exactly this title.
+
+    max_age > 0 lets callers asking many titles at once share one pass over
+    the desktop's windows: the state snapshot asks every component whether
+    its window is open, and a pass per component - some 350 windows each,
+    17 components, 2.5 times a second - was 90% of the snapshot's cost
+    (measured in the 2026-09-12 efficiency pass). Anything that acts on the
+    answer asks fresh (max_age 0)."""
+    global _WINDOWS
+    if not _HAVE_WIN32:
+        return None
     try:
-        user32.EnumWindows(_ENUMPROC(cb), 0)
+        now = time.monotonic()
+        if max_age > 0 and now - _WINDOWS[0] < max_age:
+            windows = _WINDOWS[1]
+        else:
+            windows = _visible_windows()
+            _WINDOWS = (now, windows)
     except Exception:
         return None
-    return found[0] if found else None
+    for hwnd, text, cls in windows:
+        if text == title and (not classes or cls in classes):
+            return hwnd
+    return None
 
 
 def get_rect(hwnd):

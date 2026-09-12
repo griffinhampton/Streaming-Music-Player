@@ -121,7 +121,7 @@ class Overlay:
                     "viewport": [self.metrics.get("inner_w"), self.metrics.get("inner_h")],
                     "visibility": self.metrics.get("visibility", ""),
                     "viewport_rect": vp}
-        hwnd = winwin.find_window(self.page_title)
+        hwnd = winwin.find_window(self.page_title, max_age=0.3)     # one pass shared by every component
         if hwnd:
             minimized = winwin.is_minimized(hwnd)
             return {"open": True, "hosted": False, "minimized": minimized, "parked": self.parked,

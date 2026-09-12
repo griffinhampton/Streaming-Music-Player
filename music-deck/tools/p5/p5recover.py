@@ -37,7 +37,7 @@ def post(path, data=None):
 
 
 def ps(script, timeout=120):
-    return subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
+    return subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
 
 
 def wait_for(pred, timeout, every=1.0):
@@ -60,7 +60,7 @@ def sink(name):
     out = os.path.join(S, "live", name)
     if os.path.exists(out):
         os.remove(out)
-    p = subprocess.Popen([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1",
+    p = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1",
                           "-timeout", "60", "-i", "rtmp://127.0.0.1:1935/live/test", "-c", "copy", "-f", "flv", out],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
@@ -119,7 +119,7 @@ check("the video re-joined the stream", st["state"] == "live" and st["native"]["
 check("the log says so", "re-joined the stream" in rig_log())
 post("/api/live/stop")
 sk.wait(20)
-probe = subprocess.run([os.path.join(FF, "ffprobe.exe"), "-v", "error", "-select_streams", "v:0", "-count_frames",
+probe = subprocess.run(creationflags=0x08000000, args=[os.path.join(FF, "ffprobe.exe"), "-v", "error", "-select_streams", "v:0", "-count_frames",
                         "-show_entries", "stream=nb_read_frames:format=duration", "-of", "default=nw=1", out],
                        capture_output=True, text=True).stdout.strip().replace("\n", " ")
 print("   recording:", probe)

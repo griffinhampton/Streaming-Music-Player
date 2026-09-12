@@ -32,7 +32,7 @@ def post(path, data=None):
 
 
 def ps(script):
-    return subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=120).stdout
+    return subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=120).stdout
 
 
 def server_cpu(seconds):
@@ -85,7 +85,7 @@ post("/api/canvas/live", {"id": scenes["none"], "transition": "cut"})
 post("/api/components/live/open")
 time.sleep(8)
 out = os.path.join(S, "live", "p5nthreads.flv")
-sk = subprocess.Popen([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1", "-timeout", "60",
+sk = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1", "-timeout", "60",
                        "-i", "rtmp://127.0.0.1:1935/live/test", "-c", "copy", "-f", "flv", out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
 r = post("/api/live/start", {"url": "rtmp://127.0.0.1:1935/live", "key": "test", "preset": preset, "source": "live",

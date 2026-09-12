@@ -43,7 +43,7 @@ def post(path, data=None):
 
 
 def ps(script, timeout=120):
-    return subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
+    return subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
 
 
 def cpu(match, seconds=15):
@@ -66,7 +66,7 @@ def server_cpu(seconds=15):
 
 
 def wgc(title, name, seconds=1.0):
-    out = subprocess.run([sys.executable, os.path.join(S, "wgc.py"), "window", title,
+    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(S, "wgc.py"), "window", title,
                           os.path.join(S, "live", name), str(seconds), "half"], capture_output=True, text=True).stdout
     return out
 
@@ -101,7 +101,7 @@ def sink(name):
     out = os.path.join(S, "live", name)
     if os.path.exists(out):
         os.remove(out)
-    p = subprocess.Popen([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1",
+    p = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1",
                           "-timeout", "60", "-i", "rtmp://127.0.0.1:1935/live/test", "-c", "copy", "-f", "flv", out],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)

@@ -398,11 +398,21 @@ function runLoop(lp) {
     try { focused = window.top.document.hasFocus(); } catch (_) { focused = true; }
   }
   const ultra = !!(window.isUltra && window.isUltra());
-  const moving = f.animate && !ultra && focused && document.visibilityState !== 'hidden';
+  // data-still: the deck paused its preview (ten seconds without input, see
+  // deck.js) - a canvas loop is no CSS animation, so it has to ask.
+  const still = document.documentElement.hasAttribute('data-still');
+  const moving = f.animate && !ultra && !still && focused && document.visibilityState !== 'hidden';
   const now = performance.now();
   if (moving && lp.last) lp.frac = (lp.frac + (now - lp.last) / 1000 / f.lap) % 1;
   lp.last = moving ? now : 0;
-  drawLoop(lp, f.animate && !ultra ? lp.frac : 0);
+  // Standing still, the ring is drawn once: the 500 ms check below used to
+  // clear and redraw the same frame twice a second.
+  const shown = f.animate && !ultra ? lp.frac : 0;
+  if (moving || lp.drawnFrame !== f || lp.drawnFrac !== shown) {
+    drawLoop(lp, shown);
+    lp.drawnFrame = f;
+    lp.drawnFrac = shown;
+  }
   if (moving) lp.tick = setTimeout(() => runLoop(lp), 1000 / LOOP_FPS);
   else if (f.animate && !ultra && document.visibilityState !== 'hidden') {
     lp.tick = setTimeout(() => runLoop(lp), 500);          // back in front yet?

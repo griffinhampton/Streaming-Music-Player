@@ -14,11 +14,11 @@ def post(path, data=None):
         return json.loads(r.read())
 
 def cpu(seconds=6):
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", f'& "{S}\cpuby.ps1" -Match testrig -Seconds {seconds}'], capture_output=True, text=True, timeout=120).stdout
+    out = subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\cpuby.ps1" -Match testrig -Seconds {seconds}'], capture_output=True, text=True, timeout=120).stdout
     return " | ".join(l.strip().replace(" % of one core", "%").replace("  ", " ") for l in out.splitlines() if any(k in l for k in ("browser", "gpu-process", "renderer", "TOTAL")))
 
 def fps(title="Canvas: P5 park"):
-    out = subprocess.run([sys.executable, os.path.join(S, "wgc.py"), "window", title, os.path.join(S, "live", "p5park.png"), "1", "half"], capture_output=True, text=True).stdout
+    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(S, "wgc.py"), "window", title, os.path.join(S, "live", "p5park.png"), "1", "half"], capture_output=True, text=True).stdout
     return " ".join(l.split(";")[0] for l in out.splitlines() if l.startswith("frames"))
 
 def step(tag):

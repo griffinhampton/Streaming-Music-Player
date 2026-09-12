@@ -20,13 +20,13 @@ def post(path, data=None):
 
 
 def cpu(match, seconds):
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", f'& "{S}\cpuby.ps1" -Match \'{match}\' -Seconds {seconds}'],
+    out = subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\cpuby.ps1" -Match \'{match}\' -Seconds {seconds}'],
                          capture_output=True, text=True, timeout=120).stdout
     return " | ".join(l.strip() for l in out.splitlines() if any(k in l for k in ("browser", "gpu-process", "renderer", "TOTAL")))
 
 
 def wgc(title):
-    out = subprocess.run([sys.executable, os.path.join(S, "wgc.py"), "window", title, os.path.join(S, "live", "p5min.png"), "1", "half"],
+    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(S, "wgc.py"), "window", title, os.path.join(S, "live", "p5min.png"), "1", "half"],
                          capture_output=True, text=True).stdout
     return " ".join(l for l in out.splitlines() if l.startswith("frames"))
 

@@ -38,7 +38,7 @@ def post(path, data=None):
 
 
 def ps(script, timeout=120):
-    return subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
+    return subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=timeout).stdout
 
 
 def procs():
@@ -118,7 +118,7 @@ time.sleep(10)
 out = os.path.join(S, "live", "p5stress.flv")
 if os.path.exists(out):
     os.remove(out)
-sk = subprocess.Popen([os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1", "-timeout", "120",
+sk = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1", "-timeout", "120",
                        "-i", "rtmp://127.0.0.1:1935/live/test", "-c", "copy", "-f", "flv", out], stdout=subprocess.DEVNULL,
                       stderr=open(os.path.join(S, "live", "p5stress_sink.err"), "w"))
 time.sleep(1)
@@ -153,10 +153,10 @@ mem = get("/api/debug/mem")
 say("mem before stop:", json.dumps({k: mem.get(k) for k in ("working_set_mb", "private_mb", "gc_objects", "threads")}))
 say("stop:", json.dumps(post("/api/live/stop")))
 sk.wait(30)
-probe = subprocess.run([os.path.join(FF, "ffprobe.exe"), "-v", "error", "-show_entries",
+probe = subprocess.run(creationflags=0x08000000, args=[os.path.join(FF, "ffprobe.exe"), "-v", "error", "-show_entries",
                         "stream=codec_name,width,height,avg_frame_rate:format=duration", "-of", "default=nw=1", out],
                        capture_output=True, text=True).stdout.strip().replace("\n", " ")
-keys = subprocess.run([os.path.join(FF, "ffprobe.exe"), "-v", "error", "-select_streams", "v:0", "-show_entries",
+keys = subprocess.run(creationflags=0x08000000, args=[os.path.join(FF, "ffprobe.exe"), "-v", "error", "-select_streams", "v:0", "-show_entries",
                        "frame=key_frame,pts_time", "-of", "csv=p=0", out], capture_output=True, text=True).stdout.splitlines()
 kf = [float(l.split(",")[1]) for l in keys if l.startswith("1,")]
 gaps = [round(b - a, 2) for a, b in zip(kf, kf[1:])]
