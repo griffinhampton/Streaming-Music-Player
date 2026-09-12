@@ -58,7 +58,7 @@ for key in ("just_chatting", "gaming_landscape"):
     created.append(s["id"])
 chat, game = tmpl["just_chatting"], tmpl["gaming_landscape"]
 post("/api/canvas/live", {"id": chat["id"], "transition": "fade", "duration": 300})
-subprocess.Popen([CHROME, f"--app={BASE}/scene.html?follow=1&preview=1", "--window-size=1296,760", "--window-position=300,200",
+subprocess.Popen([CHROME, f"--app={BASE}/scene.html?follow=1&preview=1", "--window-size=1296,760", "--window-position=2960,740",
                   "--no-first-run", "--no-default-browser-check", "--force-device-scale-factor=1", "--remote-debugging-port=9448",
                   "--disable-component-update", "--disable-background-networking", "--autoplay-policy=no-user-gesture-required",
                   "--disable-features=CalculateNativeWinOcclusion", "--use-fake-ui-for-media-stream", f"--user-data-dir={prof}"])

@@ -371,7 +371,7 @@ class RtmpClient:
             self.log("no publish status from the server; sending anyway")
         self.sock.settimeout(20)
         self.alive = True
-        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader = threading.Thread(target=self._read_loop, daemon=True, name="rtmp reader")
         self._reader.start()
 
     def _read_loop(self):
@@ -693,7 +693,7 @@ class LiveEngine:
             self._q.clear()
         self._stop.clear()
         self._set_state("connecting")
-        self._sender = threading.Thread(target=self._run, daemon=True)
+        self._sender = threading.Thread(target=self._run, daemon=True, name="rtmp sender")
         self._sender.start()
         return {"ok": True, "state": self.state}
 
@@ -866,7 +866,7 @@ class LiveEngine:
         if old:
             old.close()
         stop_stats = threading.Event()
-        threading.Thread(target=self._stats_pump, args=(ws, stop_stats), daemon=True).start()
+        threading.Thread(target=self._stats_pump, args=(ws, stop_stats), daemon=True, name="live stats").start()
         try:
             while True:
                 msg = ws.recv()

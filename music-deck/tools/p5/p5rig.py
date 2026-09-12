@@ -84,8 +84,11 @@ def source_window(on):
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-srcwin*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     if on:
         subprocess.Popen([CHROME, "--app=http://127.0.0.1:8799/p0-anim.html?title=P0%20Anim%20Source&label=SRC&fps=30",
-                          "--window-size=1292,726", "--window-position=40,80", "--no-first-run", "--no-default-browser-check",
+                          "--window-size=1292,726", "--window-position=2700,620", "--no-first-run", "--no-default-browser-check",
                           "--force-device-scale-factor=1", "--disable-component-update", "--disable-background-networking",
+                          # a covered Chrome window stops drawing: keep the source alive under other windows
+                          "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+                          "--disable-features=CalculateNativeWinOcclusion",
                           f"--user-data-dir={prof}"])
         time.sleep(3)
 
@@ -264,7 +267,7 @@ if want("feeds"):
         time.sleep(1.5)
     prof = os.path.join(S, "prof-deck")
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-deck*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
-    subprocess.Popen([CHROME, f"--app={BASE}/deck.html", "--window-size=1180,820", "--window-position=200,100", "--no-first-run",
+    subprocess.Popen([CHROME, f"--app={BASE}/deck.html", "--window-size=1180,820", "--window-position=2860,640", "--no-first-run",
                       "--no-default-browser-check", "--disable-component-update", "--disable-background-networking", f"--user-data-dir={prof}"])
     time.sleep(10)
     st, f = get("/api/feeds")

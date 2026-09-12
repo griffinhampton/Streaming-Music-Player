@@ -123,6 +123,12 @@ class D3D:
     def copy(self, dst, src):
         vcall(self.context, 47, None, [c_void_p, c_void_p], dst, src)     # CopyResource
 
+    def copy_region(self, dst, src, width, height):
+        """The top-left width x height of src into dst (CopySubresourceRegion)."""
+        box = (c_uint * 6)(0, 0, 0, width, height, 1)          # D3D11_BOX: left top front right bottom back
+        vcall(self.context, 46, None, [c_void_p, c_uint, c_uint, c_uint, c_uint, c_void_p, c_uint, c_void_p],
+              dst, 0, 0, 0, 0, src, 0, box)
+
     def read_pixels(self, tex, width, height):
         """One trip to the CPU: the texture's BGRA rows and their pitch.
         For thumbnails only - the stream never comes this way."""

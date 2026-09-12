@@ -75,8 +75,8 @@ class Overlay:
         # Parked: moved off every screen while it keeps rendering - a capture
         # still sees it, the desktop does not.
         self.parked = False
-        self.minimized = False      # hosted: parked on purpose, and the page knows
-        self._minimized_from = False
+        self._closing = None        # the host we are closing ourselves
+        self.on_user_closed = None  # the server's hook: closed by hand stays closed
         self._parked_from = None
 
     # ------------------------------------------------------------- reporting
@@ -113,10 +113,10 @@ class Overlay:
         # a 221 x 1 window. None tells every caller to keep what it had.
         if self.host and self.host.alive():
             from hostwin import viewport_rect
-            minimized = self.minimized or self.host.minimized()
+            minimized = self.host.minimized()
             vp = viewport_rect(self.host.child) if self.host.child and not minimized else None
             return {"open": True, "hosted": True, "minimized": minimized,
-                    "parked": self.parked and not self.minimized,
+                    "parked": self.parked,
                     "rect": None if minimized else self.host.rect(),
                     "viewport": [self.metrics.get("inner_w"), self.metrics.get("inner_h")],
                     "visibility": self.metrics.get("visibility", ""),
@@ -208,12 +208,13 @@ class Overlay:
             inner_h = metrics["inner_h"] or height
             off_x, off_y, cw, ch = chrome_insets(child, inner_w, inner_h)
             host = HostWindow(self.host_title)
-            if not host.start(x, y, inner_w, inner_h, on_closed=self._on_host_closed):
+            if not host.start(x, y, inner_w, inner_h, on_closed=lambda h=host: self._on_host_closed(h)):
                 winwin.set_topmost(child, topmost)
                 return {"ok": True, "hosted": False, "reason": "host window failed"}
 
             adopted_at = time.time()
             if not host.adopt(child, off_x, off_y, cw, ch):
+                self._closing = host
                 host.close()
                 winwin.set_topmost(child, topmost)
                 return {"ok": True, "hosted": False, "reason": "could not adopt window"}
@@ -327,12 +328,26 @@ class Overlay:
         self._watchdog = threading.Thread(target=run, daemon=True)
         self._watchdog.start()
 
-    def _on_host_closed(self):
-        self.host = None
-        self.child = None
+    def _on_host_closed(self, host):
+        """A host window is gone: closed by us (close, rebuild, a failed
+        open), or by hand - Alt+F4, the taskbar - which the server hears
+        about, so a window the user closed is not brought back."""
+        if self.host is host:
+            self.host = None
+            self.child = None
+        elif self._closing is not host:
+            return                  # a host that never held the window
+        if self._closing is host:
+            self._closing = None
+        elif self.on_user_closed:
+            try:
+                self.on_user_closed()
+            except Exception:
+                pass
 
     def close(self):
         if self.host and self.host.alive():
+            self._closing = self.host
             self.host.close()
             self.host = None
             self.child = None
@@ -422,19 +437,16 @@ class Overlay:
         return None
 
     def minimize(self):
-        """Out of sight but alive. A hosted window is parked off screen rather
-        than minimized for real: Chrome tucked inside a minimized host keeps
-        drawing at full cost, and once restored it presents in a way a
-        capture only sees at 3-4 fps, with a busy browser process whenever it
-        is parked afterwards (measured in P5). Parked, the page sees itself
-        minimized in the snapshot and idles like Ultra."""
+        """To the taskbar without stealing focus. The page sees itself
+        minimized in the snapshot and idles like Ultra (idleHere in
+        motion.js), and Chrome shrinks with the host, so it draws next to
+        nothing. Measured in P5 with the screen on: a minimized scene costs
+        9.8% of a core against 22.0% parked in its place (22.4% if Chrome
+        is kept at full size inside the minimized host), and captures at
+        the same rate once restored. (The server refuses it for the live output
+        while on air: a minimized window cannot be captured.)"""
         if self.host and self.host.alive():
-            if not self.minimized:
-                self._minimized_from = self.parked
-                if not self.parked:
-                    self.park()
-                self.minimized = True
-            return True
+            return self.host.minimize()
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             return winwin.minimize(hwnd)
@@ -442,11 +454,7 @@ class Overlay:
 
     def restore(self):
         if self.host and self.host.alive():
-            if self.minimized:
-                self.minimized = False
-                if not self._minimized_from:
-                    self.unpark()
-            return True
+            return self.host.restore()
         hwnd = winwin.find_window(self.page_title)
         if hwnd:
             return winwin.restore(hwnd)

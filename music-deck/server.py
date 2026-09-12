@@ -18,6 +18,7 @@ import os
 # at import; the audio mixer does element-wise work only and needs none of it.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
+import functools
 import hashlib
 import json
 import mimetypes
@@ -1175,16 +1176,34 @@ def live_audio(data):
 def remember_outputs():
     """Which outputs are open right now, and whether parked. A restart brings
     them back the same way, and the watchdog re-opens one that dies."""
+    for c in COMPONENTS:
+        if c.group == "canvas":
+            c.overlay.on_user_closed = functools.partial(forget_output, c.id)
     canvas = CONFIG.setdefault("canvas", {})
     canvas["reopen"] = {c.id: {"parked": bool(c.overlay.status().get("parked"))}
                         for c in COMPONENTS if c.group == "canvas" and c.overlay.is_open()}
     save_config(CONFIG)
 
 
+def forget_output(cid):
+    """The user closed an output by hand (Alt+F4, the taskbar): it stays
+    closed. The watchdog brings back only what dies on its own - a Chrome
+    that crashed, a page gone quiet, the outputs of the last run."""
+    reopen = CONFIG.get("canvas", {}).get("reopen") or {}
+    if cid in reopen:
+        reopen.pop(cid, None)
+        save_config(CONFIG)
+    _log(f"outputs: {cid} was closed by hand; it stays closed"
+         + ("; the stream holds its last frame until the output is opened again"
+            if cid == "live" and LIVE.state in ("connecting", "live", "reconnecting") else ""))
+    HUB.broadcast()
+
+
 def open_output(cid, parked=False):
     comp = COMPONENTS.get(cid)
     if not comp:
         return {"ok": False, "reason": "no such output"}
+    comp.overlay.on_user_closed = functools.partial(forget_output, cid)
     res = window_action(comp.overlay, comp.config(CONFIG), comp.page, "open", {})
     if res.get("ok") and parked:
         window_action(comp.overlay, comp.config(CONFIG), comp.page, "park", {})
@@ -2208,9 +2227,18 @@ class Handler(BaseHTTPRequestHandler):
             comp = COMPONENTS.resolve(urllib.parse.unquote(key))
             if not comp:
                 return self._json({"ok": False, "reason": "no such component"}, 404)
+            if (comp.id == "live" and action == "minimize" and NATIVE.status().get("running")
+                    and LIVE.state in ("connecting", "live", "reconnecting")):
+                # Windows cannot capture a minimized window: the viewers would
+                # get a frozen picture. Parking keeps it drawing off screen.
+                return self._json({"ok": False, "reason": "the live output is on air and a minimized window "
+                                   "cannot be captured - park it instead"}, 409)
             res = window_action(comp.overlay, comp.config(CONFIG), comp.page, action, data)
             if comp.group == "canvas" and action in ("open", "close", "park", "unpark", "rebuild"):
                 remember_outputs()
+                if (comp.id == "live" and action in ("open", "rebuild") and res.get("ok")
+                        and LIVE.state in ("connecting", "live", "reconnecting")):
+                    rejoin_live()           # the stream follows its new window
             if action != "metrics":
                 HUB.broadcast()             # minimized, parked, moved: the pages hear it now
             return self._json(res)
@@ -2320,7 +2348,7 @@ def main():
     CAPTIONS.configure(captions_settings())
     if CONFIG.get("captions", {}).get("enabled"):
         CAPTIONS.start()
-    threading.Thread(target=_pump, daemon=True).start()
+    threading.Thread(target=_pump, daemon=True, name="feed pump").start()
     if CONFIG["music_dirs"]:
         threading.Thread(target=lambda: LIBRARY.scan(CONFIG["music_dirs"]),
                          daemon=True).start()

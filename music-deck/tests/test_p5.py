@@ -16,6 +16,10 @@ import feeds    # noqa: E402
 import guard    # noqa: E402
 import live     # noqa: E402
 import scenes   # noqa: E402
+try:
+    import overlay  # noqa: E402  (Windows only: it drives Win32 windows)
+except (ImportError, AttributeError, OSError):
+    overlay = None
 
 
 class Trust(unittest.TestCase):
@@ -164,6 +168,66 @@ class NativeSources(unittest.TestCase):
         self.assertEqual((uv[1], uv[3]), (0.0, 1.0))
         # no size known yet: the whole box, whole picture
         self.assertEqual(capture.Compositor._place((1, 2, 3, 4), None, "cover"), ((1, 2, 4, 6), (0.0, 0.0, 1.0, 1.0)))
+
+
+class FakeHost:
+    """Stands in for a HostWindow: closing it reports back to its owner,
+    synchronously when asked to, which is the worst case for a race."""
+    def __init__(self, owner=None):
+        self.owner = owner
+        self.closed = 0
+
+    def alive(self):
+        return not self.closed
+
+    def close(self):
+        self.closed += 1
+        if self.owner:
+            self.owner._on_host_closed(self)
+
+
+@unittest.skipIf(overlay is None, "Windows only")
+class ClosedByHand(unittest.TestCase):
+    """A window the user closes (Alt+F4, the taskbar) is told apart from
+    the closes the app makes itself, so the watchdog never brings back a
+    window the user closed."""
+    def make(self):
+        ov = overlay.Overlay.__new__(overlay.Overlay)
+        ov.host, ov.child, ov._closing = None, None, None
+        self.heard = []
+        ov.on_user_closed = lambda: self.heard.append(1)
+        return ov
+
+    def test_closed_by_hand_is_reported(self):
+        ov = self.make()
+        h = FakeHost()
+        ov.host = h
+        ov._on_host_closed(h)
+        self.assertEqual(self.heard, [1])
+        self.assertIsNone(ov.host)
+
+    def test_our_own_close_is_not_even_when_the_callback_races_it(self):
+        ov = self.make()
+        h = FakeHost(owner=ov)          # reports while close() is still running
+        ov.host = h
+        self.assertTrue(ov.close())
+        self.assertEqual(self.heard, [])
+        self.assertIsNone(ov.host)
+        self.assertIsNone(ov._closing)
+
+    def test_a_host_that_never_held_the_window_is_ignored(self):
+        ov = self.make()
+        current = FakeHost()
+        ov.host = current
+        stray = FakeHost()
+        ov._on_host_closed(stray)                   # an old or never-adopted host
+        self.assertEqual(self.heard, [])
+        self.assertIs(ov.host, current)
+        ov._closing = stray                         # a failed adoption, closed by us
+        ov._on_host_closed(stray)
+        self.assertEqual(self.heard, [])
+        self.assertIsNone(ov._closing)
+        self.assertIs(ov.host, current)
 
 
 class KeyNeverLogged(unittest.TestCase):

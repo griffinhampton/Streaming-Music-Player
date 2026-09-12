@@ -214,7 +214,10 @@ class HostWindow:
             if wparam == SIZE_RESTORED and self._topmost:
                 self.set_topmost(True)
             if self.child:
-                # However the host came to be resized, Chrome has to follow.
+                # However the host came to be resized, Chrome has to follow -
+                # minimized too: at the host's stub size Chrome draws next to
+                # nothing (a minimized scene 9.8% of a core; kept at full size
+                # inside the minimized host, 22.4% - measured in P5).
                 self.schedule_align(0.12)
         if msg == WM_CLOSE:
             if self.child:
@@ -472,9 +475,7 @@ class HostWindow:
     # ------------------------------------------------------------- minimize
 
     def minimize(self):
-        """Send the host to the taskbar without stealing focus. (The overlay
-        prefers parking a hosted window instead: Chrome inside a minimized
-        host comes back presenting badly for capture - see Overlay.minimize.)"""
+        """Send the host to the taskbar without stealing focus."""
         if not self.alive():
             return False
         user32.ShowWindow(wintypes.HWND(self.hwnd), SW_SHOWMINNOACTIVE)

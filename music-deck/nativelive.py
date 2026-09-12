@@ -9,6 +9,7 @@ process, no pixel ever on the CPU but a camera's. Audio comes from
 against one clock.
 """
 
+import ctypes
 import json
 import threading
 import time
@@ -171,7 +172,8 @@ class NativeVideo:
         self._specs_changed.set()
         self._stop.clear()
         self._ready.clear()
-        self._thread = threading.Thread(target=self._run, args=(hwnd, monitor, int(fps), int(kbps)), daemon=True)
+        self._thread = threading.Thread(target=self._run, args=(hwnd, monitor, int(fps), int(kbps)), daemon=True,
+                                        name="native video")
         self._thread.start()
         return {"ok": True}
 
@@ -185,6 +187,12 @@ class NativeVideo:
 
     def _run(self, hwnd, monitor, fps, kbps):
         cap = enc = conv = srcs = None
+        self._crop = None
+        # Windows Graphics Capture only sees what the compositor draws, and it
+        # stops drawing when the display sleeps: the viewers would get a
+        # frozen picture. Hold the display on for as long as this thread
+        # streams (the request belongs to the thread and ends with it).
+        _keep_display_on(True)
         try:
             d3d = capture.D3D()
             cap = capture.WindowCapture(d3d, hwnd=hwnd, monitor=monitor)
@@ -195,21 +203,28 @@ class NativeVideo:
                     raise OSError("no frame arrived from the window")
                 time.sleep(0.01)
             w, h = cap.texture_size
-            enc = mfenc.H264Encoder(d3d, w, h, fps, kbps, log=self.log)
+            # NV12 and H.264 need even sizes. A window with an odd side streams
+            # without its last row or column: one GPU copy per frame, and only then.
+            ew, eh = w & ~1, h & ~1
+            self._d3d, self._frame_size = d3d, (w, h)
+            if (ew, eh) != (w, h):
+                self._crop = d3d.texture(ew, eh)
+            enc = mfenc.H264Encoder(d3d, ew, eh, fps, kbps, log=self.log)
             self._enc = enc
             if enc.input_format == "nv12":
                 # Convert (and composite) on the GPU ourselves; see capture.Compositor.
-                conv = capture.Compositor(d3d, w, h, fps)
+                conv = capture.Compositor(d3d, ew, eh, fps)
                 srcs = _Sources(d3d, self.log)
-            self.stats.update(size=f"{w}x{h}", encoder=enc.name,
+            self.stats.update(size=f"{w}x{h}", encoded=f"{ew}x{eh}", encoder=enc.name,
                               settings=dict(enc.codec_settings, input=enc.input_format))
-            self.engine.push(K_META, 0, 0, _meta(w, h, fps, kbps))
+            self.engine.push(K_META, 0, 0, _meta(ew, eh, fps, kbps))
             self._ready.set()
             self._loop(cap, enc, conv, srcs, fps)
         except OSError as exc:
             self.error = str(exc)
             self.log(f"native video: {exc}")
         finally:
+            _keep_display_on(False)
             self._ready.set()
             self._enc = None
             if enc:
@@ -220,13 +235,17 @@ class NativeVideo:
                 conv.close()
             if cap:
                 cap.close()
+            if self._crop:
+                capture.release(self._crop)
+                self._crop = None
 
     def _loop(self, cap, enc, conv, srcs, fps):
-        """One pass per tick, and the thread sleeps in between: take the
-        newest frame, hand it to the encoder if it is asking, collect what
-        the encoder finished. The encoder is asynchronous, so a frame's
-        bytes come out a tick or two later - milliseconds on a stream that
-        is seconds behind anyway, and no thread spinning for them."""
+        """Each tick: take the newest frame, key the sources in, and hold
+        the result until the encoder asks for it. While a frame waits the
+        thread checks every 2 ms (the asynchronous encoder asks when it is
+        ready, not at the tick - offering only at the tick halves the frame
+        rate, measured twice); with nothing waiting it sleeps to the next
+        tick. Finished frames are collected on every pass."""
         period = 1.0 / fps
         t0 = time.perf_counter()
         next_tick = t0
@@ -238,34 +257,11 @@ class NativeVideo:
         last_frame = t0
         while not self._stop.is_set():
             now = time.perf_counter()
-            if now < next_tick:
-                time.sleep(min(next_tick - now, 0.05))
-                continue
-            next_tick += period
-            if now - next_tick > 1.0:              # fell far behind: start afresh
-                next_tick = now + period
-            if srcs and self._specs_changed.is_set():
-                self._specs_changed.clear()
-                srcs.apply(self._specs)
-                conv.set_sources(srcs.inputs())
-                self.stats["sources"] = srcs.status()
-            fresh = cap.poll()
-            if fresh:
-                last_frame = now
-            self.stats["stalled"] = now - last_frame > 2.0
-            if fresh or cap.texture is not None:
-                if cap.texture_size != (enc.width, enc.height):
-                    raise OSError(f"the output window changed size to {cap.texture_size[0]}x{cap.texture_size[1]} "
-                                  f"while streaming at {enc.width}x{enc.height} - stop and start again to "
-                                  f"stream at the new size")
-                if pending is not None:
-                    self.stats["dropped"] += 1     # the encoder never asked during a whole tick
-                if srcs:
-                    srcs.tick()
-                # The frame the encoder gets: NV12 of our making (sources keyed
-                # in), or the captured BGRA when the encoder converts itself.
-                pending = conv.convert(cap.texture) if conv else cap.texture
-                tick += 1
+            if now >= next_tick:
+                next_tick += period
+                if now - next_tick > 1.0:          # fell far behind: start afresh
+                    next_tick = now + period
+                pending, tick, last_frame = self._tick(cap, enc, conv, srcs, now, pending, tick, last_frame)
             if pending is not None and enc.ready():
                 if enc.submit(pending, int(tick * 1e7 / fps), int(1e7 / fps)):
                     pending = None
@@ -282,6 +278,49 @@ class NativeVideo:
                 rate_n, rate_t = 0, now
                 if srcs and srcs.items:
                     self.stats["sources"] = srcs.status()
+            wait = next_tick - time.perf_counter()
+            if wait > 0:
+                time.sleep(min(wait, 0.002 if pending is not None else 0.05))
+
+    def _tick(self, cap, enc, conv, srcs, now, pending, tick, last_frame):
+        """The work of one tick: sources that changed, the newest frame,
+        the sources keyed in. Returns the frame now waiting for the encoder."""
+        if srcs and self._specs_changed.is_set():
+            self._specs_changed.clear()
+            srcs.apply(self._specs)
+            conv.set_sources(srcs.inputs())
+            self.stats["sources"] = srcs.status()
+        fresh = cap.poll()
+        if fresh:
+            last_frame = now
+        self.stats["stalled"] = now - last_frame > 2.0
+        if fresh or cap.texture is not None:
+            if cap.texture_size != self._frame_size:
+                raise OSError(f"the output window changed size to {cap.texture_size[0]}x{cap.texture_size[1]} "
+                              f"while streaming it at {self._frame_size[0]}x{self._frame_size[1]} - stop and "
+                              f"start again to stream at the new size")
+            if pending is not None:
+                self.stats["dropped"] += 1         # the encoder never asked during a whole tick
+            if srcs:
+                srcs.tick()
+            # The frame the encoder gets: NV12 of our making (sources keyed
+            # in), or the captured BGRA when the encoder converts itself.
+            frame = cap.texture
+            if self._crop:
+                self._d3d.copy_region(self._crop, frame, enc.width, enc.height)
+                frame = self._crop
+            pending = conv.convert(frame) if conv else frame
+            tick += 1
+        return pending, tick, last_frame
+
+
+def _keep_display_on(on):
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x1, 0x2
+    try:
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | (ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED if on else 0))
+    except (AttributeError, OSError):
+        pass
 
 
 def _meta(w, h, fps, kbps):

@@ -381,7 +381,7 @@ class AudioMixer:
             return
         self.error = ""
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread = threading.Thread(target=self._run, daemon=True, name="audio mixer")
         self._thread.start()
 
     def stop(self):

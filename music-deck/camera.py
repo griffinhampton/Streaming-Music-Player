@@ -123,8 +123,11 @@ class Camera:
         release(src)
         check(hr, "camera source reader")
         self.reader = reader
-        # The native mode nearest what the layer asks for; the reader can
-        # change the pixel format but not the size.
+        # The native mode nearest what the layer asks for. The reader's video
+        # processing changes the pixel format but never the size, so the
+        # camera itself is switched to that mode first; asking the reader
+        # for RGB32 at a size alone leaves the camera in its default mode
+        # (this one kept sending 1280x720 while we read 640x480 - P5).
         best = None
         for i in range(64):
             mt = c_void_p()
@@ -145,6 +148,9 @@ class Camera:
             self.close()
             raise OSError(f"{self.name}: no video modes")
         _, mt, w, h, fr, rate = best
+        hr = vcall(reader, 7, c_int32, [c_uint, c_void_p, c_void_p], FIRST_VIDEO_STREAM, None, mt)
+        if hr != 0:
+            self.log(f"camera: {self.name} kept its own mode ({w}x{h} refused, 0x{hr & 0xFFFFFFFF:08x})")
         want = c_void_p()
         mfplat.MFCreateMediaType.restype = c_int32
         check(mfplat.MFCreateMediaType(byref(want)), "MFCreateMediaType")
@@ -158,10 +164,17 @@ class Camera:
         if hr != 0:
             self.close()
             raise OSError(f"{self.name}: RGB32 at {w}x{h} refused (0x{hr & 0xFFFFFFFF:08x})")
+        # What the reader settled on is the truth: size, rate and stride.
         cur = c_void_p()
         stride = 0
         if vcall(reader, 6, c_int32, [c_uint, POINTER(c_void_p)], FIRST_VIDEO_STREAM, byref(cur)) == 0 and cur:
             stride = _attr_uint(cur, MF_MT_DEFAULT_STRIDE) or 0
+            size = _attr_uint64(cur, MF_MT_FRAME_SIZE)
+            if size:
+                w, h = size >> 32, size & 0xFFFFFFFF
+            got = _attr_uint64(cur, MF_MT_FRAME_RATE)
+            if got:
+                fr = (got >> 32) / max(1, got & 0xFFFFFFFF)
             release(cur)
         self.width, self.height, self.fps = int(w), int(h), round(fr, 2)
         # A negative stride is Media Foundation's way of saying bottom-up;
@@ -171,7 +184,7 @@ class Camera:
         self.flip = stride < 0
         self.stride = abs(int(stride)) or self.width * 4
         self.texture = d3d.texture(self.width, self.height)
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread = threading.Thread(target=self._run, daemon=True, name="camera reader")
         self._thread.start()
         self.log(f"camera: {self.name} {self.width}x{self.height}@{self.fps}" + (" (bottom-up)" if self.flip else ""))
 
@@ -213,7 +226,9 @@ class Camera:
             data, self._latest = self._latest, None
         if data is None or not self.texture:
             return self.have
-        if len(data) < self.height * self.stride:
+        if len(data) != self.height * self.stride:
+            # Not the picture we were promised: never copy it in misread.
+            self.error = f"camera frames are {len(data)} bytes, expected {self.height * self.stride}"
             return self.have
         # One copy straight into the texture (UpdateSubresource); the row
         # pitch is the picture's own, so no repacking on the CPU.

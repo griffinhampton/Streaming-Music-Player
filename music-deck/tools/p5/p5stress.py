@@ -1,5 +1,6 @@
 """The P5 stress on the rig: a scene with 60 layers, the four components,
-one camera (the IR one) and one window source, LIVE natively to the local
+one camera and one window source (both native: the server's compositor
+keys them in), LIVE natively to the local
 sink for N minutes. Server and the scene's Chrome logged every minute:
 memory, threads, CPU, fps, drops.
 
@@ -41,12 +42,19 @@ def ps(script, timeout=120):
 
 
 def procs():
-    """(cpu seconds, working set MB, threads) of the server, and of the rig's Chrome as a whole."""
-    out = ps("$s = (Get-NetTCPConnection -State Listen -LocalPort 8799).OwningProcess | Select-Object -First 1; $p = Get-Process -Id $s; "
-             "$c = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*testrig*' } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }; "
-             "'{0} {1} {2} {3} {4} {5}' -f $p.TotalProcessorTime.TotalSeconds, [math]::Round($p.WorkingSet64/1MB), $p.Threads.Count, "
-             "(($c | Measure-Object -Property TotalProcessorTime -Sum).Sum.TotalSeconds), [math]::Round((($c | Measure-Object -Property WorkingSet64 -Sum).Sum)/1MB), $c.Count").split()
-    return (float(out[0]), int(out[1]), int(out[2]), float(out[3] or 0), int(out[4] or 0), int(out[5] or 0)) if len(out) == 6 else (0, 0, 0, 0, 0, 0)
+    """(cpu seconds, working set MB, threads) of the server, and of the rig's Chrome as a whole.
+    (Windows PowerShell cannot Measure-Object -Sum a TimeSpan: sum the seconds.)"""
+    raw = ps("$s = (Get-NetTCPConnection -State Listen -LocalPort 8799).OwningProcess | Select-Object -First 1; $p = Get-Process -Id $s; "
+             "$c = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*testrig*' } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }); "
+             "$cs = ($c | ForEach-Object { $_.TotalProcessorTime.TotalSeconds } | Measure-Object -Sum).Sum; "
+             "$cm = ($c | ForEach-Object { $_.WorkingSet64 } | Measure-Object -Sum).Sum; "
+             "[string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0} {1} {2} {3} {4} {5}', "
+             "$p.TotalProcessorTime.TotalSeconds, [math]::Round($p.WorkingSet64/1MB), $p.Threads.Count, [double]$cs, [math]::Round($cm/1MB), $c.Count)")
+    out = raw.split()
+    if len(out) != 6:
+        say("procs: could not read the processes:", raw.strip()[:200])
+        return (0, 0, 0, 0, 0, 0)
+    return (float(out[0]), int(out[1]), int(out[2]), float(out[3]), int(out[4]), int(out[5]))
 
 
 def source_window(on):
@@ -54,8 +62,11 @@ def source_window(on):
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-srcwin*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     if on:
         subprocess.Popen([CHROME, "--app=http://127.0.0.1:8799/p0-anim.html?title=P0%20Anim%20Source&label=SRC&fps=30",
-                          "--window-size=1292,726", "--window-position=40,80", "--no-first-run", "--no-default-browser-check",
+                          "--window-size=1292,726", "--window-position=2700,620", "--no-first-run", "--no-default-browser-check",
                           "--force-device-scale-factor=1", "--disable-component-update", "--disable-background-networking",
+                          # a covered Chrome window stops drawing: keep the source alive under other windows
+                          "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+                          "--disable-features=CalculateNativeWinOcclusion",
                           f"--user-data-dir={prof}"])
         time.sleep(3)
 
@@ -79,8 +90,8 @@ close_all()
 r = post("/api/scenes", {"name": "P5 stress", "format": "horizontal"})
 s = r["scene"]
 s["background"] = {"mode": "gradient", "color": "#101828", "color2": "#3b1d5e", "angle": 135}
-layers = [layer("capture", "Window", 0, 0, 1280, 720, {"mode": "browser", "source": {"kind": "window", "title": "P0 Anim Source"}, "fps": 30}),
-          layer("camera", "Camera", 1440, 60, 440, 330, {"device": "IR", "width": 640, "height": 480, "fps": 30, "mirror": True, "mask": "rounded"}),
+layers = [layer("capture", "Window", 0, 0, 1280, 720, {"mode": "native", "fit": "contain", "source": {"kind": "window", "title": "P0 Anim Source"}, "fps": 30}),
+          layer("camera", "Camera", 1440, 60, 440, 330, {"mode": "native", "device": "Integrated", "width": 640, "height": 480, "fps": 30, "mirror": True, "mask": "rounded"}),
           layer("component", "Now Playing", 60, 830, 760, 190, {"component": "np"}),
           layer("component", "Lyrics", 860, 760, 500, 300, {"component": "lyrics"}),
           layer("component", "Queue", 1400, 420, 480, 300, {"component": "queue"}),
@@ -134,7 +145,9 @@ while time.time() - t0 < minutes * 60:
     say("{:>6.1f} {:>7} {:>4} {:>6.1f} {:>8.1f} {:>7} {:>6} {:>5} {:>5} {:>6} {:>7} {:>5} {:>7}".format(
         mins, m1, th1, 100 * (c1 - last_c) / (now - last_t), 100 * (cc1 - last_cc) / (now - last_t), cm1, s_["kbps"], s_["vfps"], s_["afps"],
         s_["delay_ms"], s_["dropped"], s_["reconnects"], st["state"]) +
-        f"  native {st['native']['fps']} fps drop {st['native']['dropped']} stalled {st['native']['stalled']}  audio frames {st['audio'].get('frames')} drop {st['audio'].get('dropped')}  err {st['native']['error'] or st['audio'].get('error') or st['error'] or '-'}")
+        f"  native {st['native']['fps']} fps drop {st['native']['dropped']} stalled {st['native']['stalled']}"
+        f"  src {' '.join(str(x.get('kind')) + ':' + str(x.get('frames')) + ('!' + str(x['error']) if x.get('error') else '') for x in st['native'].get('sources') or []) or '-'}"
+        f"  audio frames {st['audio'].get('frames')} drop {st['audio'].get('dropped')}  err {st['native']['error'] or st['audio'].get('error') or st['error'] or '-'}")
     last_c, last_cc, last_t = c1, cc1, now
 mem = get("/api/debug/mem")
 say("mem before stop:", json.dumps({k: mem.get(k) for k in ("working_set_mb", "private_mb", "gc_objects", "threads")}))

@@ -1,7 +1,7 @@
-"""Recovery on the rig (P5): the live output's window killed mid-stream
-comes back and re-joins the stream; every output's page killed (renderers
-shot) gets rebuilt; a server restart brings the outputs back, parked ones
-parked.
+"""Recovery on the rig (P5): the live output's window closed by hand
+mid-stream stays closed, and opening it again from the deck re-joins the
+stream; every output's page killed (renderers shot) gets rebuilt; a server
+restart brings the outputs back, parked ones parked.
 
     python p5recover.py
 """
@@ -86,29 +86,37 @@ r = post("/api/components/live/open")
 check("live output opens", r.get("ok") and r.get("hosted"), json.dumps(r)[:100])
 time.sleep(6)
 
-# ---- 1. the live window dies mid-stream
+# ---- 1. the live window closed by hand mid-stream
 sk, out = sink("p5_recover.flv")
 r = post("/api/live/start", {"url": "rtmp://127.0.0.1:1935/live", "key": "test", "preset": "720p30", "source": "live",
                              "audio": {"mic": False, "system": False}})
 check("live starts natively", r.get("ok") and r.get("path") == "native", json.dumps(r)[:120])
 time.sleep(6)
-st = get("/api/live/status")
-f0 = st["native"]["frames"]
 hwnd = capture.find_window("Awesome Streaming Deck - Canvas (live)")
-print("   killing the live window", hwnd)
-ctypes.windll.user32.PostMessageW(ctypes.c_void_p(hwnd), 0x0010, 0, 0)          # WM_CLOSE to the host
+print("   closing the live window by hand (WM_CLOSE to the host, as Alt+F4 does)", hwnd)
+ctypes.windll.user32.PostMessageW(ctypes.c_void_p(hwnd), 0x0010, 0, 0)
 time.sleep(1.5)
 st = get("/api/components/live/status")
 check("the window is gone", not st.get("open"), json.dumps(st)[:80])
-back = wait_for(lambda: get("/api/components/live/status").get("hosted"), 20)
-check("the watchdog opened it again within 20 s", back)
-time.sleep(6)
+came_back = wait_for(lambda: get("/api/components/live/status").get("open"), 12)
+check("the watchdog leaves it closed", not came_back)
+remembered = json.load(open(os.path.join(S, "testrig", "config.json"), encoding="utf-8"))["canvas"].get("reopen", {})
+check("it is no longer remembered as open", "live" not in remembered, json.dumps(remembered))
+check("the log says it was closed by hand", "live was closed by hand" in rig_log())
+st = get("/api/live/status")
+check("the stream carries on without it (stalled, not stopped)", st["state"] == "live" and st["native"]["stalled"],
+      f"state {st['state']}, stalled {st['native']['stalled']}")
+r = post("/api/components/live/open")
+check("opened again from the deck", r.get("ok") and r.get("hosted"), json.dumps(r)[:100])
+time.sleep(3)
+f0 = get("/api/live/status")["native"]["frames"]
+time.sleep(5)
 st = get("/api/live/status")
 f1 = st["native"]["frames"]
-check("the stream is still live and the video re-joined it", st["state"] == "live" and st["native"]["running"]
+check("the video re-joined the stream", st["state"] == "live" and st["native"]["running"]
       and f1 > f0 and not st["native"]["stalled"] and not st["native"]["error"],
       f"frames {f0} -> {f1}, stalled {st['native']['stalled']}, err {st['native']['error']!r}")
-check("the log says so", "re-joined the stream" in rig_log() and "is gone; opening it again" in rig_log())
+check("the log says so", "re-joined the stream" in rig_log())
 post("/api/live/stop")
 sk.wait(20)
 probe = subprocess.run([os.path.join(FF, "ffprobe.exe"), "-v", "error", "-select_streams", "v:0", "-count_frames",

@@ -9,6 +9,15 @@ d3d = capture.D3D()
 t0 = time.time()
 cam = camera.Camera(d3d, hint=hint, width=640, height=480, fps=30, log=print)
 print(f"opened in {time.time() - t0:.2f}s:", cam.status(), "stride", cam.stride)
+time.sleep(1.5)
+with cam._lock:
+    raw = cam._latest
+if raw:
+    px = raw[: cam.stride * cam.height]
+    rgb = [b for i, b in enumerate(px[: 640 * 4 * 40]) if i % 4 != 3]          # the first 40 rows, alpha skipped
+    print("raw buffer from Media Foundation: bytes", len(raw), "min", min(rgb), "max", max(rgb), "mean", round(sum(rgb) / len(rgb), 1))
+else:
+    print("raw buffer: none yet")
 ups = 0
 t0 = time.time()
 while time.time() - t0 < 4:
