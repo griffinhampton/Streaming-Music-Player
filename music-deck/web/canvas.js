@@ -240,6 +240,7 @@ async function refreshScenes() {
 
 let liveNow = { state: 'idle' }, liveScene = '';
 function onState(s) {
+  inspectorsOnState(s);                 // the deck's designs and fonts, for the inspectors
   store.scenes = s.scenes || store.scenes;
   paintScenePick();
   liveNow = s.live || liveNow;
@@ -624,7 +625,7 @@ function renderTree() {
 }
 function layerRow(l, level) {
   const hidden = l.visible === false;
-  return `<div class="row${hidden ? ' is-hidden' : ''}" role="treeitem" aria-level="${level}" aria-selected="${store.sel.has(l.id)}"
+  return `<div class="row${hidden ? ' is-hidden' : ''}${liveIds.has(l.id) ? ' live-src' : ''}" role="treeitem" aria-level="${level}" aria-selected="${store.sel.has(l.id)}"
     tabindex="-1" data-key="${esc(l.id)}" data-id="${esc(l.id)}" draggable="true" style="--indent:${(level - 1) * 18}px">
     <span class="row-type" aria-hidden="true" title="${esc(l.type)}">${TYPE_ICON[l.type] || '□'}</span>
     <span class="row-name" title="Double-click or F2 to rename">${esc(l.name)}</span>
@@ -767,6 +768,7 @@ function renderInspector() {
       <div class="f"><span>Rotation</span><input class="input" ${NUM_ATTRS} data-min="-360" data-max="360" data-mfield="transform.rotation" placeholder="Mixed"></div>
       <div class="f"><span>Opacity</span><input type="range" min="0" max="100" data-mfield="style.opacity" data-scale="100"></div>
       <p class="hint">Number fields take math, for each layer: +20, *2, /2, -=20, or 1920/3.</p></div>`;
+    mountInspector(el);            // the sections' own controls (inspectors.js)
   }
   // Values, except in the field being typed in.
   el.querySelectorAll('[data-field]').forEach((node) => {
@@ -785,6 +787,7 @@ function renderInspector() {
     const v = getPath(sel[0], node.dataset.mfield);
     node.value = Math.round((Number(v) || 0) * Number(node.dataset.scale || 1));
   });
+  syncInspector(el);
 }
 // Number fields are text, so they can take math (see numCommit).
 const NUM_ATTRS = 'type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-kind="num"';
@@ -799,62 +802,28 @@ function sel_(field, id, opts, label) {
 function sceneInspector() {
   return `<div class="insp"><h2>Scene <span class="tag">${store.scene.width} × ${store.scene.height}</span></h2>
     <div class="f"><span>Name</span><input class="input" data-layer="" data-field="name" maxlength="80"></div>
-    <h3>Background</h3>
-    ${sel_('background.mode', '', [['solid', 'Solid'], ['gradient', 'Gradient'], ['image', 'Image'], ['none', 'None']], 'Kind')}
-    <div class="f"><span>Color</span><input type="color" data-layer="" data-field="background.color"></div>
-    <div class="f"><span>Second color</span><input type="color" data-layer="" data-field="background.color2"></div>
-    <div class="f"><span>Angle</span><input class="input" ${NUM_ATTRS} data-min="0" data-max="360" data-layer="" data-field="background.angle"></div>
+    ${sceneBackgroundSection()}
     <h3>Transparency</h3>
     ${sel_('transparency', '', [['opaque', 'Opaque'], ['see-through', 'See-through'], ['key', 'Key color']], 'Output')}
     <div class="f"><span>Key color</span><input type="color" data-layer="" data-field="key_color"></div>
     <p class="hint">Nothing selected: these are the scene's own settings. Pick a layer on the canvas or in the list to edit it.</p></div>`;
 }
+/* One layer: where it is, then its own sections (inspectors.js) - what it
+   shows, its look and effects, a border loop, animation and triggers. */
 function layerInspector(l) {
   const id = l.id;
-  let props = '';
-  const P = (label, field, type = 'text', extra = '') => type === 'color'
-    ? `<div class="f"><span>${label}</span><input type="color" data-layer="${esc(id)}" data-field="props.${field}"></div>`
-    : `<div class="f"><span>${label}</span><input class="input" ${type === 'number' ? NUM_ATTRS : `type="${type}"`} data-layer="${esc(id)}" data-field="props.${field}" ${extra}></div>`;
-  if (l.type === 'text') {
-    props = `<div class="f"><span>Text</span><textarea class="input" data-layer="${esc(id)}" data-field="props.text" rows="3"></textarea></div>
-      ${P('Size', 'size', 'number', 'data-min="6" data-max="600"')}${P('Color', 'color', 'color')}
-      ${sel_('props.weight', id, [['400', 'Regular'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Heavy']], 'Weight')}
-      ${sel_('props.align', id, [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'Align')}
-      <p class="hint">Live text: {title} {artist} {album} {elapsed} {duration} {time} {date} {caption}</p>`;
-  } else if (l.type === 'image') {
-    props = `${P('Picture', 'src', 'text', 'placeholder="an asset, or pick one in Assets"')}
-      ${sel_('props.fit', id, [['cover', 'Cover'], ['contain', 'Contain'], ['fill', 'Stretch'], ['tile', 'Tile']], 'Fit')}`;
-  } else if (l.type === 'shape') {
-    props = `${sel_('props.kind', id, [['rect', 'Rectangle'], ['ellipse', 'Ellipse'], ['line', 'Line'], ['frame', 'Frame with a hole']], 'Shape')}${P('Fill', 'fill', 'color')}`;
-  } else if (l.type === 'component') {
-    props = sel_('props.component', id, [['np', 'Now Playing'], ['lyrics', 'Lyrics'], ['queue', 'Queue'], ['captions', 'Captions']], 'Window');
-  } else if (l.type === 'camera') {
-    props = `${sel_('props.mode', id, [['', 'In the page'], ['native', 'Native (while LIVE)']], 'Drawn')}
-      ${sel_('props.mask', id, [['none', 'None'], ['rounded', 'Rounded'], ['circle', 'Circle']], 'Mask')}
-      <div class="f"><span>Mirror</span><input type="checkbox" data-layer="${esc(id)}" data-field="props.mirror"></div>`;
-  } else if (l.type === 'capture') {
-    props = `${P('Window', 'source.title', 'text', 'placeholder="the window\'s title"')}
-      ${sel_('props.fit', id, [['contain', 'Contain'], ['cover', 'Cover']], 'Fit')}`;
-  } else if (l.type === 'reactive') {
-    props = `${P('Idle', 'idle')}${P('Talking', 'talking')}${P('Blink', 'blink')}`;
-  } else if (l.type === 'background') {
-    props = P('Color', 'color', 'color');
-  }
-  return `<div class="insp"><h2><span>${esc(l.name)}</span><span class="tag">${esc(l.type)}</span></h2>
+  return `<div class="insp"><h2><span>${esc(l.name)}</span><span class="tag">${esc(TYPE_NAME[l.type] || l.type)}</span></h2>
+    <p class="insp-live" data-live-note hidden></p>
     <div class="f"><span>Name</span><input class="input" data-layer="${esc(id)}" data-field="name" maxlength="80"></div>
     <h3>Position and size</h3>
     <div class="grid4">${num('X', 'transform.x', id)}${num('Y', 'transform.y', id)}${num('W', 'transform.w', id, 'data-min="1"')}${num('H', 'transform.h', id, 'data-min="1"')}</div>
     <div class="f"><span>Rotation</span><input class="input" ${NUM_ATTRS} data-min="-360" data-max="360" data-layer="${esc(id)}" data-field="transform.rotation"></div>
     <h3>Align to the canvas</h3>${alignBar(1)}
-    <h3>Look</h3>
-    <div class="f"><span>Opacity</span><input type="range" min="0" max="100" data-layer="${esc(id)}" data-field="style.opacity" data-scale="100"></div>
-    <div class="f"><span>Corners</span><input class="input" ${NUM_ATTRS} data-min="0" data-layer="${esc(id)}" data-field="style.radius"></div>
-    ${sel_('style.blend', id, [['normal', 'Normal'], ['multiply', 'Multiply'], ['screen', 'Screen'], ['overlay', 'Overlay'], ['lighten', 'Lighten'], ['darken', 'Darken']], 'Blend')}
     <div class="row-checks">
       <label><input type="checkbox" data-layer="${esc(id)}" data-field="visible"> Visible</label>
       <label><input type="checkbox" data-layer="${esc(id)}" data-field="locked"> Locked</label>
     </div>
-    ${props ? '<h3>' + esc(l.type) + '</h3>' + props : ''}</div>`;
+    ${typeSections(l)}${commonSections(l)}</div>`;
 }
 $('inspector').addEventListener('input', (e) => {
   const node = e.target;

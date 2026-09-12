@@ -186,6 +186,27 @@ const INTERCEPT = /\/api\/(window|lyrics\/window|queue\/window|captions\/window|
   await sleep(300);
   check('the Canvas Builder button asks for its window', has(/POST \/api\/canvas\/editor\/open/), asked.join(' | '));
 
+  // The deck's controls now come from designer.js (P9, shared with the Canvas
+  // Builder): the helpers, the font menus, the generated background editors,
+  // and a range that saves with its readout following.
+  const shared = await ev(`(() => ({
+    helpers: ['readControl', 'writeControl', 'showOut', 'bgEditorHTML', 'fontOptionsFor', 'bindDesign', 'syncDesign'].every((f) => typeof window[f] === 'function'),
+    fonts: document.getElementById('fontPick') ? document.getElementById('fontPick').options.length : 0,
+    arial: !!document.querySelector('#fontPick option[value="Arial"]'),
+    bgEditors: document.querySelectorAll('#bgEditors .bg-editor').length,
+    whens: document.querySelectorAll('#bgEditors .bg-editor[data-bg="np"] .bg-when').length,
+  }))()`);
+  check('the shared design controls are in place: font menus, background editors', shared.helpers && shared.fonts > 20 && shared.arial && shared.bgEditors === 5 && shared.whens >= 4, JSON.stringify(shared));
+  const RIG = `http://127.0.0.1:${process.env.RIG_PORT || 8799}`;
+  const scale0 = ((await (await fetch(`${RIG}/api/config`)).json()).nowplaying || {}).scale;
+  const setScale = (v) => ev(`(() => { const r = document.querySelector('[data-np="scale"]'); r.value = '${v}'; r.dispatchEvent(new Event('input', { bubbles: true })); return document.querySelector('[data-out="scale"]').textContent; })()`);
+  const shown = await setScale(137);
+  await sleep(700);
+  const saved = ((await (await fetch(`${RIG}/api/config`)).json()).nowplaying || {}).scale;
+  check('a range saves, and its readout follows', shown === '1.37' && Math.abs(saved - 1.37) < 1e-9, `shows ${shown}, saved ${saved}`);
+  await setScale(Math.round((scale0 ?? 1) * 100));
+  await sleep(700);
+
   await sleep(500);
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' || '));
   const failed = results.filter(([, ok]) => !ok).map(([n]) => n);

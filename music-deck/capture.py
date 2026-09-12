@@ -493,7 +493,7 @@ def find_window(title_part):
 class WindowCapture:
     """Frames of one window (or monitor) as a texture of ours, newest wins."""
 
-    def __init__(self, d3d, hwnd=None, monitor=None, buffers=2):
+    def __init__(self, d3d, hwnd=None, monitor=None, buffers=2, cursor=False):
         self.d3d = d3d
         interop = factory("Windows.Graphics.Capture.GraphicsCaptureItem", IID_IGraphicsCaptureItemInterop)
         self.item = c_void_p()
@@ -516,10 +516,13 @@ class WindowCapture:
         self.session = c_void_p()
         check(vcall(self.pool, 10, c_int32, [c_void_p, POINTER(c_void_p)], self.item, byref(self.session)),
               "capture session")
-        for iid in (IID_IGraphicsCaptureSession3, IID_IGraphicsCaptureSession2):
+        # Slot 7 is IsBorderRequired on Session3 (never: no yellow border) and
+        # IsCursorCaptureEnabled on Session2 (only when the layer asks for it).
+        self.cursor = bool(cursor)
+        for iid, on in ((IID_IGraphicsCaptureSession3, False), (IID_IGraphicsCaptureSession2, self.cursor)):
             try:
                 s = qi(self.session, iid)
-                vcall(s, 7, c_int32, [ctypes.c_bool], False)      # no yellow border / no cursor
+                vcall(s, 7, c_int32, [ctypes.c_bool], on)
                 release(s)
             except OSError:
                 pass

@@ -469,8 +469,46 @@ function applyTriggers(entry, v) {
       setTimeout(() => entry.el.classList.remove('pop'), 650);
     }
   }
+  // Shown by a trigger (talking, going quiet): it comes in the way it enters.
+  const was = entry.trigShown;
+  entry.trigShown = visible;
+  if (visible && was === false) playEnter(entry);
   entry.el.classList.toggle('hidden', !visible);
   entry.el.classList.toggle('bounce', bounce && !isUltra());
+}
+
+/* Motion a layer asks for (P9). An enter animation plays when the layer
+   appears - the scene opening, a switch bringing it in, a trigger showing
+   it - and once more when the editor asks; a loop runs while it is shown.
+   Both move with the individual transform properties, so the layer's own
+   rotation is left alone. Loops are endless, so motion.js steps them at 30
+   fps and Ultra stops them; enters are stepped here, and skipped in Ultra. */
+const ENTERS = ['fade', 'rise', 'drop', 'left', 'right', 'pop', 'zoom'];
+const LOOPS = ['float', 'pulse', 'sway', 'spin'];
+function applyLoop(entry) {
+  // props.motion (props.loop is a video's own loop switch).
+  const l = (entry.layer.props || {}).motion || {};
+  const kind = LOOPS.includes(l.kind) ? l.kind : '';
+  for (const k of LOOPS) entry.el.classList.toggle('loop-' + k, k === kind);
+  if (kind) {
+    entry.el.style.setProperty('--loop-s', Math.max(0.3, Math.min(60, Number(l.seconds) || (kind === 'spin' ? 8 : 3))) + 's');
+    entry.el.style.setProperty('--loop-amt', String(Math.max(0, Math.min(5, Number(l.amount ?? 1)))));
+  }
+}
+function playEnter(entry) {
+  const e = (entry.layer.props || {}).enter || {};
+  const el = entry.el;
+  if (!ENTERS.includes(e.kind) || isUltra() || entry.layer.visible === false) return;
+  const ms = Math.max(100, Math.min(4000, Number(e.ms) || 500));
+  const delay = Math.max(0, Math.min(10000, Number(e.delay) || 0));
+  for (const k of ENTERS) el.classList.remove('enter-' + k);
+  el.style.setProperty('--enter-ms', ms + 'ms');
+  el.style.setProperty('--enter-steps', String(Math.max(2, Math.round((ms * 30) / 1000))));
+  el.style.setProperty('--enter-delay', delay + 'ms');
+  void el.offsetWidth;                              // restart it if it was running
+  el.classList.add('enter-' + e.kind);
+  clearTimeout(entry.enterTimer);
+  entry.enterTimer = setTimeout(() => el.classList.remove('enter-' + e.kind), ms + delay + 60);
 }
 
 /* ------------------------------------------------------------- a stage */
@@ -539,6 +577,10 @@ class Stage {
         if (layer.visible === false && TYPES[layer.type].destroy) TYPES[layer.type].destroy(entry);
         applyDecor(entry);
         applyTriggers(entry, voiceNow);
+        applyLoop(entry);
+        // Back into view, or its entrance changed (the editor, trying one): play it.
+        const pe = JSON.stringify((prev.props || {}).enter || null), ne = JSON.stringify((layer.props || {}).enter || null);
+        if ((prev.visible === false && layer.visible !== false) || pe !== ne) playEnter(entry);
       }
       entry.key = key;
       this.layers.set(layer.id, entry);
@@ -602,6 +644,8 @@ class Stage {
     if (layer.visible === false && TYPES[type].destroy) TYPES[type].destroy(entry);
     applyDecor(entry);
     applyTriggers(entry, voiceNow);
+    applyLoop(entry);
+    playEnter(entry);
     return entry;
   }
 
@@ -751,7 +795,13 @@ async function loadScene(id, transition) {
 let editorPinned = false;
 if (PREVIEW) {
   window.addEventListener('message', (e) => {
-    if (e.origin !== location.origin || !e.data || e.data.type !== 'editor-scene' || !e.data.scene) return;
+    if (e.origin !== location.origin || !e.data) return;
+    if (e.data.type === 'editor-replay') {                   // the inspector's "Play" button
+      const entry = current && current.layers.get(e.data.id);
+      if (entry) playEnter(entry);
+      return;
+    }
+    if (e.data.type !== 'editor-scene' || !e.data.scene) return;
     editorPinned = true;
     banner.hidden = true;
     show(e.data.scene);

@@ -58,12 +58,12 @@ class _Sources:
             i = int(spec.get("monitor") or 0)
             if not 0 <= i < len(mons):
                 raise OSError(f"no screen {i}")
-            cap = capture.WindowCapture(self.d3d, monitor=mons[i]["hmon"])
+            cap = capture.WindowCapture(self.d3d, monitor=mons[i]["hmon"], cursor=spec.get("cursor", False))
         else:
             hwnd = capture.find_window(spec.get("title") or "")
             if not hwnd:
                 raise OSError(f"no window titled like {spec.get('title')!r}")
-            cap = capture.WindowCapture(self.d3d, hwnd=hwnd)
+            cap = capture.WindowCapture(self.d3d, hwnd=hwnd, cursor=spec.get("cursor", False))
         cap.start()
         return cap
 

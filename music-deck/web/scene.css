@@ -57,6 +57,41 @@ body.see-through { background: transparent; }
 .pop { animation: pop .6s steps(18) 1; }
 @keyframes pop { 0% { scale: 1; } 30% { scale: 1.12; } 100% { scale: 1; } }
 
+/* Loops a layer can run (P9): endless, so motion.js steps them at 30 fps and
+   Ultra stops them. */
+.loop-float { animation: loop-float var(--loop-s, 3s) ease-in-out infinite; }
+@keyframes loop-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 calc(-14px * var(--loop-amt, 1)); } }
+.loop-pulse { animation: loop-pulse var(--loop-s, 2s) ease-in-out infinite; }
+@keyframes loop-pulse { 0%, 100% { scale: 1; } 50% { scale: calc(1 + .06 * var(--loop-amt, 1)); } }
+.loop-sway { animation: loop-sway var(--loop-s, 3s) ease-in-out infinite; }
+@keyframes loop-sway { 0%, 100% { rotate: calc(-4deg * var(--loop-amt, 1)); } 50% { rotate: calc(4deg * var(--loop-amt, 1)); } }
+.loop-spin { animation: loop-spin var(--loop-s, 8s) linear infinite; }
+@keyframes loop-spin { to { rotate: 360deg; } }
+
+/* Entrances (P9): after the loops, so an entrance wins while it plays. Its
+   steps are counted by scene.js for 30 a second. */
+.enter-fade, .enter-rise, .enter-drop, .enter-left, .enter-right, .enter-pop, .enter-zoom {
+  animation-duration: var(--enter-ms, 500ms);
+  animation-timing-function: steps(var(--enter-steps, 15));
+  animation-delay: var(--enter-delay, 0ms);
+  animation-fill-mode: both;
+  animation-iteration-count: 1;
+}
+.enter-fade  { animation-name: enter-fade; }
+.enter-rise  { animation-name: enter-rise; }
+.enter-drop  { animation-name: enter-drop; }
+.enter-left  { animation-name: enter-left; }
+.enter-right { animation-name: enter-right; }
+.enter-pop   { animation-name: enter-pop; }
+.enter-zoom  { animation-name: enter-zoom; }
+@keyframes enter-fade  { from { opacity: 0; } }
+@keyframes enter-rise  { from { opacity: 0; translate: 0 48px; } }
+@keyframes enter-drop  { from { opacity: 0; translate: 0 -48px; } }
+@keyframes enter-left  { from { opacity: 0; translate: -72px 0; } }
+@keyframes enter-right { from { opacity: 0; translate: 72px 0; } }
+@keyframes enter-pop   { 0% { opacity: 0; scale: .6; } 70% { opacity: 1; scale: 1.06; } 100% { scale: 1; } }
+@keyframes enter-zoom  { from { opacity: 0; scale: 1.35; } }
+
 .banner {
   position: fixed; left: 12px; top: 12px; z-index: 50;
   font: 14px/1.4 "Segoe UI", system-ui, sans-serif; color: #fff;

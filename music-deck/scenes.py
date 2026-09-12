@@ -306,12 +306,13 @@ def native_sources(scene):
             continue
         if layer.get("type") == "capture" and p.get("mode") == "native":
             src = p.get("source") or {}
+            # The mouse pointer is left out unless the layer asks for it.
             if src.get("kind") == "monitor":
                 out.append({"kind": "monitor", "monitor": int(src.get("monitor") or 0), "rect": rect,
-                            "fit": "cover" if p.get("fit") == "cover" else "contain"})
+                            "fit": "cover" if p.get("fit") == "cover" else "contain", "cursor": bool(p.get("cursor"))})
             elif src.get("title"):
                 out.append({"kind": "window", "title": str(src["title"]), "rect": rect,
-                            "fit": "cover" if p.get("fit") == "cover" else "contain"})
+                            "fit": "cover" if p.get("fit") == "cover" else "contain", "cursor": bool(p.get("cursor"))})
         elif layer.get("type") == "camera" and p.get("mode") == "native":
             out.append({"kind": "camera", "device": str(p.get("device") or ""), "width": int(p.get("width") or 1280),
                         "height": int(p.get("height") or 720), "fps": int(p.get("fps") or 30), "rect": rect,

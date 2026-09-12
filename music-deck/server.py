@@ -73,6 +73,9 @@ DEFAULT_CONFIG = {
         "transition": "fade",        # fade | cut, when the live scene changes
         "duration": 300,             # ms, for the fade
     },
+    "voice": {
+        "threshold": 0.08,           # how loud counts as talking, for reactive images (voice.py)
+    },
     "live": {
         "preset": "720p30",          # see live.PRESETS
         "source": "live",            # the component whose window goes on stream ("page" = the browser path)
@@ -1095,7 +1098,8 @@ SCENES = scenes.SceneStore(os.path.join(CACHE, "scenes"), log=_log)
 SCENES.on_change = lambda: (COMPONENTS.sync_scenes(SCENES.list()), HUB.broadcast())
 COMPONENTS.sync_scenes(SCENES.list())
 VOICE = voice.Voice(CAPTIONS, mic_name=CONFIG["captions"].get("mic"),
-                    on_change=lambda: HUB.broadcast(), log=_log)
+                    on_change=lambda: HUB.broadcast(), log=_log,
+                    threshold=(CONFIG.get("voice") or {}).get("threshold", voice.THRESHOLD))
 FEEDS = feeds.Feeds(log=_log)
 CANVAS_SWITCHED = [0.0]         # when the live scene last changed
 
@@ -1986,6 +1990,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/voice":
             return self._json(VOICE.status())
+        if path == "/api/camera/devices":
+            # The cameras Windows knows, by name: the camera layer's device picker.
+            try:
+                import camera as camera_mod
+                return self._json({"cameras": camera_mod.list_cameras()})
+            except Exception as exc:
+                return self._json({"cameras": [], "error": str(exc)})
 
         # Last resort: a file we ship in web/. This has to come after every
         # real route, or a route whose path ends in something dot-shaped
@@ -2172,6 +2183,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/voice/override":
             # A test hook: a rig without a microphone can still say "speaking".
             return self._json(VOICE.override(data.get("speaking")))
+        if path == "/api/voice":
+            # How loud counts as talking (the Canvas Builder's reactive-image inspector).
+            if "threshold" in data:
+                CONFIG.setdefault("voice", {})["threshold"] = VOICE.set_threshold(data.get("threshold"))
+                save_config(CONFIG)
+            return self._json(VOICE.status())
         m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore))?$", path)
         if m:
             sid, what = m.groups()

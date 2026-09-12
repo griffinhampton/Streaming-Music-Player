@@ -231,7 +231,8 @@ class VoiceTests(unittest.TestCase):
 
     def test_follows_captions_when_listening(self):
         v = voice.Voice(self.FakeCaptions(True, "listening", "speech", 0.42))
-        self.assertEqual(v.status(), {"level": 0.42, "speaking": True, "source": "captions", "error": ""})
+        self.assertEqual(v.status(), {"level": 0.42, "speaking": True, "source": "captions", "error": "",
+                                      "threshold": voice.THRESHOLD})
         self.assertEqual(v.snapshot()["source"], "captions")
 
     def test_off_without_leases(self):

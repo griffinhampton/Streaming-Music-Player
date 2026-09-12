@@ -6,6 +6,7 @@
 <title>Awesome Streaming Deck - Canvas Builder</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="stylesheet" href="canvas.css">
+<script src="fonts.js"></script>
 <script src="motion.js"></script>
 </head>
 <body>
@@ -39,6 +40,7 @@
     <button type="button" class="btn sm tog" id="safeBtn" aria-pressed="true" title="Where TikTok's buttons and comments cover a phone scene">Safe zones</button>
   </div>
   <span class="spacer"></span>
+  <span class="cb-media" id="mediaLive" role="status" hidden></span>
   <span class="cb-save" id="saveState" data-state="saved">Saved</span>
   <span class="cb-live" id="liveStatus" data-state="idle">Off air</span>
   <button type="button" class="btn" id="openOutput" title="Open this scene's output window">Open output</button>
@@ -105,6 +107,8 @@
 </div>
 
 <div id="announce" class="sr-only" aria-live="polite"></div>
+<input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2" multiple hidden>
+<input type="file" id="pickFile" accept="image/*,video/webm,video/mp4" hidden>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <div class="modal" id="shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle" hidden>
@@ -145,7 +149,11 @@
 </div>
 
 <script src="snap.js"></script>
+<script src="scenes.js"></script>
+<script src="decor.js"></script>
+<script src="designer.js"></script>
 <script src="canvas.js"></script>
 <script src="canvastools.js"></script>
+<script src="inspectors.js"></script>
 </body>
 </html>

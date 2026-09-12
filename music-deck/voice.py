@@ -14,7 +14,7 @@ import time
 
 LEASE_S = 30.0          # a page renews well inside this
 BLOCK_S = 0.05          # 50 ms of audio per reading
-THRESHOLD = 0.08        # level that counts as speech
+THRESHOLD = 0.08        # level that counts as speech, unless the config says otherwise
 HOLD_S = 0.35           # keep "speaking" this long after the last loud block
 ATTACK_BLOCKS = 2       # loud blocks in a row before "speaking" turns on
 
@@ -22,10 +22,11 @@ ATTACK_BLOCKS = 2       # loud blocks in a row before "speaking" turns on
 class MicMonitor:
     """RMS level with attack, hold and release, from sounddevice."""
 
-    def __init__(self, device=None, on_change=None, log=None):
+    def __init__(self, device=None, on_change=None, log=None, threshold=None):
         self.device = device
         self.on_change = on_change
         self.log = log or (lambda *_: None)
+        self.threshold = threshold or (lambda: THRESHOLD)     # read on every block: a change counts at once
         self.level = 0.0
         self.speaking = False
         self.error = ""
@@ -78,7 +79,7 @@ class MicMonitor:
             return
         self.level = min(1.0, rms * 6.0)
         now = time.monotonic()
-        if self.level >= THRESHOLD:
+        if self.level >= self.threshold():
             self._loud += 1
             self._last_loud = now
         else:
@@ -106,9 +107,11 @@ class MicMonitor:
 
 
 class Voice:
-    def __init__(self, captions, mic_name=None, on_change=None, log=None):
+    def __init__(self, captions, mic_name=None, on_change=None, log=None, threshold=THRESHOLD):
         self.captions = captions            # the CaptionBridge; .get() is a cached read
         self.mic_name = mic_name
+        self.threshold = THRESHOLD
+        self.set_threshold(threshold)
         self.on_change = on_change
         self.log = log or (lambda *_: None)
         self._monitor = None
@@ -117,6 +120,15 @@ class Voice:
         self._seq = 0
         self._last_speaking = None
         self.force = None           # tests: a speaking state set by hand
+
+    def set_threshold(self, value):
+        """How loud counts as talking for the monitor (0.01-0.9 of full scale).
+        While captions listen, their own speech detector decides instead."""
+        try:
+            self.threshold = min(0.9, max(0.01, float(value)))
+        except (TypeError, ValueError):
+            pass
+        return self.threshold
 
     def override(self, speaking):
         """For tests on a rig without a microphone: None lifts it."""
@@ -132,7 +144,10 @@ class Voice:
             return False, {}
 
     def status(self):
-        """Everything, level included - for meters that poll."""
+        """Everything, level and threshold included - for meters that poll."""
+        return dict(self._status(), threshold=self.threshold)
+
+    def _status(self):
         if self.force is not None:
             return {"level": 1.0 if self.force else 0.0, "speaking": self.force,
                     "source": "override", "error": ""}
@@ -185,7 +200,7 @@ class Voice:
         want = bool(self._leases) and not listening
         with self._lock:
             if want and not self._monitor:
-                m = MicMonitor(self.mic_name, on_change=self.on_change, log=self.log)
+                m = MicMonitor(self.mic_name, on_change=self.on_change, log=self.log, threshold=lambda: self.threshold)
                 if m.start():
                     self.log("voice: listening for speech")
                 else:

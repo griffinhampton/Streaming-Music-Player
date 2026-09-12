@@ -692,6 +692,102 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## P9 - inspectors for every layer type (2026-09-12)
+
+`web/inspectors.js` (the sections), `web/designer.js` (the deck's control
+vocabulary, now shared), small hooks in `canvas.js`, and a little runtime
+and backend: entrances and loops in `scene.js`, a settable voice threshold,
+the mouse pointer for native captures, a camera list route.
+
+- **The deck's controls, not copies of them.** The deck's design controls
+  were already plain markup - `data-np="text.font" data-kind="range"`, a
+  readout beside it - bound by one generic binder. That binder's pieces
+  (`readControl`, `writeControl`, `showOut`), the font lists and upload, and
+  the deck's background editor (`bgEditorHTML`) moved into `designer.js`,
+  loaded by both pages; `bindDesign`/`syncDesign` bind the same vocabulary
+  inside any container, to any scope. deck.js lost its copies (10.5k
+  characters) and uses the shared ones.
+- **Every inspector speaks that vocabulary.** A layer's controls are
+  `data-lx="props.size"`, the scene's `data-sx="background.mode"`; each
+  change is `setField` (so merged runs, undo and autosave as everywhere).
+  Settings a layer does not carry show the runtime's own default.
+- **"Customize for this scene" is the deck's own tabs.** The editor fetches
+  `deck.html` once and takes the component's look tabs (Now Playing:
+  Colors, Text, Art & bar, Decor; the others: Look, Text) plus its
+  background editor, strips the deck's wiring (ids, buttons that act on the
+  deck, window-only settings like Clickable or Look up online) and binds
+  what is left to `props.custom`. `embedhost.js` already laid that over the
+  deck's live design, so a customized window starts as your design and only
+  what you change is the scene's: the rest keeps following the deck. A reset
+  dot hands one setting back; "Back to my design" drops them all.
+- **Backgrounds** - the background layer and the scene's own - get the
+  deck's background editor as it is (solid, gradient, generated artwork with
+  its thumbnails, a picture), its pickers turned into the editor's.
+- **Pictures** have one picker everywhere (image layers, reactive images,
+  background pictures): the asset grid, an Upload tile, and drop to upload;
+  it loads the asset list the first time it is needed (the test found the
+  grids empty until the Assets tab had been opened).
+- **Motion (runtime):** an entrance (fade, rise, drop, from the left or
+  right, pop, zoom; duration, delay) plays when a layer appears - the scene
+  opening, a switch, a trigger showing it - and from the inspector's Play.
+  A loop (float, pulse, sway, spin) runs while shown. Both use the
+  individual `translate`/`scale`/`rotate` properties, so the layer's own
+  rotation stays. Loops are endless, so motion.js steps them at 30 fps and
+  Ultra stops them; entrances count their own steps and are skipped in
+  Ultra. They live in `props.enter` and `props.motion` - `props.loop` was
+  already a video's loop switch.
+- **Voice threshold:** a setting now (`config.voice.threshold`, POST
+  `/api/voice {threshold}`), read by the monitor on every block, so the
+  reactive-image inspector's slider counts at once; its meter polls
+  `/api/voice` only while that section is open and the editor visible.
+  While captions listen, their speech detector decides, and the meter says so.
+- **Capture:** the picker shows the screens and windows with thumbnails that
+  refresh every 3 s while the list is open. "Show the mouse pointer" reaches
+  Windows Graphics Capture through the native sources (IsCursorCaptureEnabled,
+  Session2's slot 7; Session3's slot 7 stays IsBorderRequired = off).
+- **Camera:** the device menu lists the cameras Media Foundation knows
+  (`/api/camera/devices`), plus resolution, frame rate, shape, fit, mirror.
+- **Live indicator:** whenever the editor's preview holds a camera or screen
+  stream, a red badge says so in the top bar, the layer's row gets a dot and
+  its inspector a line - polled once a second from the preview, and only
+  while the editor is visible.
+- **Triggers** are rows (when: talking, quiet, starting to talk; do: show,
+  hide, bounce, pop, add a style); "pop" and "when I start talking" go
+  together, since that is the only moment a pop happens.
+
+Tests (`tools/p9`, headless only; fake camera; what depends on this PC - the
+asset list, screens and windows, cameras - answered by the test):
+
+- `p9test.js`: 72 of 72, twice - writing the goldens, then comparing (all
+  ten inspectors, 0.00% of pixels different). Per layer type: its sections
+  and a golden picture of the inspector. Then some forty fields driven as a
+  person would, each one exactly one undo step with exact undo and redo,
+  and checked in the preview's rendering: words and a live-text chip, weight,
+  alignment, gradient, glow, a pill color with its opacity, letter spacing
+  and its readout; a picture from the grid, one dropped onto it (uploaded),
+  tile, flip, a border, a 20% crop shown as a percentage; a background
+  gradient and generated artwork; a frame with a hole; a border loop drawn;
+  a rise-in played and played again, a float loop, stopped by Ultra;
+  triggers. The customized Now Playing's accent (the deck's own control)
+  reaches the output while a deck change reaches the linked Lyrics live and
+  not the customized setting; no card and no album art inside the embedded
+  page; Back to my design. The camera's device menu, 1080p, a circle; the
+  live indicator on, and off when the camera is hidden. Capture sources with
+  thumbnails, a window, the pointer. The threshold slider kept in the
+  config, "Try it". A font added from the inspector's Add font (one step).
+  The scene's own background. Connections: the output one feed, its four
+  windows none, 0 of 6 event streams. Undo all 36 steps: the scene exactly
+  as it was, on the server too. No console errors.
+- Unit tests (`tests/test_p9.py`): the threshold clamped, reported and read
+  live by the monitor; the pointer reaching the native sources; the shared
+  scripts loaded before the pages that use them, deck.js without its copies;
+  the deck panes the inspectors borrow exist; every entrance and loop has
+  its style, the loops endless.
+- Again after P9: P6 21 of 21 and 22 of 22 (with three new checks for the
+  deck's side of designer.js: the helpers, the 27-font menus, the five
+  background editors, a range saving with its readout), P7 16 of 16, P8 56
+  of 56; Python 64.
+
 ## P8 - canvas tools (2026-09-12)
 
 Direct manipulation on the Canvas Builder's canvas: `web/canvastools.js`
