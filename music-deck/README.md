@@ -168,7 +168,7 @@ whole new browser.
 ## Put it on stream (TikTok Studio)
 
 1. In the deck, press **Open** on the **Now Playing** card at the top.
-2. TikTok Studio → **Add source → Window** → pick **Awesome Streaming Deck - Now Playing**.
+2. TikTok Studio → **Add source → Window capture** → pick **Awesome Streaming Deck - Now Playing**.
 3. Size and place it on your canvas like any other source.
 4. Want lyrics or the queue? Press **Open** on those cards too, then add
    **Awesome Streaming Deck - Lyrics** or **Awesome Streaming Deck - Queue** the same way.
@@ -253,7 +253,7 @@ Rather stream with LIVE Studio (or OBS)? Capture a scene's window instead:
 
 1. In the Canvas Builder, press **Open output** (or **Open output** on the
    scene's card in the deck).
-2. In LIVE Studio: **Add source → Window** → **Awesome Streaming Deck -
+2. In LIVE Studio: **Add source → Window capture** → **Awesome Streaming Deck -
    Canvas: *your scene's name***. Or pick **Awesome Streaming Deck - Canvas
    (live)** to follow whichever scene is live, and switch scenes from the app.
 3. The window keeps drawing when it is covered or behind a fullscreen game.
@@ -263,8 +263,8 @@ Rather stream with LIVE Studio (or OBS)? Capture a scene's window instead:
 For see-through parts, set the scene's **Transparency** to **See-through**
 when your capture keeps a window's transparency, or to **Key color** and add a
 chroma key in LIVE Studio when it does not. To see what your capture software
-does, add a source in LIVE Studio (**Add source → Browser capture**) with
-`http://127.0.0.1:8713/transparency-test.html`: whatever is under it should
+does, start the app, then add a **Link** source in LIVE Studio (**Add source →
+Link**) with `http://127.0.0.1:8713/transparency-test.html`: whatever is under it should
 show through everywhere except the pink card, the cyan block, the yellow dot
 and the words. If it comes out black, use **Key color**. Delete the test
 source afterwards.

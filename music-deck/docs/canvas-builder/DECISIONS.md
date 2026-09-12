@@ -186,7 +186,21 @@ going LIVE without LIVE Studio or OBS at all.
 ## Open items
 
 1. **Manual 30-second check (Link transparency):** in LIVE Studio, Add
-   source > Browser capture, URL `http://127.0.0.1:8713/transparency-test.html`.
+   source > **Link**, URL `http://127.0.0.1:8713/transparency-test.html`, with
+   the app running. (The user's LIVE Studio menu, 2026-09-12, has no entry
+   called "Browser capture" - that name came from its internal strings; the
+   menu says Link, and Window capture for windows.) LIVE Studio checks a Link
+   before it takes it (`static/js/modal.d626db29.js`, 1.35.2): a format test,
+   `/(http(s)?:\/\/)?[(www.)?a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b.../`,
+   unanchored - `test.html` satisfies its "dot and letters" part, so the IP
+   address passes - and then an `XMLHttpRequest` GET of the address that
+   fails only on a network error or a 404. With the app not running that
+   request cannot connect: "Enter correct URL" (what the user saw on
+   2026-09-12; the app was indeed not running). Most of LIVE Studio's windows
+   run with `webSecurity: false`, so the guard's 403 to that foreign-origin
+   request should still count as an answer, and the Link itself loads as a
+   plain navigation, which the guard allows - both unconfirmed until the user
+   tries again with the app running.
    If the scene background shows through around the pink card, the yellow
    dot and the text, the Link source keeps alpha (expected). If it comes out
    black, transparent overlays for LIVE Studio use the key-color fallback.
