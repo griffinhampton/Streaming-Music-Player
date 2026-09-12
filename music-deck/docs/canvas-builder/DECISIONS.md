@@ -727,6 +727,18 @@ may empty. Now:
   a space in it). Unexplained, so `p12live.js` now records, on that failure,
   what the panel itself knew: whether Start was enabled, the saved key and
   URL, the state and the error.
+- **The CI build, as a friend gets it** (the artifact of ba75afd, downloaded
+  with the user's OK): both .exe files match `SHA256SUMS.txt`. The folder
+  build, started in a folder of its own on port 8796 with no windows (the
+  installer not run), says 1.0.0.0, is up in a second, serves every page and
+  API, has no shipped artwork (on purpose), lists the six templates, makes a
+  scene from one, exports it (1.3 KB) and imports it back whole; the deck and
+  the Canvas Builder load in headless Chrome with no console error. Found on
+  the way, in the test script, not the app: `Start-Process -ArgumentList`
+  joins its arguments without quotes, so a Chrome profile path under
+  `streaming stuff` split at the space and Chrome made a profile folder
+  `C:\Users\ghamp\streaming` (moved into `.rig`, nothing else touched). An
+  argument that holds a path has to carry its own quotes.
 
 ## P12 - release (2026-09-12)
 
