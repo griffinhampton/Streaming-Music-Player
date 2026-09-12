@@ -691,8 +691,11 @@ class SceneStore:
             # The editor saves many times a minute; the backups are for going
             # back minutes, not the last five keystrokes. So they only shuffle
             # down when the newest is at least backup_every seconds old.
+            # (0 means every save, said outright: a file's time comes from the
+            # file system's coarser clock and can read a hair ahead of
+            # time.time(), so "age >= 0" failed now and then on CI.)
             newest = self._path(scene["id"], 1)
-            if (not os.path.isfile(newest)
+            if (self.backup_every <= 0 or not os.path.isfile(newest)
                     or time.time() - os.path.getmtime(newest) >= self.backup_every):
                 for n in range(BACKUPS, 1, -1):
                     older = self._path(scene["id"], n - 1)
