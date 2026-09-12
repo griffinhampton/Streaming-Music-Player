@@ -142,6 +142,37 @@ function saveCap(patch) {
   }, 180);
 }
 
+/* The two frames keep their design under "frame" in their own sections; the
+   designer edits whichever frame is picked. */
+const isFrame = (id) => id === 'screenframe' || id === 'camframe';
+const frameKey = () => (isFrame(selectedWin) ? selectedWin : 'screenframe');
+let frTimer = null, frPending = {}, frPendingKey = '';
+function saveFrame(patch) {
+  beginEdit();
+  const key = frameKey();
+  if (frPendingKey && frPendingKey !== key) { clearTimeout(frTimer); flushFrame(); }
+  CONFIG[key] = CONFIG[key] || {};
+  Object.entries(patch).forEach(([k, v]) => setPath(CONFIG[key], k, v));
+  // Straight into the preview, so it never lags behind the sliders.
+  try {
+    previewEl.contentWindow.postMessage({ type: 'frame', section: key, cfg: CONFIG[key].frame,
+                                          nowplaying: CONFIG.nowplaying }, '*');
+  } catch (_) { /* the preview is loading */ }
+  frPendingKey = key;
+  Object.assign(frPending, patch);
+  clearTimeout(frTimer);
+  frTimer = setTimeout(flushFrame, 180);
+}
+function flushFrame() {
+  if (!frPendingKey) return;
+  const body = {};
+  for (const [path, val] of Object.entries(frPending)) deepMerge(body, patchFor(path, val));
+  const key = frPendingKey;
+  frPending = {};
+  frPendingKey = '';
+  post('/api/config', { [key]: body });
+}
+
 let qTimer = null, qPending = {};
 function saveQ(patch) {
   beginEdit();
@@ -1630,11 +1661,12 @@ const SCOPES = [
   { attr: 'ly', out: 'ly', root: () => CONFIG.lyrics || {}, save: (p) => saveLy(p) },
   { attr: 'q',  out: 'q',  root: () => CONFIG.queue || {},  save: (p) => saveQ(p) },
   { attr: 'cap', out: 'cap', root: () => CONFIG.captions || {}, save: (p) => saveCap(p) },
+  { attr: 'fr', out: 'fr', root: () => CONFIG[frameKey()] || {}, save: (p) => saveFrame(p) },
 ];
 const scopeOf = (node) => SCOPES.find((sc) => node.hasAttribute('data-' + sc.attr));
 
 function bindControls() {
-  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q],[data-cap]').forEach((node) => {
+  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q],[data-cap],[data-fr]').forEach((node) => {
     const scope = scopeOf(node);
     const path = node.dataset[scope.attr];
     const kind = node.dataset.kind || 'str';
@@ -1664,7 +1696,7 @@ function bindControls() {
     });
   });
 
-  const SAVE_BY_SCOPE = { np: saveNp, ui: saveUi, ly: saveLy, q: saveQ, cap: saveCap };
+  const SAVE_BY_SCOPE = { np: saveNp, ui: saveUi, ly: saveLy, q: saveQ, cap: saveCap, fr: saveFrame };
   document.querySelectorAll('[data-clear]').forEach((btn) => {
     btn.addEventListener('click', () => {
       (SAVE_BY_SCOPE[btn.dataset.scope || 'np'])({ [btn.dataset.clear]: '' });
@@ -1674,7 +1706,7 @@ function bindControls() {
 }
 
 function syncControls() {
-  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q],[data-cap]').forEach((node) => {
+  document.querySelectorAll('[data-np],[data-ui],[data-ly],[data-q],[data-cap],[data-fr]').forEach((node) => {
     const scope = scopeOf(node);
     const path = node.dataset[scope.attr];
     const kind = node.dataset.kind || 'str';
@@ -2563,8 +2595,372 @@ const WINDOWS = {
     title: 'This is what the captions window looks like',
     cfg: () => (CONFIG || {}).captions,
   },
+  screenframe: {
+    page: 'frame.html?kind=screen', label: 'Screen frame',
+    title: 'This is what the screen frame looks like',
+    cfg: () => (CONFIG || {}).screenframe,
+  },
+  camframe: {
+    page: 'frame.html?kind=camera', label: 'Camera frame',
+    title: 'This is what the camera frame looks like',
+    cfg: () => (CONFIG || {}).camframe,
+  },
 };
 let selectedWin = 'np';
+
+/* ------------------------------------------------------------- components row
+
+   Drawn from the component registry (the state's "components"), in groups:
+   Music and words, Screen sharing, and Canvas - one card per scene, to open
+   its output, make it the live scene or edit it. The strip scrolls sideways:
+   arrows, the wheel, snapping, fading edges, and a focused card brought into
+   view. The four music cards keep the element ids the rest of the deck binds
+   to, and exist from the start (the registry's own four, until the first
+   snapshot), so nothing that binds to them runs before they do. */
+const ROW_GROUPS = [['music', 'Music and words'], ['sharing', 'Screen sharing'], ['canvas', 'Canvas']];
+const CARD_IDS = {
+  np: { state: 'npStatus', size: 'npSize', toggle: 'npToggle' },
+  lyrics: { state: 'lyStatus', size: 'lySize', toggle: 'lyToggle' },
+  queue: { state: 'qStatus', size: 'qSize', toggle: 'qToggle' },
+  captions: { state: 'capStatus', size: 'capSize', toggle: 'capToggle' },
+};
+const REGISTRY_BOOT = [
+  { id: 'np', label: 'Now Playing', sub: 'The track, the art and the progress bar', group: 'music' },
+  { id: 'lyrics', label: 'Lyrics', sub: 'The words, scrolling in time', group: 'music' },
+  { id: 'queue', label: 'Queue', sub: 'What Spotify plays next', group: 'music' },
+  { id: 'captions', label: 'Captions', sub: 'What you say, as live text', group: 'music' },
+];
+const rowEsc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let rowSig = '';
+let rowScenes = [];       // the scenes the Canvas cards were drawn from
+let rowLive = '';         // the live scene
+let rowWindows = {};      // every component's window, from the last snapshot
+const frameOpen = {};
+
+function cardHtml(c) {
+  const ids = CARD_IDS[c.id] || {};
+  const id = (k) => (ids[k] ? ` id="${ids[k]}"` : '');
+  return `<div class="wincard" data-win="${rowEsc(c.id)}" tabindex="0" role="button" aria-pressed="false">
+    <div class="wc-head"><span class="wc-dot"></span><span class="wc-name">${rowEsc(c.label)}</span>
+      <span class="wc-state"${id('state')}>closed</span></div>
+    <p class="wc-sub">${rowEsc(c.sub)}</p>
+    <div class="wc-foot"><span class="wc-size"${id('size')}></span>
+      <button${id('toggle')} class="btn btn-primary btn-sm"${ids.toggle ? '' : ' data-act="toggle"'}>Open</button></div>
+  </div>`;
+}
+
+function sceneFormat(s) {
+  const w = +s.width || 1920, h = +s.height || 1080;
+  return `${w} \u00d7 ${h}` + (h > w ? ' \u00b7 phone' : '');
+}
+function sceneCardHtml(s) {
+  return `<div class="wincard scene" data-scene="${rowEsc(s.id)}" role="group" aria-label="${rowEsc('Scene: ' + s.name)}">
+    <div class="wc-head"><span class="wc-dot"></span><span class="wc-name">${rowEsc(s.name)}</span>
+      <span class="wc-state">closed</span></div>
+    <div class="wc-foot"><span class="wc-size">${rowEsc(sceneFormat(s))}</span>
+      <button class="btn btn-primary btn-sm" data-act="scene-open">Open output</button>
+      <button class="btn btn-ghost btn-sm" data-act="scene-live">Go LIVE</button>
+      <button class="btn btn-ghost btn-sm" data-act="scene-edit">Edit</button></div>
+  </div>`;
+}
+
+function renderRow(components, scenes) {
+  const comps = (components && components.length ? components : REGISTRY_BOOT).filter((c) => c.group !== 'canvas');
+  rowScenes = scenes || [];
+  const sig = JSON.stringify([comps.map((c) => [c.id, c.label, c.sub, c.group]),
+                              rowScenes.map((sc) => [sc.id, sc.name, sc.width, sc.height])]);
+  if (sig !== rowSig) {
+    rowSig = sig;
+    const bar = $('windowsBar');
+    // The music cards' nodes are kept: their buttons carry listeners bound by id.
+    const keep = new Map([...bar.querySelectorAll('.wincard[data-win]')].map((n) => [n.dataset.win, n]));
+    const frag = document.createDocumentFragment();
+    for (const [key, name] of ROW_GROUPS) {
+      const items = key === 'canvas' ? rowScenes : comps.filter((c) => c.group === key);
+      if (!items.length && key === 'sharing') continue;
+      const group = document.createElement('div');
+      group.className = 'wc-group';
+      group.dataset.group = key;
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', name);
+      group.innerHTML = `<span class="wc-group-label">${name}</span><div class="wc-group-cards"></div>`;
+      const cards = group.lastElementChild;
+      if (key === 'canvas') {
+        cards.innerHTML = items.length ? items.map(sceneCardHtml).join('')
+          : '<p class="wc-empty">No scenes yet \u2014 the Canvas Builder makes them.</p>';
+      } else {
+        for (const c of items) {
+          let node = keep.get(c.id);
+          if (node) {
+            node.querySelector('.wc-name').textContent = c.label;
+            node.querySelector('.wc-sub').textContent = c.sub || '';
+          } else {
+            const t = document.createElement('div');
+            t.innerHTML = cardHtml(c);
+            node = t.firstElementChild;
+          }
+          cards.appendChild(node);
+        }
+      }
+      frag.appendChild(group);
+    }
+    bar.replaceChildren(frag);
+    bar.querySelectorAll('.wincard[data-win]').forEach((c) => {
+      const on = c.dataset.win === selectedWin;
+      c.classList.toggle('on', on);
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    for (const id of ['screenframe', 'camframe']) {
+      if (rowWindows[id]) paintCardState(id, rowWindows[id].open, rowWindows[id].rect);
+    }
+  }
+  paintSceneCards();
+  updateStrip();
+}
+
+function paintSceneCards() {
+  document.querySelectorAll('#windowsBar .wincard.scene').forEach((card) => {
+    const sid = card.dataset.scene;
+    const open = !!(rowWindows['scene:' + sid] || {}).open;
+    const isLive = !!sid && sid === rowLive;
+    card.classList.toggle('live', open);
+    card.classList.toggle('onair', isLive);
+    card.querySelector('.wc-state').textContent = isLive ? (liveOn() ? 'on air' : 'live scene') : open ? 'open' : 'closed';
+    const ob = card.querySelector('[data-act="scene-open"]');
+    if (!ob.disabled) ob.textContent = open ? 'Close output' : 'Open output';
+    const lb = card.querySelector('[data-act="scene-live"]');
+    lb.disabled = isLive;
+    lb.textContent = isLive ? 'Is live' : 'Go LIVE';
+  });
+}
+
+function updateStrip() {
+  const bar = $('windowsBar'), strip = $('compStrip');
+  if (!bar || !strip) return;
+  const max = bar.scrollWidth - bar.clientWidth;
+  strip.classList.toggle('can-prev', bar.scrollLeft > 2);
+  strip.classList.toggle('can-next', max > 2 && bar.scrollLeft < max - 2);
+}
+
+function toggleComponent(id, btn) {
+  if (frameOpen[id]) {
+    post(`/api/components/${id}/close`).then(() => { frameOpen[id] = false; paintCardState(id, false); });
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Opening\u2026';
+  post(`/api/components/${id}/open`).then((res) => {
+    btn.disabled = false;
+    if (res.hosted === false && res.reason) toast('Opened, but not borderless: ' + res.reason);
+    else if (!res.ok) toast(res.reason || 'Could not open the window');
+    frameOpen[id] = !!res.ok;
+    paintCardState(id, !!res.ok);
+  });
+}
+
+function sceneAction(act, sid, btn) {
+  const cid = 'scene:' + sid;
+  if (act === 'scene-open') {
+    const open = !!(rowWindows[cid] || {}).open;
+    btn.disabled = true;
+    post(`/api/components/${encodeURIComponent(cid)}/${open ? 'close' : 'open'}`).then((r) => {
+      btn.disabled = false;
+      if (!open && !r.ok) toast(r.reason || 'Could not open the output');
+      rowWindows[cid] = Object.assign({}, rowWindows[cid], { open: open ? false : !!r.ok });
+      paintSceneCards();
+    });
+  } else if (act === 'scene-live') {
+    post('/api/canvas/live', { id: sid }).then((r) => {
+      if (!r.ok) { toast(r.reason || 'Could not make it the live scene'); return; }
+      rowLive = sid;
+      paintSceneCards();
+      if (!liveOn()) toast('This is the live scene now \u2014 press Start to go LIVE with it');
+    });
+  } else if (act === 'scene-edit') {
+    post('/api/canvas/editor/open', { scene: sid }).then((r) => { if (!r.ok) toast('Could not open the Canvas Builder'); });
+  }
+}
+
+renderRow(null, []);
+
+$('windowsBar').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const card = btn.closest('.wincard');
+  if (btn.dataset.act === 'toggle') toggleComponent(card.dataset.win, btn);
+  else sceneAction(btn.dataset.act, card.dataset.scene, btn);
+});
+$('windowsBar').addEventListener('scroll', updateStrip, { passive: true });
+window.addEventListener('resize', updateStrip);
+new ResizeObserver(updateStrip).observe($('windowsBar'));
+function pageStrip(dir) {
+  const bar = $('windowsBar');
+  bar.scrollBy({ left: dir * Math.max(240, bar.clientWidth * 0.8), behavior: 'smooth' });
+}
+$('stripPrev').addEventListener('click', () => pageStrip(-1));
+$('stripNext').addEventListener('click', () => pageStrip(1));
+// A mouse wheel scrolls the strip sideways while it has more to show.
+$('windowsBar').addEventListener('wheel', (e) => {
+  const bar = $('windowsBar');
+  if (bar.scrollWidth <= bar.clientWidth + 1 || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+  e.preventDefault();
+  bar.scrollBy({ left: e.deltaY, behavior: 'auto' });
+}, { passive: false });
+/* A card that takes the keyboard's focus is brought fully into view - by
+   the smallest scroll that shows it, with snapping off for that scroll: a
+   snap point pulled the last card of a group half back out (found in P6's
+   test). The next hand on the strip turns snapping back on. */
+function revealCard(card) {
+  const bar = $('windowsBar');
+  const b = bar.getBoundingClientRect(), c = card.getBoundingClientRect();
+  const pad = 40;
+  let dx = 0;
+  if (c.left < b.left + pad) dx = c.left - b.left - pad;
+  else if (c.right > b.right - pad) dx = c.right - b.right + pad;
+  if (!dx) return;
+  bar.style.scrollSnapType = 'none';
+  bar.scrollBy({ left: dx, behavior: 'smooth' });
+}
+$('windowsBar').addEventListener('focusin', (e) => {
+  const card = e.target.closest('.wincard');
+  if (card) revealCard(card);
+});
+for (const ev of ['wheel', 'pointerdown', 'touchstart']) {
+  $('windowsBar').addEventListener(ev, () => { $('windowsBar').style.scrollSnapType = ''; }, { passive: true });
+}
+for (const id of ['stripPrev', 'stripNext']) {
+  $(id).addEventListener('pointerdown', () => { $('windowsBar').style.scrollSnapType = ''; });
+}
+// Left and right arrows move between cards.
+$('windowsBar').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const cards = [...document.querySelectorAll('#windowsBar .wincard')];
+  const i = cards.indexOf(e.target.closest('.wincard'));
+  const next = cards[i + (e.key === 'ArrowRight' ? 1 : -1)];
+  if (i < 0 || !next) return;
+  e.preventDefault();
+  (next.hasAttribute('tabindex') ? next : next.querySelector('button')).focus();
+});
+
+/* Everything the row and the LIVE strip show, from each snapshot. */
+function paintRegistry(st) {
+  rowWindows = st.windows || rowWindows;
+  rowLive = (st.canvas || {}).live || '';
+  for (const id of ['screenframe', 'camframe']) {
+    const w = rowWindows[id];
+    if (!w) continue;
+    frameOpen[id] = !!w.open;
+    const cfg = (CONFIG || {})[id];
+    if (cfg && w.open && !w.minimized && w.rect && (w.rect.w !== cfg.width || w.rect.h !== cfg.height)) {
+      cfg.width = w.rect.w;
+      cfg.height = w.rect.h;
+      if (selectedWin === id) { syncFrameFields(); layoutPreview(); }
+    }
+    paintCardState(id, w.open, w.rect);
+  }
+  paintLive(st);
+  renderRow(st.components, st.scenes);
+}
+
+/** The frame Size tab's fields, for whichever frame is picked. */
+function syncFrameFields() {
+  const cfg = (CONFIG || {})[frameKey()] || {};
+  if (document.activeElement !== $('frWidth')) $('frWidth').value = cfg.width || '';
+  if (document.activeElement !== $('frHeight')) $('frHeight').value = cfg.height || '';
+}
+function applyFrameSize(w, h) {
+  const key = frameKey();
+  CONFIG[key] = CONFIG[key] || {};
+  CONFIG[key].width = w;
+  CONFIG[key].height = h;
+  post('/api/config', { [key]: { width: w, height: h } });
+  post(`/api/components/${key}/apply`, { width: w, height: h });
+  layoutPreview();
+}
+['frWidth', 'frHeight'].forEach((id) => $(id).addEventListener('change', () =>
+  applyFrameSize(+$('frWidth').value, +$('frHeight').value)));
+$('frSizePresets').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-w]');
+  if (!btn) return;
+  $('frWidth').value = btn.dataset.w;
+  $('frHeight').value = btn.dataset.h;
+  applyFrameSize(+btn.dataset.w, +btn.dataset.h);
+});
+$('frSnap').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-c]');
+  if (btn) post(`/api/components/${frameKey()}/snap`, { corner: btn.dataset.c })
+    .then((r) => { if (!r.ok) toast('Open the frame first'); });
+});
+if (window.decorOptions) $('frLoopPattern').innerHTML = decorOptions(rowEsc);
+
+/* ------------------------------------------------------------- LIVE strip
+
+   Status, the live scene, Start and Stop. The stream key, presets and
+   audio are set in the LIVE panel (a later step); until a key is saved,
+   Start says so instead of failing. */
+let liveNow = { state: 'idle' };
+let liveStatsTimer = null;
+let liveStats = null;
+const liveOn = () => ['connecting', 'live', 'reconnecting'].includes(liveNow.state);
+
+function paintLive(st) {
+  liveNow = st.live || { state: 'idle' };
+  const on = liveOn();
+  $('liveStrip').dataset.state = liveNow.state || 'idle';
+  const names = { idle: 'Off air', connecting: 'Connecting\u2026', live: 'LIVE', reconnecting: 'Reconnecting\u2026' };
+  let text = names[liveNow.state] || String(liveNow.state || 'Off air');
+  if (liveNow.state === 'live' && liveStats) {
+    const up = Math.max(0, Math.round(liveStats.uptime || 0));
+    const mm = Math.floor(up / 60), ss = String(up % 60).padStart(2, '0');
+    text += ` ${mm}:${ss}` + (liveStats.kbps ? ` \u00b7 ${(liveStats.kbps / 1000).toFixed(1)} Mb/s` : '');
+  }
+  $('liveState').textContent = text;
+  $('liveState').title = liveNow.error || '';
+  const go = $('liveGo');
+  go.textContent = on ? 'Stop' : 'Start';
+  go.classList.toggle('btn-primary', !on);
+  go.classList.toggle('btn-ghost', on);
+  go.disabled = !on && !liveNow.has_key;
+  go.title = on ? 'Stop the stream'
+    : liveNow.has_key ? 'Go LIVE with the live scene' : 'Save your stream key first (the LIVE panel comes in a later step)';
+
+  const sel = $('liveScene');
+  const scenes = st.scenes || [];
+  const cur = (st.canvas || {}).live || '';
+  const sig = JSON.stringify([scenes.map((x) => [x.id, x.name]), cur]);
+  if (sel.dataset.sig !== sig && document.activeElement !== sel) {
+    sel.dataset.sig = sig;
+    sel.innerHTML = '<option value="">No live scene</option>' +
+      scenes.map((x) => `<option value="${rowEsc(x.id)}">${rowEsc(x.name)}</option>`).join('');
+    sel.value = cur;
+  }
+  if (on && !liveStatsTimer) {
+    liveStatsTimer = setInterval(() => {
+      fetch('/api/live/status').then((r) => r.json()).then((d) => { liveStats = d.stats || null; paintLive({ live: d, scenes: rowScenes, canvas: { live: rowLive } }); }).catch(() => {});
+    }, 2000);
+  } else if (!on && liveStatsTimer) {
+    clearInterval(liveStatsTimer);
+    liveStatsTimer = null;
+    liveStats = null;
+  }
+}
+
+$('liveGo').addEventListener('click', () => {
+  const go = $('liveGo');
+  go.disabled = true;
+  const req = liveOn() ? post('/api/live/stop') : post('/api/live/start', {});
+  req.then((r) => {
+    go.disabled = false;
+    if (r && r.ok === false) toast(r.error || r.reason || 'Could not go LIVE');
+  });
+});
+$('liveScene').addEventListener('change', () => {
+  post('/api/canvas/live', { id: $('liveScene').value }).then((r) => { if (r && r.ok === false) toast(r.reason || 'Could not switch the live scene'); });
+});
+$('canvasBtn').addEventListener('click', () => {
+  post('/api/canvas/editor/open', {}).then((r) => { if (!r || !r.ok) toast('Could not open the Canvas Builder'); });
+});
 
 /** The config block for whichever window is selected. */
 function winCfg() { return WINDOWS[selectedWin].cfg() || {}; }
@@ -2585,7 +2981,7 @@ function selectWindow(id) {
   // data-for lists the windows a tab applies to ("all" for every one).
   tabs.forEach((b) => {
     const fors = (b.dataset.for || '').split(' ');
-    b.hidden = !(fors.includes('all') || fors.includes(id));
+    b.hidden = !((fors.includes('all') && !isFrame(id)) || fors.includes(id));
   });
   const active = tabs.find((b) => b.classList.contains('on'));
   if (!active || active.hidden) {
@@ -2595,8 +2991,9 @@ function selectWindow(id) {
 
   // The Background tab follows the window you picked, so the two never
   // disagree about what you are editing. "The app" stays where you left it.
-  if (bgTargetKey !== 'app') selectBgTarget(id);
+  if (bgTargetKey !== 'app' && !isFrame(id)) selectBgTarget(id);
   selectControlTarget(id);
+  if (isFrame(id) && CONFIG) { syncFrameFields(); syncControls(); }
 
   $('previewTitle').textContent = WINDOWS[id].title;
   $('designingName').textContent = WINDOWS[id].label;
@@ -2611,7 +3008,8 @@ function selectWindow(id) {
     ? 'PNG, JPEG, GIF or WebP — as a sticker, or as the background'
     : "to use it as this window's background";
 
-  if (changed) previewEl.src = WINDOWS[id].page + '?preview=1&t=' + Date.now();
+  const page = WINDOWS[id].page;
+  if (changed) previewEl.src = page + (page.includes('?') ? '&' : '?') + 'preview=1&t=' + Date.now();
   layoutPreview();
 }
 
@@ -2622,6 +3020,7 @@ $('windowsBar').addEventListener('click', (e) => {
 });
 $('windowsBar').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.target.closest('button')) return;
   const card = e.target.closest('.wincard');
   if (!card) return;
   e.preventDefault();
@@ -2640,7 +3039,7 @@ function paintCardState(win, open, rect) {
   const cfg = WINDOWS[win].cfg() || {};
   const w = (rect && rect.w) || cfg.width;
   const h = (rect && rect.h) || cfg.height;
-  const label = $(WINDOWS[win].size);
+  const label = card.querySelector('.wc-size');
   if (label && w && h) label.textContent = w + ' \u00d7 ' + h;
 }
 
@@ -3547,7 +3946,7 @@ function stillDoc(doc) {
   // The preview's own clock reads this and moves once a second while still:
   // its progress bar redrew a few times a second, and every redraw repainted
   // the scaled preview (6 layouts a second in a deck with nothing moving).
-  doc.documentElement.setAttribute('data-still', '');
+  if (doc.documentElement) doc.documentElement.setAttribute('data-still', '');   // none while the preview loads
   for (const a of doc.getAnimations()) {
     if (a.playState === 'running' && a.effect && a.effect.getTiming().iterations === Infinity) {
       a.pause();
@@ -3565,7 +3964,7 @@ function syncStill() {
   }
   if (deckStill === false) return;
   deckStill = false;
-  for (const d of [document, previewDoc()]) if (d) d.documentElement.removeAttribute('data-still');
+  for (const d of [document, previewDoc()]) if (d && d.documentElement) d.documentElement.removeAttribute('data-still');
   // Resume only what is still on the page: an animation its element has
   // dropped since must not come back.
   const live = new Set(document.getAnimations());
@@ -3607,5 +4006,10 @@ onMotionChange(() => setTimeout(() => {
 }, 0));
 
 const events = new EventSource('/api/events');
-events.onmessage = (e) => { try { paintSpotify(JSON.parse(e.data)); } catch (_) {} };
+events.onmessage = (e) => {
+  let st;
+  try { st = JSON.parse(e.data); } catch (_) { return; }
+  try { paintSpotify(st); } catch (_) {}
+  paintRegistry(st);
+};
 

@@ -80,7 +80,10 @@
   window.idleHere = (state) => {
     const q = new URLSearchParams(location.search);
     if (q.has('embed') || q.has('preview')) return false;
-    const w = ((state && state.windows) || {})[PAGE_IDS[location.pathname.split('/').pop()]];
+    const file = location.pathname.split('/').pop();
+    // One page, two components: the frame says which by its kind.
+    const id = file === 'frame.html' ? (q.get('kind') === 'camera' ? 'camframe' : 'screenframe') : PAGE_IDS[file];
+    const w = ((state && state.windows) || {})[id];
     return !!(w && w.minimized);
   };
   // Pages redraw here when the switch flips or a frozen picture is ready.

@@ -692,6 +692,77 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## P6 - the deck shows the new backend (2026-09-12)
+
+What the deck gained, and the choices behind it:
+
+- **The components row is drawn from the registry** (`components` in the
+  state) instead of four cards written into deck.html. It is one strip in
+  three groups - Music and words (the four), Screen sharing (the two
+  frames), Canvas (one card per scene) - that scrolls sideways: cards snap,
+  an edge with more beyond it fades, arrows page it, a vertical wheel
+  scrolls it, a focused card is brought into view, and the left and right
+  arrow keys move between cards. The four music cards keep the element ids
+  the rest of deck.js binds to (`npToggle`, `lyStatus`, ...), and the row is
+  first drawn from the registry's own four before anything binds to them,
+  then redrawn from each snapshot; their nodes are kept, so their listeners
+  stay. New cards - frames, scenes - act through one delegated handler and
+  the registry routes (`/api/components/<id>/<action>`). Each card's line
+  comes from the registry (`sub`).
+- **Screen frame and Camera frame** are components like the others
+  (`screenframe`, `camframe`; one page, `frame.html?kind=screen|camera`;
+  settings under `frame` in their own config sections, and in the state as
+  `frames`). A frame is a border around a hole the game or camera shows
+  through - see-through (a scene, or a capture that keeps transparency) or
+  the key color (chroma key); everything that is not frame is the hole, so
+  a round camera frame's corners key out with it. Border styles solid,
+  double, dashed, glow or none; square, rounded or circle; decor.js's loop
+  of characters or motifs round the edge (the same patterns as Now Playing,
+  paused and stilled like it); four corner badges and a title plate. The
+  deck designs them in four tabs (Frame, Loop, Badges & title, Size) through
+  a `data-fr` scope bound to whichever frame is picked, pushed straight into
+  the preview and saved debounced, like the other windows. A minimized frame
+  idles like any window (`idleHere` knows the page by its kind).
+- **Canvas cards**: Open output (the scene's own output window), Go LIVE
+  (makes it the live scene; streaming itself stays the LIVE strip's Start),
+  Edit (the Canvas Builder on that scene).
+- **Canvas Builder button**: `/api/canvas/editor/open` opens
+  `canvas.html[?scene=]` as its own app window through the deck's launcher;
+  the page is a placeholder until P7.
+- **LIVE strip** in the top bar: the state (Off air, Connecting, LIVE with
+  uptime and bitrate, Reconnecting), the live scene picker, Start/Stop wired
+  to `/api/live`. Start stays disabled, and says why, until a stream key is
+  saved - the key, presets and audio are the LIVE panel's (P11).
+- Fixed on the way: Enter or Space on a card's own button selected the card
+  and swallowed the press (the button never ran from the keyboard); the top
+  bar wraps its controls onto a second line on a narrow deck instead of
+  pushing Quit off the edge; and the deck's pause check (the efficiency
+  pass) threw while the preview was between pages - a document with no root
+  element yet - so it now skips that moment. And the strip's own test
+  caught snapping at work against focus: a focused card at the end of a
+  group was scrolled in, then pulled half back out to the nearest snap
+  point. Focus now scrolls by the smallest amount that shows the card, with
+  snapping paused until the next wheel, click or touch on the strip.
+
+Tests. `tests/test_p6.py` covers the registry the row is drawn from (the
+groups, every card's line, the frames' own sections, scene cards coming
+and going with their scenes, the old route names); the P2 registry tests
+know the two frames. On the rig (`tools/p6/p6run.sh`), headless only - the
+second monitor was unplugged, and test windows never go on the main one -
+with every request that would open, move or resize a real window, open the
+Canvas Builder or start a stream answered by the test instead, so it checks
+the deck asks for the right one: 19 of 19 checks with no scenes (six cards)
+and 20 of 20 with four scenes (ten cards) - the row in its groups, the
+music cards' ids, both frame cards, screenshots at 1400 and 700 px, the
+arrows, the wheel and focus at 700 px, open, close, heal and snap for each
+of the four windows, a frame card picked (the frame page in the preview,
+only the frame tabs, a setting saved to that frame), a frame opened by the
+registry route, a scene card's output and Edit, the LIVE strip off air and
+live, the Canvas Builder button, and no console errors. Both frame pages
+loaded with none either. What was not run: a real window opening, since
+there was no second monitor to put it on; the windows' own open, close,
+snap and heal are unchanged from P2-P5 and were measured there.
+
 ## Efficiency pass (2026-09-12, after P5)
 
 A check that everything runs as lightly as it should, against the user's

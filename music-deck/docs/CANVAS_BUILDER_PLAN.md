@@ -29,7 +29,7 @@ every later prompt reads it first.
 | P3 | Scene runtime: renderer engine, embed mode, live sources, reactive images, transitions, budgets | Fable | [x] 2026-09-11 |
 | P4 | Go LIVE engine: encoder presets, audio, health, reconnect, scene switching API | Fable | [x] 2026-09-11 |
 | P5 | Optimization and hardening of the backend | Fable (part 2 on Opus) | [x] 2026-09-12 |
-| P6 | Deck integration: scrollable components row, screen-share group, Canvas Builder entry, LIVE strip | Opus | [ ] |
+| P6 | Deck integration: scrollable components row, screen-share group, Canvas Builder entry, LIVE strip | Opus | [x] 2026-09-12 |
 | P7 | Canvas Builder editor shell | Opus | [ ] |
 | P8 | Canvas tools: transform, snapping, guides, groups, shortcuts | Opus | [ ] |
 | P9 | Inspectors for every layer type and source | Opus | [ ] |

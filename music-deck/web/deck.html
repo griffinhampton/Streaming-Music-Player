@@ -37,6 +37,12 @@
   </div>
 
   <div class="topbar-right">
+    <div class="livestrip" id="liveStrip" role="group" aria-label="LIVE" data-state="idle">
+      <span class="ls-dot" aria-hidden="true"></span>
+      <span class="ls-state" id="liveState" aria-live="polite">Off air</span>
+      <select id="liveScene" class="input" aria-label="Live scene" title="The scene the live output shows"></select>
+      <button id="liveGo" class="btn btn-primary btn-sm" type="button">Start</button>
+    </div>
     <label class="check ultra-toggle" title="The lightest the app can run: no animation in the app or your windows, animated pictures frozen, clocks that move once a second, and captions as finished lines only.">
       <input type="checkbox" data-ui="ultra" data-kind="bool"><span>Ultra optimized</span></label>
     <button id="appLookToggle" class="btn btn-ghost btn-sm" title="Colors, font and density of this app's own window">App appearance&hellip;</button>
@@ -58,61 +64,18 @@
      opens or closes that window. -->
 <div class="band-head">
   <h2 class="band"><span class="band-no">1</span> Pick a window to put on stream</h2>
-  <button id="helpBtn" class="btn btn-ghost btn-sm" title="Show the welcome help again" aria-label="Show help">?</button>
+  <div class="band-actions">
+    <button id="canvasBtn" class="btn btn-ghost btn-sm" title="Open the Canvas Builder in its own window">Canvas Builder</button>
+    <button id="helpBtn" class="btn btn-ghost btn-sm" title="Show the welcome help again" aria-label="Show help">?</button>
+  </div>
 </div>
-<nav class="windows" id="windowsBar" aria-label="Stream windows">
-  <div class="wincard on" data-win="np" tabindex="0" role="button" aria-pressed="true">
-    <div class="wc-head">
-      <span class="wc-dot"></span>
-      <span class="wc-name">Now Playing</span>
-      <span class="wc-state" id="npStatus">closed</span>
-    </div>
-    <p class="wc-sub">The track, the art and the progress bar</p>
-    <div class="wc-foot">
-      <span class="wc-size" id="npSize"></span>
-      <button id="npToggle" class="btn btn-primary btn-sm">Open</button>
-    </div>
-  </div>
-
-  <div class="wincard" data-win="lyrics" tabindex="0" role="button" aria-pressed="false">
-    <div class="wc-head">
-      <span class="wc-dot"></span>
-      <span class="wc-name">Lyrics</span>
-      <span class="wc-state" id="lyStatus">closed</span>
-    </div>
-    <p class="wc-sub">The words, scrolling in time</p>
-    <div class="wc-foot">
-      <span class="wc-size" id="lySize"></span>
-      <button id="lyToggle" class="btn btn-primary btn-sm">Open</button>
-    </div>
-  </div>
-
-  <div class="wincard" data-win="queue" tabindex="0" role="button" aria-pressed="false">
-    <div class="wc-head">
-      <span class="wc-dot"></span>
-      <span class="wc-name">Queue</span>
-      <span class="wc-state" id="qStatus">closed</span>
-    </div>
-    <p class="wc-sub">What Spotify plays next</p>
-    <div class="wc-foot">
-      <span class="wc-size" id="qSize"></span>
-      <button id="qToggle" class="btn btn-primary btn-sm">Open</button>
-    </div>
-  </div>
-
-  <div class="wincard" data-win="captions" tabindex="0" role="button" aria-pressed="false">
-    <div class="wc-head">
-      <span class="wc-dot"></span>
-      <span class="wc-name">Captions</span>
-      <span class="wc-state" id="capStatus">closed</span>
-    </div>
-    <p class="wc-sub">What you say, as live text</p>
-    <div class="wc-foot">
-      <span class="wc-size" id="capSize"></span>
-      <button id="capToggle" class="btn btn-primary btn-sm">Open</button>
-    </div>
-  </div>
-</nav>
+<div class="strip" id="compStrip">
+  <button class="strip-arrow prev" id="stripPrev" type="button" tabindex="-1" aria-label="Scroll the windows left">&#8249;</button>
+  <!-- Drawn by deck.js from the component registry (the state's "components"):
+       Music and words, Screen sharing, Canvas. -->
+  <nav class="windows" id="windowsBar" aria-label="Stream windows"></nav>
+  <button class="strip-arrow next" id="stripNext" type="button" tabindex="-1" aria-label="Scroll the windows right">&#8250;</button>
+</div>
 
 <main class="grid">
 
@@ -213,6 +176,10 @@
         <button data-tab="captions" data-for="captions">Look</button>
         <button data-tab="captions-text" data-for="captions">Text</button>
         <button data-tab="captions-size" data-for="captions">Size</button>
+        <button data-tab="frame" data-for="screenframe camframe">Frame</button>
+        <button data-tab="frame-loop" data-for="screenframe camframe">Loop</button>
+        <button data-tab="frame-badges" data-for="screenframe camframe">Badges &amp; title</button>
+        <button data-tab="frame-size" data-for="screenframe camframe">Size</button>
       </div>
 
       <!-- layout -->
@@ -630,6 +597,152 @@
 
 
       <!-- lyrics: look -->
+      <!-- frames: the border and the hole -->
+      <div class="tabpane" data-pane="frame">
+        <p class="hint">A border around a hole your game or camera shows through.</p>
+        <label class="field">
+          <span>The hole</span>
+          <div class="segmented small" data-fr="frame.hole" data-kind="seg">
+            <button data-v="clear">See-through</button>
+            <button data-v="key">Key color</button>
+          </div>
+          <span class="hint">See-through works in a scene or a capture that keeps transparency; a key color is for chroma key.</span>
+        </label>
+        <label class="field"><span>Key color</span>
+          <input class="color wide" type="color" data-fr="frame.key_color" data-kind="color"></label>
+        <label class="field">
+          <span>Shape</span>
+          <div class="segmented small" data-fr="frame.shape" data-kind="seg">
+            <button data-v="rect">Square corners</button>
+            <button data-v="rounded">Rounded</button>
+            <button data-v="circle">Circle</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Corner radius <b class="mono" data-frout="frame.radius">18</b></span>
+          <input type="range" min="0" max="160" step="1" data-fr="frame.radius" data-kind="range">
+        </label>
+        <label class="field">
+          <span>Border</span>
+          <div class="segmented small" data-fr="frame.border.style" data-kind="seg">
+            <button data-v="solid">Solid</button>
+            <button data-v="double">Double</button>
+            <button data-v="dashed">Dashed</button>
+            <button data-v="glow">Glow</button>
+            <button data-v="none">None</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Border width <b class="mono" data-frout="frame.border.width">8</b></span>
+          <input type="range" min="0" max="40" step="1" data-fr="frame.border.width" data-kind="range">
+        </label>
+        <div class="field two">
+          <label><span>Border color</span>
+            <input class="color wide" type="color" data-fr="frame.border.color" data-kind="color"></label>
+          <label><span>&nbsp;</span>
+            <button class="btn btn-ghost btn-sm" data-clear="frame.border.color" data-scope="fr">Use the accent</button></label>
+        </div>
+      </div>
+
+      <!-- frames: the loop round the edge (decor.js) -->
+      <div class="tabpane" data-pane="frame-loop">
+        <p class="hint">Characters or a motif repeated all round the frame.</p>
+        <label class="field">
+          <span>Pattern</span>
+          <select class="input" id="frLoopPattern" data-fr="frame.loop.border" data-kind="str"></select>
+        </label>
+        <label class="field">
+          <span>Or type your own</span>
+          <input class="input" type="text" maxlength="40" placeholder="e.g. &#10047; &#10048; &#10046; " data-fr="frame.loop.custom" data-kind="str">
+        </label>
+        <label class="field">
+          <span>Size <b class="mono" data-frout="frame.loop.size">0.90</b></span>
+          <input type="range" min="30" max="300" step="5" data-div="100" data-dp="2" data-fr="frame.loop.size" data-kind="range">
+        </label>
+        <div class="field two">
+          <label><span>Color</span>
+            <input class="color wide" type="color" data-fr="frame.loop.color" data-kind="color"></label>
+          <label><span>&nbsp;</span>
+            <button class="btn btn-ghost btn-sm" data-clear="frame.loop.color" data-scope="fr">Use the border color</button></label>
+        </div>
+        <label class="field">
+          <span>Motion</span>
+          <div class="segmented small" data-fr="frame.loop.animate" data-kind="segbool">
+            <button data-v="1">Moving</button>
+            <button data-v="0">Still</button>
+          </div>
+        </label>
+      </div>
+
+      <!-- frames: corner badges and the title plate -->
+      <div class="tabpane" data-pane="frame-badges">
+        <p class="hint">An emoji or a few letters in any corner, and a title on the border.</p>
+        <div class="field two">
+          <label><span>Top left</span><input class="input" type="text" maxlength="4" data-fr="frame.badges.tl" data-kind="str"></label>
+          <label><span>Top right</span><input class="input" type="text" maxlength="4" data-fr="frame.badges.tr" data-kind="str"></label>
+        </div>
+        <div class="field two">
+          <label><span>Bottom left</span><input class="input" type="text" maxlength="4" data-fr="frame.badges.bl" data-kind="str"></label>
+          <label><span>Bottom right</span><input class="input" type="text" maxlength="4" data-fr="frame.badges.br" data-kind="str"></label>
+        </div>
+        <label class="field">
+          <span>Badge size <b class="mono" data-frout="frame.badges.size">1.00</b></span>
+          <input type="range" min="40" max="300" step="5" data-div="100" data-dp="2" data-fr="frame.badges.size" data-kind="range">
+        </label>
+        <div class="field two">
+          <label><span>Badge color</span>
+            <input class="color wide" type="color" data-fr="frame.badges.color" data-kind="color"></label>
+          <label><span>&nbsp;</span>
+            <button class="btn btn-ghost btn-sm" data-clear="frame.badges.color" data-scope="fr">Use the border color</button></label>
+        </div>
+        <label class="field">
+          <span>Title</span>
+          <input class="input" type="text" maxlength="40" placeholder="e.g. Ranked grind" data-fr="frame.title.text" data-kind="str">
+        </label>
+        <label class="field">
+          <span>Title on the</span>
+          <div class="segmented small" data-fr="frame.title.place" data-kind="seg">
+            <button data-v="top">Top edge</button>
+            <button data-v="bottom">Bottom edge</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Title size <b class="mono" data-frout="frame.title.size">1.00</b></span>
+          <input type="range" min="40" max="300" step="5" data-div="100" data-dp="2" data-fr="frame.title.size" data-kind="range">
+        </label>
+        <label class="field"><span>Title text color</span>
+          <input class="color wide" type="color" data-fr="frame.title.color" data-kind="color"></label>
+      </div>
+
+      <!-- frames: size and place -->
+      <div class="tabpane" data-pane="frame-size">
+        <label class="field">
+          <span>Shape</span>
+          <div class="row gap wrap" id="frSizePresets">
+            <button class="btn btn-ghost btn-sm" data-w="1280" data-h="720">Wide 1280&times;720</button>
+            <button class="btn btn-ghost btn-sm" data-w="1920" data-h="1080">Full HD 1920&times;1080</button>
+            <button class="btn btn-ghost btn-sm" data-w="480" data-h="480">Square 480&times;480</button>
+            <button class="btn btn-ghost btn-sm" data-w="640" data-h="480">Camera 640&times;480</button>
+          </div>
+          <span class="hint">Or grab a corner of the window itself and stretch it any way you like.</span>
+        </label>
+        <div class="field two">
+          <label><span>Width</span>
+            <input id="frWidth" class="input" type="number" min="100" max="3840" step="10"></label>
+          <label><span>Height</span>
+            <input id="frHeight" class="input" type="number" min="100" max="2160" step="10"></label>
+        </div>
+        <label class="field">
+          <span>Snap to</span>
+          <div class="row gap wrap" id="frSnap">
+            <button class="btn btn-ghost btn-sm" data-c="tl">&#8598; Top left</button>
+            <button class="btn btn-ghost btn-sm" data-c="tr">&#8599; Top right</button>
+            <button class="btn btn-ghost btn-sm" data-c="bl">&#8601; Bottom left</button>
+            <button class="btn btn-ghost btn-sm" data-c="br">&#8600; Bottom right</button>
+          </div>
+        </label>
+      </div>
+
       <div class="tabpane" data-pane="lyrics">
         <p class="hint">A second window that scrolls the words in time with the song.
           Add it in TikTok Studio as <b>Awesome Streaming Deck - Lyrics</b> and drag it wherever you like.

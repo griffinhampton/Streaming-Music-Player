@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Fixed titles: the server finds this window by name to tuck it inside its
+     frameless host ("Awesome Streaming Deck - Screen frame" or "... - Camera
+     frame" is what capture sees). frame.js sets the right one before the
+     server looks. -->
+<title>Awesome Streaming Deck - Screen frame (source)</title>
+<script>
+  if (new URLSearchParams(location.search).get('kind') === 'camera') {
+    document.title = 'Awesome Streaming Deck - Camera frame (source)';
+  }
+</script>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="stylesheet" href="frame.css">
+<link rel="stylesheet" href="windowctl.css">
+<link rel="stylesheet" href="embed.css">
+<script src="embed.js"></script>
+<script src="fonts.js"></script>
+<script src="motion.js"></script>
+</head>
+<body>
+
+<div id="stage" class="stage" data-hole="clear" data-shape="rounded" data-style="solid">
+  <!-- decor.js draws its characters or motif ring in here, round the edge. -->
+  <div class="decor" id="decor">
+    <div class="decor-strip decor-top"><span></span></div>
+    <div class="decor-strip decor-bottom"><span></span></div>
+    <div class="decor-strip decor-left"><span></span></div>
+    <div class="decor-strip decor-right"><span></span></div>
+  </div>
+  <div class="ring" id="ring"></div>
+  <div class="title" id="title" hidden></div>
+  <div class="badge tl" id="badgeTl" hidden></div>
+  <div class="badge tr" id="badgeTr" hidden></div>
+  <div class="badge bl" id="badgeBl" hidden></div>
+  <div class="badge br" id="badgeBr" hidden></div>
+
+  <!-- Only visible while the mouse is over the window, so it never lands on stream. -->
+  <div class="handles">
+    <div class="hint">drag to move &middot; edges resize &middot; &minus; hides it</div>
+    <button id="minBtn"   class="winbtn min"   title="Hide &mdash; find it on the taskbar">&minus;</button>
+    <button id="closeBtn" class="winbtn close" title="Close (also Alt+F4)">&times;</button>
+    <div class="rz rz-n" data-edge="t"></div>  <div class="rz rz-s" data-edge="b"></div>
+    <div class="rz rz-w" data-edge="l"></div>  <div class="rz rz-e" data-edge="r"></div>
+    <div class="rz rz-nw" data-edge="tl"></div><div class="rz rz-ne" data-edge="tr"></div>
+    <div class="rz rz-sw" data-edge="bl"></div>
+    <div id="grip" class="rz rz-se grip" data-edge="br" title="Drag to resize"></div>
+  </div>
+</div>
+
+<script src="decor.js"></script>
+<script src="windowctl.js"></script>
+<script src="frame.js"></script>
+</body>
+</html>

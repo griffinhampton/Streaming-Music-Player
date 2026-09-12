@@ -201,6 +201,35 @@ DEFAULT_CONFIG = {
                       "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 1},
         },
     },
+    # Screen sharing: decorative frames with a hole the game or camera shows through.
+    "screenframe": {
+        "width": 1280, "height": 720, "x": 120, "y": 120,
+        "borderless": True, "topmost": True,
+        "frame": {
+            "hole": "clear",             # clear (see-through) | key (painted the key color)
+            "key_color": "#00ff00",
+            "shape": "rounded",            # rect | rounded | circle
+            "radius": 18,                # px, for rounded
+            "border": {"style": "solid", "width": 8, "color": ""},   # solid | double | dashed | glow | none; "" = the accent
+            "loop": {"border": "", "custom": "", "size": 0.9, "color": "", "animate": True},   # decor.js patterns
+            "badges": {"tl": "", "tr": "", "bl": "", "br": "", "size": 1.0, "color": ""},
+            "title": {"text": "", "place": "top", "size": 1.0, "color": ""},
+        },
+    },
+    "camframe": {
+        "width": 480, "height": 480, "x": 160, "y": 160,
+        "borderless": True, "topmost": True,
+        "frame": {
+            "hole": "clear",             # clear (see-through) | key (painted the key color)
+            "key_color": "#00ff00",
+            "shape": "circle",            # rect | rounded | circle
+            "radius": 18,                # px, for rounded
+            "border": {"style": "solid", "width": 8, "color": ""},   # solid | double | dashed | glow | none; "" = the accent
+            "loop": {"border": "", "custom": "", "size": 0.9, "color": "", "animate": True},   # decor.js patterns
+            "badges": {"tl": "", "tr": "", "bl": "", "br": "", "size": 1.0, "color": ""},
+            "title": {"text": "", "place": "top", "size": 1.0, "color": ""},
+        },
+    },
     "captions": {
         "enabled": False,            # listen on launch; off until you press Start
         "engine": "whisper",         # whisper (accurate) | windows (built-in, no download)
@@ -918,6 +947,8 @@ class Hub:
             "lyrics_cfg": CONFIG.get("lyrics", {}),
             "queue_cfg": CONFIG.get("queue", {}),
             "captions_cfg": CONFIG.get("captions", {}),
+            "frames": {"screenframe": (CONFIG.get("screenframe") or {}).get("frame", {}),
+                       "camframe": (CONFIG.get("camframe") or {}).get("frame", {})},
             # Ultra optimized, for every page: stop all motion, tick slowly.
             "ultra": ultra_on(),
             "server_time": time.time(),
@@ -2129,6 +2160,12 @@ class Handler(BaseHTTPRequestHandler):
                                   data.get("width"), data.get("height"))
             return self._json({"ok": True, "scene": scene})
 
+        if path == "/api/canvas/editor/open":
+            # The Canvas Builder in its own app window (the editor itself is P7).
+            sid = str(data.get("scene") or "")
+            q = ("?scene=" + urllib.parse.quote(sid, safe="")) if sid and SCENES.get(sid) else ""
+            ok = launch_deck(f"http://127.0.0.1:{CONFIG['port']}/canvas.html{q}", 1440, 900)
+            return self._json({"ok": bool(ok)})
         if path == "/api/canvas/live":
             return self._json(set_live_scene(data.get("id", ""), data.get("transition"), data.get("duration")))
 

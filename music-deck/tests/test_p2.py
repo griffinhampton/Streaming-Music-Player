@@ -157,7 +157,8 @@ class AssetTests(Temp):
 class RegistryTests(Temp):
     def test_builtin_and_aliases(self):
         reg = components.builtin(self.dir)
-        self.assertEqual(reg.ids(), ["np", "lyrics", "queue", "captions", "live"])
+        # P6 added the two Screen sharing frames to the built-ins.
+        self.assertEqual(reg.ids(), ["np", "lyrics", "queue", "captions", "screenframe", "camframe", "live"])
         self.assertIs(reg.resolve("window"), reg.get("np"))
         self.assertIs(reg.resolve("captions/window"), reg.get("captions"))
         self.assertIs(reg.resolve("queue"), reg.get("queue"))
@@ -183,7 +184,7 @@ class RegistryTests(Temp):
         self.assertEqual(reg.get("scene:ab12").label, "Canvas: Chat 2")
         reg.sync_scenes([])
         self.assertIsNone(reg.get("scene:ab12"))
-        self.assertEqual(len(reg.describe_all()), 5)     # the four plus the live output
+        self.assertEqual(len(reg.describe_all()), 7)     # the four, the two frames (P6), the live output
 
     def test_permission_seed_is_idempotent(self):
         profile = os.path.join(self.dir, "chrome-windows")

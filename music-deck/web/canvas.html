@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Awesome Streaming Deck - Canvas Builder</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<!-- A placeholder: the editor itself - layers, sources, the inspector -
+     is the next step of the plan (P7). This page proves the window, the
+     route and the scene hand-off from the deck. -->
+<style>
+  :root { color-scheme: dark; --bg: #0b0b11; --panel: #14141c; --line: #26263a; --fg: #f0f0f4; --dim: #8e8ea0; --accent: #8b5cf6; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 28px; }
+  h1 { margin: 0 0 6px; font-size: 1.6em; }
+  p { color: var(--dim); margin: 0 0 22px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--panel);
+       border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 10px; }
+  li.on { border-left-color: var(--accent); }
+  li .fmt { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .empty { color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Canvas Builder</h1>
+  <p>The editor - layers, sources and the inspector - arrives in the next step. Your scenes so far:</p>
+  <ul id="scenes"><li class="empty">Loading&hellip;</li></ul>
+</main>
+<script>
+  const want = new URLSearchParams(location.search).get('scene') || '';
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  fetch('/api/scenes').then((r) => r.json()).then((d) => {
+    const list = document.getElementById('scenes');
+    const scenes = d.scenes || [];
+    list.innerHTML = scenes.length
+      ? scenes.map((s) => `<li class="${s.id === want ? 'on' : ''}"><span>${esc(s.name)}</span>` +
+          `<span class="fmt">${esc(s.width)} &times; ${esc(s.height)}</span></li>`).join('')
+      : '<li class="empty">No scenes yet.</li>';
+  }).catch(() => { document.getElementById('scenes').innerHTML = '<li class="empty">The deck is not running.</li>'; });
+</script>
+</body>
+</html>

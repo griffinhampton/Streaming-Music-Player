@@ -1,0 +1,197 @@
+/* Screen frame and Camera frame: a border around a hole. Whatever is not
+   frame is the hole - see-through, or the key color - so a round camera
+   frame's corners key out with it. */
+
+/* No color-scheme here: a page that declares one gets an opaque canvas when
+   a scene embeds it, and the see-through hole would stop being see-through. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+
+.stage {
+  --frame-color: #8b5cf6;
+  --frame-width: 8px;
+  --frame-radius: 18px;
+  --hole: transparent;
+  --ring-inset: 0px;
+  --title-scale: 1;
+  --title-color: #ffffff;
+  --badge-scale: 1;
+  --badge-color: var(--frame-color);
+  --accent: var(--frame-color);
+  position: fixed; inset: 0;
+  background: var(--hole);
+  font-family: var(--frame-font, "Segoe UI", system-ui, sans-serif);
+  font-size: max(12px, 3.4vmin);
+}
+/* In the deck's preview, see-through shows as a checkerboard. */
+.stage.preview[data-hole="clear"] {
+  background: repeating-conic-gradient(#2a2a33 0 25%, #1d1d24 0 50%) 0 0 / 22px 22px;
+}
+
+/* ---------------------------------------------------------------- the ring */
+
+.ring {
+  position: absolute; inset: var(--ring-inset);
+  box-sizing: border-box;
+  border: var(--frame-width) solid var(--frame-color);
+  border-radius: var(--frame-radius);
+  pointer-events: none;
+  z-index: 3;
+}
+.stage[data-style="double"] .ring { border-style: double; border-width: max(6px, var(--frame-width)); }
+.stage[data-style="dashed"] .ring { border-style: dashed; }
+.stage[data-style="glow"] .ring {
+  box-shadow: 0 0 calc(var(--frame-width) * 1.6) var(--frame-color),
+              inset 0 0 calc(var(--frame-width) * 1.2) var(--frame-color);
+}
+.stage[data-style="none"] .ring { border-color: transparent; }
+
+/* ---------------------------------------------------------------- title and badges */
+
+.title {
+  position: absolute; left: 50%; z-index: 4;
+  top: calc(var(--ring-inset) + var(--frame-width) / 2);
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  padding: .22em .9em;
+  border-radius: 999px;
+  background: var(--frame-color);
+  color: var(--title-color);
+  font-size: calc(1em * var(--title-scale));
+  font-weight: 700; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stage[data-title-place="bottom"] .title {
+  top: auto; bottom: calc(var(--ring-inset) + var(--frame-width) / 2);
+  transform: translate(-50%, 50%);
+}
+
+.badge {
+  position: absolute; z-index: 4;
+  width: calc(2em * var(--badge-scale)); height: calc(2em * var(--badge-scale));
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--badge-color);
+  color: #fff;
+  font-size: calc(1em * var(--badge-scale));
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+.badge.tl { left: calc(var(--ring-inset) + var(--frame-width) / 2); top: calc(var(--ring-inset) + var(--frame-width) / 2); }
+.badge.tr { left: calc(100% - var(--ring-inset) - var(--frame-width) / 2); top: calc(var(--ring-inset) + var(--frame-width) / 2); }
+.badge.bl { left: calc(var(--ring-inset) + var(--frame-width) / 2); top: calc(100% - var(--ring-inset) - var(--frame-width) / 2); }
+.badge.br { left: calc(100% - var(--ring-inset) - var(--frame-width) / 2); top: calc(100% - var(--ring-inset) - var(--frame-width) / 2); }
+/* A circle's corners are outside it: pull the badges onto the ring. */
+.stage[data-shape="circle"] .badge.tl { left: calc(var(--ring-inset) + 15%); top: calc(var(--ring-inset) + 15%); }
+.stage[data-shape="circle"] .badge.tr { left: calc(85% - var(--ring-inset)); top: calc(var(--ring-inset) + 15%); }
+.stage[data-shape="circle"] .badge.bl { left: calc(var(--ring-inset) + 15%); top: calc(85% - var(--ring-inset)); }
+.stage[data-shape="circle"] .badge.br { left: calc(85% - var(--ring-inset)); top: calc(85% - var(--ring-inset)); }
+
+[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------------- the loop (decor.js)
+   The same rules as Now Playing's decoration frame, so every pattern and
+   motif looks the same here. */
+
+.decor {
+  position: absolute; inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  display: none;
+  color: var(--decor-color, var(--accent));
+  opacity: var(--decor-opacity, .85);
+  font-size: var(--decor-font, .62em);
+  letter-spacing: var(--decor-gap, .5em);
+  line-height: 1;
+}
+.stage.has-decor .decor { display: block; }
+.decor-strip {
+  position: absolute;
+  display: none;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.decor-strip span { display: inline-block; flex: 0 0 auto; }
+.stage.decor-top .decor > .decor-top,
+.stage.decor-bottom .decor > .decor-bottom,
+.stage.decor-left .decor > .decor-left,
+.stage.decor-right .decor > .decor-right { display: flex; }
+.decor > .decor-top    { top: 0;    left: 0; right: 0; height: var(--decor-px, 1.5em); padding: 0 .4em; }
+.decor > .decor-bottom { bottom: 0; left: 0; right: 0; height: var(--decor-px, 1.5em); padding: 0 .4em; }
+.decor > .decor-left, .decor > .decor-right {
+  top: 0; bottom: 0;
+  width: var(--decor-px, 1.5em);
+  padding: .4em 0;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+.decor > .decor-left  { left: 0; }
+.decor > .decor-right { right: 0; }
+.stage.decor-animate .decor-strip span  { animation: drift var(--decor-time, 24s) linear infinite; }
+.stage.decor-animate .decor-right span  { animation-name: drift-v; }
+.stage.decor-animate .decor-bottom span { animation-name: drift-back; }
+.stage.decor-animate .decor-left span   { animation-name: drift-v-back; }
+@keyframes drift        { from { transform: translateX(0); }    to { transform: translateX(-50%); } }
+@keyframes drift-back   { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@keyframes drift-v      { from { transform: translateY(0); }    to { transform: translateY(-50%); } }
+@keyframes drift-v-back { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+.stage.decor-motif .decor > .decor-strip > span { position: absolute; top: 0; left: 0; }
+.stage.decor-motif .decor-strip { letter-spacing: 0; }
+.stage.decor-motif .decor > .decor-top,
+.stage.decor-motif .decor > .decor-bottom { height: var(--decor-px, 24px); left: 0; right: 0; }
+.stage.decor-motif .decor > .decor-top    { top: 0; }
+.stage.decor-motif .decor > .decor-bottom { bottom: 0; }
+.stage.decor-motif .decor > .decor-left,
+.stage.decor-motif .decor > .decor-right  { width: var(--decor-px, 24px); top: 0; bottom: 0; writing-mode: horizontal-tb; }
+.stage.decor-motif .decor > .decor-left   { left: 0; }
+.stage.decor-motif .decor > .decor-right  { right: 0; }
+
+/* ---------------------------------------------------------------- handles
+   The same window handles as every pop-out: only while the mouse is over the
+   window, so they never land on stream (windowctl.css draws the button
+   symbols; these rules place the buttons they are drawn in). */
+
+.handles { position: absolute; inset: 0; z-index: 20; opacity: 0; transition: opacity 140ms ease; pointer-events: none; }
+.stage:hover .handles { opacity: 1; }
+.stage.preview .handles { display: none; }
+.hint {
+  position: absolute; left: 50%; top: 6px; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255,255,255,.7); background: rgba(0,0,0,.55);
+  padding: 3px 12px; border-radius: 1em; font-family: system-ui, sans-serif;
+}
+.winbtn {
+  position: absolute; top: 6px;
+  width: 22px; height: 22px; display: grid; place-items: center;
+  font-size: 13px; line-height: 1; color: #fff;
+  border: none; border-radius: 50%;
+  cursor: pointer; pointer-events: auto; font-family: system-ui, sans-serif;
+}
+.winbtn.close { right: 6px; background: rgba(220,40,60,.85); }
+.winbtn.close:hover { background: rgb(230,50,70); }
+.winbtn.min { right: 32px; background: rgba(255,255,255,.14); }
+.winbtn.min:hover { background: color-mix(in srgb, var(--frame-color) 55%, rgba(0,0,0,.4)); }
+.rz { position: absolute; pointer-events: auto; }
+.rz-n, .rz-s { left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.rz-n { top: 0; } .rz-s { bottom: 0; }
+.rz-e, .rz-w { top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.rz-w { left: 0; } .rz-e { right: 0; }
+.rz-nw, .rz-ne, .rz-sw, .rz-se { width: 16px; height: 16px; }
+.rz-nw { top: 0; left: 0; cursor: nwse-resize; }
+.rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.rz-ne { top: 0; right: 0; cursor: nesw-resize; }
+.rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.rz-n:hover, .rz-s:hover, .rz-e:hover, .rz-w:hover {
+  background: color-mix(in srgb, var(--frame-color) 45%, transparent);
+}
+.rz-se.grip {
+  background:
+    linear-gradient(135deg, transparent 0 55%, rgba(255,255,255,.75) 55% 62%, transparent 62% 70%,
+                    rgba(255,255,255,.75) 70% 77%, transparent 77% 85%,
+                    rgba(255,255,255,.75) 85% 92%, transparent 92%);
+}
+/* First-open hint: the pill on its own for a few seconds. */
+.stage.show-hint .handles { opacity: 1; }
+.stage.show-hint .winbtn, .stage.show-hint .rz { opacity: 0; }
+.stage.show-hint .hint { opacity: 1; transition: opacity .3s; }

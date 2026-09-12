@@ -27,9 +27,10 @@ ALIASES = {
 
 class Component:
     def __init__(self, cid, label, page, section, size, group="music",
-                 capabilities=(), host_title=None, page_title=None, dynamic=False):
+                 capabilities=(), host_title=None, page_title=None, dynamic=False, sub=""):
         self.id = cid
         self.label = label
+        self.sub = sub                    # one line for the deck's card
         self.page = page                  # served path, query included
         self.section = section            # config section; None for dynamic ones
         self.size = tuple(size)
@@ -41,7 +42,7 @@ class Component:
         self.overlay = None
 
     def describe(self):
-        return {"id": self.id, "label": self.label, "page": self.page,
+        return {"id": self.id, "label": self.label, "sub": self.sub, "page": self.page,
                 "section": self.section, "group": self.group,
                 "size": list(self.size), "capabilities": list(self.capabilities),
                 "dynamic": self.dynamic, "host_title": self.host_title}
@@ -132,7 +133,8 @@ class Registry:
                     cid, f"Canvas: {s['name']}", f"scene.html?id={s['id']}", None,
                     (int(s.get("width") or 1920), int(s.get("height") or 1080)),
                     group="canvas", capabilities=("scene",),
-                    page_title=f"{TITLE} - Canvas {s['id']} (source)", dynamic=True))
+                    page_title=f"{TITLE} - Canvas {s['id']} (source)", dynamic=True,
+                    sub=f"{int(s.get('width') or 1920)} x {int(s.get('height') or 1080)}"))
             else:
                 # A rename shows in the picker's title next time it opens.
                 comp.label = f"Canvas: {s['name']}"
@@ -145,18 +147,28 @@ class Registry:
 def builtin(cache_dir):
     reg = Registry(cache_dir)
     reg.add(Component("np", "Now Playing", "nowplaying.html", "nowplaying", (760, 190),
-                      capabilities=("music", "designer")))
+                      capabilities=("music", "designer"), sub="The track, the art and the progress bar"))
     reg.add(Component("lyrics", "Lyrics", "lyrics.html", "lyrics", (560, 320),
-                      capabilities=("music", "designer")))
+                      capabilities=("music", "designer"), sub="The words, scrolling in time"))
     reg.add(Component("queue", "Queue", "queue.html", "queue", (420, 320),
-                      capabilities=("music", "spotify", "designer")))
+                      capabilities=("music", "spotify", "designer"), sub="What Spotify plays next"))
     reg.add(Component("captions", "Captions", "captions.html", "captions", (900, 200),
-                      capabilities=("microphone", "designer")))
+                      capabilities=("microphone", "designer"), sub="What you say, as live text"))
+    # Screen sharing: decorative frames with a hole the game or the camera
+    # shows through - see-through (in a scene, or a capture that keeps
+    # transparency) or the key color (for chroma key).
+    reg.add(Component("screenframe", "Screen frame", "frame.html?kind=screen", "screenframe", (1280, 720),
+                      group="sharing", capabilities=("frame", "designer"),
+                      sub="A border around your game or screen"))
+    reg.add(Component("camframe", "Camera frame", "frame.html?kind=camera", "camframe", (480, 480),
+                      group="sharing", capabilities=("frame", "designer"),
+                      sub="A border around your camera"))
     # The output that follows whatever scene is live; it takes the live
     # scene's size when the switch happens.
     reg.add(Component("live", "Canvas (live)", "scene.html?follow=1", None, (1920, 1080),
                       group="canvas", capabilities=("scene", "live"),
-                      page_title=f"{TITLE} - Canvas live (source)"))
+                      page_title=f"{TITLE} - Canvas live (source)",
+                      sub="Follows whichever scene is live"))
     return reg
 
 

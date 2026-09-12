@@ -81,6 +81,7 @@ h2 {
 .topbar {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; row-gap: 10px;   /* a narrow deck puts the controls on a second line */
   gap: 16px;
   padding: calc(15px * var(--d)) calc(16px * var(--d)) calc(11px * var(--d));
   border-bottom: 1px solid var(--line-strong);
@@ -99,7 +100,8 @@ h2 {
   padding: 3px 7px; border-radius: 20px;
 }
 .tag-soft { opacity: .8; }
-.topbar-right { display: flex; align-items: center; gap: 10px; }
+.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+.band-actions { display: flex; align-items: center; gap: 8px; }
 .topbar .ultra-toggle { font-size: .85em; white-space: nowrap; color: var(--dim); margin-right: 4px; }
 .topbar .ultra-toggle:has(input:checked) span { color: var(--fg); }
 
@@ -968,22 +970,66 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 .sp-results .sp-row { cursor: pointer; }
 
 
-/* ---------------------------------------------------------------- windows bar
+/* ---------------------------------------------------------------- components row
 
-   The three outputs, side by side, so what is live is answerable at a glance
-   and every window is one click from opening. */
+   Every window the app can put on stream, drawn from the component registry
+   in groups - Music and words, Screen sharing, Canvas - as one strip that
+   scrolls sideways: snapping to cards, fading at an edge with more beyond
+   it, arrows to page it, the wheel scrolling it, and a card that takes the
+   keyboard's focus brought into view. */
 
-.windows {
+.strip {
+  position: relative;
   flex: 0 0 auto;
-  display: grid;
-  /* auto-fit so the three cards sit in a row on a wide deck but wrap to two,
-     then one, as the window narrows - instead of being crushed side by side. */
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: calc(10px * var(--d));
   padding: calc(12px * var(--d)) calc(16px * var(--d)) 0;
 }
+.windows {
+  --fade: 34px;
+  display: flex; align-items: stretch;
+  gap: calc(18px * var(--d));
+  overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: 2px 2px 4px;
+}
+.windows::-webkit-scrollbar { display: none; }
+.strip.can-prev .windows { mask-image: linear-gradient(to right, transparent, #000 var(--fade)); }
+.strip.can-next .windows { mask-image: linear-gradient(to left, transparent, #000 var(--fade)); }
+.strip.can-prev.can-next .windows {
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+}
+.wc-group { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+.wc-group-label {
+  font-size: .7em; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--dim); padding-left: 2px;
+}
+.wc-group-cards { display: flex; gap: calc(10px * var(--d)); }
+.wc-empty { font-size: .8em; color: var(--dim); padding: 10px 4px; max-width: 220px; }
+
+.strip-arrow {
+  position: absolute; top: 55%; z-index: 3;
+  width: 30px; height: 30px; padding: 0;
+  display: none; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--panel); color: var(--fg);
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+}
+.strip-arrow:hover { border-color: var(--accent); }
+.strip-arrow.prev { left: 8px; }
+.strip-arrow.next { right: 8px; }
+.strip.can-prev .strip-arrow.prev,
+.strip.can-next .strip-arrow.next { display: grid; }
 
 .wincard {
+  width: calc(226px * var(--d)); flex: 0 0 auto;
+  scroll-snap-align: start;
+  scroll-margin-inline: 40px;
   display: flex; flex-direction: column; gap: calc(3px * var(--d));
   padding: calc(10px * var(--d)) calc(13px * var(--d));
   background: var(--panel);
@@ -1029,6 +1075,35 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 .wincard.live .wc-foot .btn-primary:hover {
   background: color-mix(in srgb, var(--bad) 16%, transparent);
 }
+
+/* A scene card: open its output, make it the live scene, edit it. */
+.wincard.scene { cursor: default; }
+.wincard.scene .wc-foot { flex-wrap: wrap; justify-content: flex-start; }
+.wincard.scene .wc-size { flex: 1 0 100%; }
+.wincard.onair { border-left-color: var(--bad); }
+.wincard.onair .wc-dot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+.wincard.onair .wc-state { color: var(--bad); }
+
+/* ---------------------------------------------------------------- LIVE strip */
+
+.livestrip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 4px 3px 11px;
+  border: 1px solid var(--line-strong); border-radius: 999px;
+  background: var(--panel);
+}
+.ls-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: color-mix(in srgb, var(--fg) 25%, transparent);
+}
+.livestrip[data-state="live"] .ls-dot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+.livestrip[data-state="connecting"] .ls-dot,
+.livestrip[data-state="reconnecting"] .ls-dot { background: #f5a524; }
+.ls-state { font-size: .82em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.livestrip[data-state="live"] .ls-state { color: var(--bad); font-weight: 600; }
+.livestrip select { min-width: 110px; max-width: 170px; height: 26px; padding: 0 6px; font-size: .82em; }
+.livestrip .btn { border-radius: 999px; }
+@media (max-width: 1100px) { .livestrip select { max-width: 130px; } }
 
 .tabs button[hidden] { display: none !important; }
 
