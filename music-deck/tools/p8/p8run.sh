@@ -3,14 +3,14 @@
 # The rig's own scenes are copied aside first and put back after; the shots,
 # the scene backup and the Chrome profile live in the rig's scratch folder.
 N="$(cd "$(dirname "$0")" && pwd)"
-O="$TEMP/claude/C--Users-ghamp-streaming-stuff/6719d1e9-d48e-4fa3-8759-ba9482cbef0d/scratchpad"
+O="$(cd "$N/../../.." && pwd)/.rig"   # the rig and its scratch files, beside the repo (git-ignored)
 OW="$(cygpath -w "$O")"
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 B=http://127.0.0.1:8799
 SCENES="$O/testrig/cache/scenes"
 mkdir -p "$O/p8shots"
 node "$N/snaptest.js" | tail -1 || exit 1
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/rigrestart.ps1")"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/../rig/rigrestart.ps1")"
 sleep 3
 rm -rf "$O/scenes_backup8" && cp -r "$SCENES" "$O/scenes_backup8" && echo "scenes backed up: $(ls "$O/scenes_backup8" | wc -l) files"
 mk() { curl -s -X POST -H "Content-Type: application/json" -d "{\"name\": \"$1\", \"format\": \"$2\"}" $B/api/scenes | python -c "import json,sys; print(json.load(sys.stdin)['scene']['id'])"; }

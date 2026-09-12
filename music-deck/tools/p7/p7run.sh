@@ -4,13 +4,13 @@
 # profile, the backup and the pictures go in the rig's scratch folder, never
 # in the repo.
 N="$(cd "$(dirname "$0")" && pwd)"
-O="$TEMP/claude/C--Users-ghamp-streaming-stuff/6719d1e9-d48e-4fa3-8759-ba9482cbef0d/scratchpad"
+O="$(cd "$N/../../.." && pwd)/.rig"   # the rig and its scratch files, beside the repo (git-ignored)
 W="$(cygpath -w "$O")"
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 B=http://127.0.0.1:8799
 SCENES="$O/testrig/cache/scenes"
 mkdir -p "$O/p7shots"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/rigrestart.ps1")"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/../rig/rigrestart.ps1")"
 sleep 3
 rm -rf "$O/scenes_backup7" && cp -r "$SCENES" "$O/scenes_backup7" && echo "scenes backed up: $(ls "$O/scenes_backup7" | wc -l) files"
 SID="$(curl -s -X POST -H "Content-Type: application/json" -d '{"template": "just_chatting", "name": "P7 editor test"}' $B/api/scenes | python -c "import json,sys; print(json.load(sys.stdin)['scene']['id'])")"

@@ -697,6 +697,37 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## After P12: the rig beside the repo (2026-09-12)
+
+Everything the tests and the rebuild stood on - the rig (an isolated copy of
+the app on port 8799), `rigrestart.ps1`, `rigpos.py`, `rebuild.ps1`, the
+Whisper model and cuBLAS wheel kept for seeding, the rebuild's safety copy -
+lived only in a Claude session's temp scratchpad, which Windows Storage Sense
+may empty. Now:
+
+- The scripts are in the repo, `music-deck/tools/rig/`, their paths worked out
+  from where they sit. `rigrestart.ps1` makes a fresh rig if there is none (a
+  folder with a `config.json` on port 8799), and stops only the tests' own
+  RTMP listeners (ffmpeg on `rtmp://127.0.0.1:1935`) instead of every ffmpeg on
+  the PC. `rigpos.py` takes the rig folder as an argument.
+- The rig, the model, the wheel and the backups are in `<repo root>\.rig\`
+  (git-ignored), moved - same drive, renamed, nothing re-downloaded. Every
+  runner sets `O=<repo>/.rig` and calls `../rig/rigrestart.ps1`; the P5 deck
+  scripts' helpers (`cpuby.ps1`, and `wins.py`, which was already here) sit
+  beside them in `tools/p5`, and `abtest.sh`, which looked for the rig next to
+  itself, finds it in `.rig`.
+- The rest of the old scratchpad (one-off scripts, old screenshots and
+  profiles, old backups) is left where it was.
+- Run again from `.rig`: P6 21 and 22 of 22, P7 16 of 16, P12 30 of 30 and
+  7 of 7, P8 56 of 56, P9 72 of 72, P10 24 of 24, P11 24 of 24 (a real
+  stream to the local listener). The first P12 LIVE run from the new place stayed
+  "Off air" after Start and failed on from there; it did not come back - not
+  when the same start was driven through the API (LIVE in a second, 12.8 MB
+  recorded), not in two more full runs - so it is not the path (which now has
+  a space in it). Unexplained, so `p12live.js` now records, on that failure,
+  what the panel itself knew: whether Start was enabled, the saved key and
+  URL, the state and the error.
+
 ## P12 - release (2026-09-12)
 
 Run on Opus 5 (the plan has Fable first, then Opus for what it flags; the

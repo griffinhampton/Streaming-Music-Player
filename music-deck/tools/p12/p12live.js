@@ -95,9 +95,12 @@ function decode(file) {
   const cfg = await getJ('/api/config');
   check('the panel is set up: a key, 720p30, this scene, no microphone, no desktop sound', cfg.live.audio.mic === false && !cfg.live.audio.system && cfg.canvas.live === SID);
 
+  const goBefore = await ed.ev(`({ disabled: ${q('go')}.disabled, text: ${q('go')}.textContent, hint: (${q('goHint')} || {}).textContent || '' })`);
   await ed.ev(`${q('go')}.click()`);
   const live = await waitFor(ed, `LivePanel.status().state === 'live'`, 30000);
-  check('Start goes LIVE', live, await ed.ev(`${q('pill')}.textContent`));
+  // On a failure, what the panel itself knew: the button, the key, the state, the error.
+  const st = await ed.ev(`(() => { const s = LivePanel.status() || {}; return { state: s.state, has_key: s.has_key, saved_url: s.saved_url, error: (s.error || '').slice(0, 160) }; })()`);
+  check('Start goes LIVE', live, `${await ed.ev(`${q('pill')}.textContent`)}${live ? '' : `; before the click ${J(goBefore)}; status ${J(st)}`}`);
   await sleep(6000);
 
   // ---- the connection drops: the listener is gone

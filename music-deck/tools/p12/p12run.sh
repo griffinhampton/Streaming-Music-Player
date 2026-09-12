@@ -7,7 +7,7 @@
 # and brings back to make the stream reconnect; the live output window is
 # parked off screen and not on top, the scene is plain and the sound is off.
 N="$(cd "$(dirname "$0")" && pwd)"
-O="$TEMP/claude/C--Users-ghamp-streaming-stuff/6719d1e9-d48e-4fa3-8759-ba9482cbef0d/scratchpad"
+O="$(cd "$N/../../.." && pwd)/.rig"   # the rig and its scratch files, beside the repo (git-ignored)
 OW="$(cygpath -w "$O")"
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 FF="/c/Users/ghamp/Downloads/ffmpeg-8.0-essentials_build/bin/ffmpeg.exe"
@@ -15,7 +15,7 @@ PY="C:\\Users\\ghamp\\streaming stuff\\.build-env\\Scripts\\python.exe"
 B=http://127.0.0.1:8799
 SCENES="$O/testrig/cache/scenes"
 rm -rf "$O/p12" && mkdir -p "$O/p12"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/rigrestart.ps1")"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/../rig/rigrestart.ps1")"
 sleep 3
 rm -rf "$O/scenes_backup12" && cp -r "$SCENES" "$O/scenes_backup12" && echo "scenes backed up: $(ls "$O/scenes_backup12" | wc -l) files"
 cp "$O/testrig/config.json" "$O/config_backup12.json"
@@ -23,7 +23,7 @@ cp "$O/testrig/config.json" "$O/config_backup12.json"
 printf '{"name": "half a sce' > "$SCENES/p12damaged.json"
 printf '{"version": 1, "id": "p12damaged", "name": "P12 restored", "format": "horizontal", "layers": []}' > "$SCENES/p12damaged.json.1"
 printf 'garbage, not a scene' > "$SCENES/p12corrupt.json"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/rigrestart.ps1")"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/../rig/rigrestart.ps1")"
 sleep 3
 mk() { curl -s -X POST -H "Content-Type: application/json" -d "{\"name\": \"$1\", \"format\": \"horizontal\"}" $B/api/scenes | python -c "import json,sys; print(json.load(sys.stdin)['scene']['id'])"; }
 SQ="$(mk 'P12 QA scene')"

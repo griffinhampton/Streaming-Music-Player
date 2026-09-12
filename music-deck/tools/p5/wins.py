@@ -1,3 +1,10 @@
+"""Every visible top-level window: title, process, position and size in real
+screen pixels, which monitor it is on (MAIN / second / off-screen) and whether
+it is minimized; * marks the foreground one. Used by deckidle.sh and
+deckstill.sh to make sure a test window opened on the second monitor.
+
+    python wins.py
+"""
 import ctypes, ctypes.wintypes as w
 u = ctypes.windll.user32
 u.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))

@@ -5,13 +5,13 @@
 # rig's scratch folder. Chrome gets a fake camera, so the camera layer's
 # live indicator can be tested without touching a real one.
 N="$(cd "$(dirname "$0")" && pwd)"
-O="$TEMP/claude/C--Users-ghamp-streaming-stuff/6719d1e9-d48e-4fa3-8759-ba9482cbef0d/scratchpad"
+O="$(cd "$N/../../.." && pwd)/.rig"   # the rig and its scratch files, beside the repo (git-ignored)
 OW="$(cygpath -w "$O")"
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 B=http://127.0.0.1:8799
 SCENES="$O/testrig/cache/scenes"
 mkdir -p "$O/p9shots" "$N/golden"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/rigrestart.ps1")"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/../rig/rigrestart.ps1")"
 sleep 3
 rm -rf "$O/scenes_backup9" && cp -r "$SCENES" "$O/scenes_backup9" && echo "scenes backed up: $(ls "$O/scenes_backup9" | wc -l) files"
 cp "$O/testrig/config.json" "$O/config_backup9.json" 2>/dev/null

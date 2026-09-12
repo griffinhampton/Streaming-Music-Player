@@ -26,6 +26,9 @@ built in themes/
 # megabytes per build and regenerable from source in one command.
 dist/
 dist-staging/
+# The test rig (an isolated copy of the app on port 8799), its scratch files
+# and the rebuild's safety copies - see music-deck/tools/rig.
+.rig/
 .build-env/
 __pycache__/
 *.pyc

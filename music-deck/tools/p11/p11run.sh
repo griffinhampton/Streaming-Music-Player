@@ -7,14 +7,14 @@
 # in the LIVE panel, so nothing of this PC's is recorded. The rig's scenes
 # and config are copied aside and put back after.
 N="$(cd "$(dirname "$0")" && pwd)"
-O="$TEMP/claude/C--Users-ghamp-streaming-stuff/6719d1e9-d48e-4fa3-8759-ba9482cbef0d/scratchpad"
+O="$(cd "$N/../../.." && pwd)/.rig"   # the rig and its scratch files, beside the repo (git-ignored)
 OW="$(cygpath -w "$O")"
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 FF="/c/Users/ghamp/Downloads/ffmpeg-8.0-essentials_build/bin/ffmpeg.exe"
 B=http://127.0.0.1:8799
 SCENES="$O/testrig/cache/scenes"
 rm -rf "$O/p11" && mkdir -p "$O/p11"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/rigrestart.ps1")"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/../rig/rigrestart.ps1")"
 sleep 3
 rm -rf "$O/scenes_backup11" && cp -r "$SCENES" "$O/scenes_backup11" && echo "scenes backed up: $(ls "$O/scenes_backup11" | wc -l) files"
 cp "$O/testrig/config.json" "$O/config_backup11.json"

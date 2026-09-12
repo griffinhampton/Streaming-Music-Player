@@ -2,8 +2,8 @@
 # What still draws in a deck whose preview is paused: open it (second
 # monitor), wait 25 s without input, then list main-thread work, every
 # animation's state, and whatever can draw without a CSS animation.
-O="$TEMP/claude/C--Users-ghamp-streaming-stuff/6719d1e9-d48e-4fa3-8759-ba9482cbef0d/scratchpad"
 N="$(cd "$(dirname "$0")" && pwd)"
+O="$(cd "$N/../../.." && pwd)/.rig"   # the rig, beside the repo (git-ignored)
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 PROF="$(cygpath -w "$O/testrig/cache/prof-deck")"
 true
@@ -11,14 +11,14 @@ true
   --window-position=2860,640 --no-first-run --no-default-browser-check --disable-component-update --disable-background-networking \
   --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion > /dev/null 2>&1 &
 sleep 3
-LINE="$(PYTHONIOENCODING=utf-8 python "$O/wins.py" | grep 'Awesome Streaming Deck  ')"
+LINE="$(PYTHONIOENCODING=utf-8 python "$N/wins.py" | grep 'Awesome Streaming Deck  ')"
 echo "deck: $LINE"
 if echo "$LINE" | grep -q " second "; then
   sleep 25
   echo "== paused deck, 10 s:"
   node "$N/perfprobe.js" 9350 deck.html 10 &
   PROBE=$!
-  powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$O/cpuby.ps1")" -Match prof-deck -Seconds 10 | grep -i "gpu-process\|renderer \|TOTAL" | tr -s ' ' | tr '\n' ';'
+  powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$N/cpuby.ps1")" -Match prof-deck -Seconds 10 | grep -i "gpu-process\|renderer \|TOTAL" | tr -s ' ' | tr '\n' ';'
   echo
   wait $PROBE      # only the probe: a bare wait also waits for the deck's Chrome, which never exits
   echo "== what can draw without a CSS animation:"
