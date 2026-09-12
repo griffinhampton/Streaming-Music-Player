@@ -241,6 +241,7 @@ async function refreshScenes() {
 let liveNow = { state: 'idle' }, liveScene = '';
 function onState(s) {
   inspectorsOnState(s);                 // the deck's designs and fonts, for the inspectors
+  studioOnState(s);                     // what is on air, for studio mode and the LIVE panel
   store.scenes = s.scenes || store.scenes;
   paintScenePick();
   liveNow = s.live || liveNow;

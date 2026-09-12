@@ -633,14 +633,17 @@ function startMeter(root) {
   const bar = meter.querySelector('i'), mark = meter.querySelector('[data-thr-mark]');
   const slider = root.querySelector('[data-threshold]'), out = root.querySelector('[data-thr-out]');
   const note = root.querySelector('[data-voice-note]');
-  let first = true;
-  const paint = (d) => {
+  // A change not yet saved wins over the poll: a reply landing inside the
+  // debounce used to put the old value back, and the timer then saved that.
+  let first = true, edits = 0, saving = false;
+  const paint = (d, asked = edits) => {
     const level = Math.round((d.level || 0) * 100), thr = Math.round((d.threshold ?? 0.08) * 100);
     bar.style.width = level + '%';
     meter.setAttribute('aria-valuenow', String(level));
     meter.classList.toggle('talking', !!d.speaking);
-    mark.style.left = thr + '%';
-    if (first || document.activeElement !== slider) { slider.value = String(thr); out.textContent = thr + '%'; }
+    const current = !saving && asked === edits;
+    if (current) mark.style.left = thr + '%';
+    if (current && (first || document.activeElement !== slider)) { slider.value = String(thr); out.textContent = thr + '%'; }
     first = false;
     note.textContent = d.source === 'captions' ? 'Captions are listening, so their own speech detector decides right now.'
       : d.source === 'off' ? 'The microphone opens while a scene uses your voice.'
@@ -650,17 +653,22 @@ function startMeter(root) {
   const tick = () => {
     if (!meter.isConnected) return;
     if (document.hidden || !meter.closest('details').open) { meterTimer = setTimeout(tick, 600); return; }
-    fetch('/api/voice', { cache: 'no-store' }).then((r) => r.json()).then(paint).catch(() => {})
+    const asked = edits;
+    fetch('/api/voice', { cache: 'no-store' }).then((r) => r.json()).then((d) => paint(d, asked)).catch(() => {})
       .finally(() => { meterTimer = setTimeout(tick, isUltra() ? 1000 : 150); });
   };
   tick();
   slider.addEventListener('input', () => {
-    out.textContent = slider.value + '%';
-    mark.style.left = slider.value + '%';
+    const n = ++edits, value = Number(slider.value);
+    saving = true;
+    out.textContent = value + '%';
+    mark.style.left = value + '%';
     clearTimeout(thrTimer);
     thrTimer = setTimeout(() => {
+      const done = () => { if (n === edits) saving = false; };
       fetch('/api/voice', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threshold: Number(slider.value) / 100 }) }).then((r) => r.json()).then(paint).catch(() => {});
+        body: JSON.stringify({ threshold: value / 100 }) }).then((r) => r.json())
+        .then((d) => { done(); paint(d, n); }).catch(done);
     }, 120);
   });
 }

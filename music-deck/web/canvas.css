@@ -442,4 +442,30 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .nd-foot { display: flex; align-items: center; gap: 8px; }
 .nd-foot .hint { flex: 1 1 auto; margin: 0; }
 
+/* ---------------------------------------------------------------- studio mode (P11) */
+
+button.cb-live { cursor: pointer; background: transparent; font: inherit; font-size: .8em; }
+button.cb-live:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.program {
+  position: absolute; right: 14px; bottom: 14px; z-index: 6; width: 320px;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); box-shadow: 0 12px 34px rgba(0, 0, 0, .55);
+}
+.pg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .88em; }
+.pg-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label); }
+.pg-title b { color: var(--fg); }
+.pg-pill { font-size: .78em; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--dim); }
+.pg-pill[data-state="live"] { color: #fff; background: var(--bad); border-color: var(--bad); font-weight: 600; }
+.pg-pill[data-state="connecting"], .pg-pill[data-state="reconnecting"] { color: #1a1200; background: #f5a524; border-color: #f5a524; }
+.pg-screen { position: relative; min-height: 120px; border-radius: 8px; overflow: hidden; background: #000; display: grid; place-items: center; }
+.pg-screen img { display: block; max-width: 100%; max-height: 240px; }
+.pg-none { margin: 10px; font-size: .84em; color: var(--dim); text-align: center; }
+.pg-controls { display: flex; align-items: center; gap: 6px; }
+.pg-controls .btn.primary { margin-left: auto; min-width: 72px; }
+.pg-note { margin: 0; font-size: .82em; color: var(--warn); }
+
 @media (max-width: 1300px) { .cb-body { grid-template-columns: 240px 1fr 270px; } }
+/* The window's title already says Canvas Builder: below this width its room
+   keeps the bar on one row (with the live-media badge and Studio/Remote). */
+@media (max-width: 1700px) { .cb-brand { display: none; } }

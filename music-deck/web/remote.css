@@ -1,0 +1,45 @@
+/* The scene remote (P11): big targets, dark, on the app's own colors. */
+:root {
+  --bg: #000000; --panel: #0a0a0c; --line: #1b1b22; --fg: #f0f0f4; --dim: #7e7e8c; --accent: #8b5cf6;
+  --line-strong: color-mix(in srgb, var(--fg) 18%, var(--line)); --bad: #f87171; --good: #34d399;
+  --radius: 12px; --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--font); overflow: hidden; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rm-top, .rm-bar, .rm-foot { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.rm-top { justify-content: space-between; border-bottom: 1px solid var(--line-strong); }
+.rm-foot { border-top: 1px solid var(--line-strong); flex-wrap: wrap; }
+.rm-pill { font-size: .85em; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--dim); font-variant-numeric: tabular-nums; }
+.rm-pill[data-state="live"] { color: #fff; background: var(--bad); border-color: var(--bad); font-weight: 600; }
+.rm-pill[data-state="connecting"], .rm-pill[data-state="reconnecting"] { color: #1a1200; background: #f5a524; border-color: #f5a524; }
+.rm-btn {
+  height: 34px; padding: 0 12px; cursor: pointer; font: inherit;
+  background: color-mix(in srgb, var(--fg) 6%, var(--panel)); color: var(--fg);
+  border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .6);
+}
+.rm-btn.ghost { background: transparent; }
+.rm-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.rm-btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+.rm-btn:disabled { opacity: .45; cursor: default; }
+.rm-btn[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 60%, var(--line-strong)); }
+.rm-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .6); overflow: hidden; margin-right: auto; }
+.rm-seg button { height: 32px; padding: 0 14px; background: transparent; border: 0; color: var(--dim); cursor: pointer; font: inherit; }
+.rm-seg button + button { border-left: 1px solid var(--line-strong); }
+.rm-seg button[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--fg); }
+.rm-list { flex: 1 1 auto; overflow: auto; padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rm-scene {
+  display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 4px 10px;
+  min-height: 60px; padding: 10px 12px; cursor: pointer; text-align: left; font: inherit; color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 4%, var(--panel)); border: 1px solid var(--line-strong); border-radius: var(--radius);
+}
+.rm-scene:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); }
+.rm-scene.on { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
+.rm-num { grid-row: span 2; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--dim); font-weight: 600; }
+.rm-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-fmt { grid-column: 2; font-size: .78em; color: var(--dim); }
+.rm-air { grid-column: 3; grid-row: 1 / span 2; font-size: .75em; font-weight: 700; color: #fff; background: var(--bad); padding: 2px 8px; border-radius: 999px; }
+.rm-hint { margin: 0; font-size: .8em; color: var(--dim); }

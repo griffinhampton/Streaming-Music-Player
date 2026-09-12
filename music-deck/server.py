@@ -1198,7 +1198,8 @@ def live_stop():
 
 
 def live_audio(data):
-    """Gains and mutes, live, and remembered."""
+    """Gains and mutes, live, and remembered; which sources and which
+    microphone, for the next start (P11's LIVE panel)."""
     a = CONFIG.setdefault("live", {}).setdefault("audio", {})
     src = data.get("source")
     if src in ("mic", "system"):
@@ -1208,8 +1209,31 @@ def live_audio(data):
             a.setdefault("mute", {})[src] = bool(data["mute"])
         if AUDIO[0]:
             AUDIO[0].set(src, gain=data.get("gain"), mute=data.get("mute"))
-        save_config(CONFIG)
+    for k in ("mic", "system"):
+        if isinstance(data.get(k), bool):
+            a[k] = data[k]
+    if "mic_device" in data:
+        a["mic_device"] = str(data.get("mic_device") or "")[:200]
+    save_config(CONFIG)
     return {"ok": True, "audio": a, "live": AUDIO[0].status() if AUDIO[0] else None}
+
+
+REMOTE_TITLE = "Awesome Streaming Deck - Scene remote"
+
+
+def remote_on_top(on, wait=5.0):
+    """Put the scene remote's window on top of the others, or not. Chrome
+    takes a moment to open it, so look for it for a little while."""
+    import winwin
+    deadline = time.time() + wait
+    while True:
+        hwnd = winwin.find_window(REMOTE_TITLE)
+        if hwnd:
+            winwin.set_topmost(hwnd, on)
+            return True
+        if time.time() > deadline:
+            return False
+        time.sleep(0.2)
 
 
 def remember_outputs():
@@ -1862,6 +1886,19 @@ class Handler(BaseHTTPRequestHandler):
             return feeds.serve_ws_feed(self, HUB, FEEDS)
         if path == "/api/live/status":
             return self._json(live_status())
+        if path == "/api/live/program.png":
+            # Studio mode's program monitor: the live output window - the
+            # stream's own source - as a small picture taken now.
+            comp = COMPONENTS.get("live")
+            host = comp.overlay.host if comp else None
+            hwnd = host.hwnd if host and host.alive() else None
+            if not hwnd:
+                return self._send(404, "the live output is not open", "text/plain")
+            try:
+                png, _w, _h = capture.thumbnail(hwnd=hwnd, max_w=int((query.get("w") or ["480"])[0]))
+            except Exception as exc:
+                return self._send(404, f"no picture: {exc}", "text/plain")
+            return self._send(200, png, "image/png", {"Cache-Control": "no-store"})
         if path == "/api/live/presets":
             return self._json({"presets": live.PRESETS, "current": CONFIG.get("live", {}).get("preset")})
         if path == "/api/live/devices":
@@ -2182,6 +2219,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": bool(ok)})
         if path == "/api/canvas/live":
             return self._json(set_live_scene(data.get("id", ""), data.get("transition"), data.get("duration")))
+        if path == "/api/canvas/remote/open":
+            # The scene remote (P11): a small window, kept on top of the others
+            # while its "Keep on top" is on - and only ever opened when asked for.
+            ok = launch_deck(f"http://127.0.0.1:{CONFIG['port']}/remote.html", 340, 640)
+            if ok and CONFIG["canvas"].get("remote_on_top", True):
+                threading.Thread(target=remote_on_top, args=(True,), daemon=True, name="remote on top").start()
+            return self._json({"ok": bool(ok)})
+        if path == "/api/canvas/remote/topmost":
+            on = bool(data.get("on"))
+            CONFIG.setdefault("canvas", {})["remote_on_top"] = on
+            save_config(CONFIG)
+            return self._json({"ok": remote_on_top(on, wait=1.0), "on": on})
 
         if path == "/api/voice/override":
             # A test hook: a rig without a microphone can still say "speaking".

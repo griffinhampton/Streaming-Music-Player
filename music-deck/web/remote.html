@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Awesome Streaming Deck - Scene remote</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="stylesheet" href="remote.css">
+</head>
+<body>
+<header class="rm-top">
+  <span class="rm-pill" id="rmState" aria-live="polite">Off air</span>
+  <button type="button" class="rm-btn ghost" id="rmTop" aria-pressed="true" title="Keep this window on top of the others">On top</button>
+</header>
+
+<div class="rm-bar">
+  <div class="rm-seg" role="radiogroup" aria-label="Transition">
+    <button type="button" role="radio" data-t="cut" aria-checked="false">Cut</button>
+    <button type="button" role="radio" data-t="fade" aria-checked="true">Fade</button>
+  </div>
+  <button type="button" class="rm-btn" id="rmPrev" aria-label="Previous scene" title="Previous scene (←)">&larr;</button>
+  <button type="button" class="rm-btn" id="rmNext" aria-label="Next scene" title="Next scene (→)">&rarr;</button>
+</div>
+
+<main class="rm-list" id="rmList" role="group" aria-label="Scenes - press one to put it on air"></main>
+
+<footer class="rm-foot">
+  <button type="button" class="rm-btn primary" id="rmGo">Start</button>
+  <span class="rm-hint" id="rmHint">1–9 put a scene on air · ← → the one before or after</span>
+</footer>
+
+<div id="rmAnnounce" class="sr-only" aria-live="polite"></div>
+<script src="remote.js"></script>
+</body>
+</html>

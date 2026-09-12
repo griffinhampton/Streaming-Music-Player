@@ -8,6 +8,7 @@
 <link rel="icon" type="image/png" sizes="256x256" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="livepanel.css">
 <script src="fonts.js"></script>
 <script src="motion.js"></script>
 </head>
@@ -42,6 +43,8 @@
       <span class="ls-state" id="liveState" aria-live="polite">Off air</span>
       <select id="liveScene" class="input" aria-label="Live scene" title="The scene the live output shows"></select>
       <button id="liveGo" class="btn btn-primary btn-sm" type="button">Start</button>
+      <button id="liveMore" class="btn btn-ghost btn-sm" type="button" aria-haspopup="dialog" title="The LIVE panel: stream key, quality, sound and the stream's health (Ctrl+Shift+L)">LIVE&hellip;</button>
+      <button id="remoteOpen" class="btn btn-ghost btn-sm" type="button" title="A small scene remote window, to switch scenes while you stream">Remote</button>
     </div>
     <label class="check ultra-toggle" title="The lightest the app can run: no animation in the app or your windows, animated pictures frozen, clocks that move once a second, and captions as finished lines only.">
       <input type="checkbox" data-ui="ultra" data-kind="bool"><span>Ultra optimized</span></label>
@@ -1527,6 +1530,7 @@
 <script src="palette.js"></script>
 <script src="framer.js"></script>
 <script src="designer.js"></script>
+<script src="livepanel.js"></script>
 <script src="deck.js"></script>
 </body>
 </html>

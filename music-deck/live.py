@@ -579,6 +579,10 @@ class Vault:
     def has_key(self):
         return bool(self._read().get("key"))
 
+    def url(self):
+        """The saved Server URL - not a secret (TikTok's ingest address), unlike the key."""
+        return self._read().get("url", "")
+
     def forget(self):
         try:
             os.remove(self.path)
@@ -651,7 +655,8 @@ class LiveEngine:
         if self.state == "live" and s["connected_at"]:
             s["uptime"] = int(time.time() - s["connected_at"])
         return {"state": self.state, "error": self.error, "has_key": self.vault.has_key(),
-                "url": self.url, "page": bool(self._session), "preset": self.preset, "stats": s}
+                "url": self.url, "saved_url": self.vault.url(), "page": bool(self._session),
+                "preset": self.preset, "stats": s}
 
     def snapshot_status(self):
         """What the deck's state feed carries: nothing that changes every second."""

@@ -2673,6 +2673,7 @@ if (window.decorOptions) $('frLoopPattern').innerHTML = decorOptions(rowEsc);
    audio are set in the LIVE panel (a later step); until a key is saved,
    Start says so instead of failing. */
 let liveNow = { state: 'idle' };
+let liveStopArmed = 0;           // when Stop was first clicked: a second click within 4 s stops
 let liveStatsTimer = null;
 let liveStats = null;
 const liveOn = () => ['connecting', 'live', 'reconnecting'].includes(liveNow.state);
@@ -2691,12 +2692,12 @@ function paintLive(st) {
   $('liveState').textContent = text;
   $('liveState').title = liveNow.error || '';
   const go = $('liveGo');
-  go.textContent = on ? 'Stop' : 'Start';
+  go.textContent = on ? (Date.now() - liveStopArmed < 4000 ? 'Click again to stop' : 'Stop') : 'Start';
   go.classList.toggle('btn-primary', !on);
   go.classList.toggle('btn-ghost', on);
   go.disabled = !on && !liveNow.has_key;
   go.title = on ? 'Stop the stream'
-    : liveNow.has_key ? 'Go LIVE with the live scene' : 'Save your stream key first (the LIVE panel comes in a later step)';
+    : liveNow.has_key ? 'Go LIVE with the live scene' : 'Save your stream key in the LIVE panel first (LIVE…)';
 
   const sel = $('liveScene');
   const scenes = st.scenes || [];
@@ -2719,8 +2720,25 @@ function paintLive(st) {
   }
 }
 
+/* The LIVE panel (P11): the stream key, quality, sound and health, the same
+   panel the Canvas Builder has; the scene remote in its own small window. */
+LivePanel.mount();
+$('liveMore').addEventListener('click', () => LivePanel.toggle($('liveMore')));
+$('remoteOpen').addEventListener('click', () => post('/api/canvas/remote/open').then((r) => { if (!r || !r.ok) toast('Could not open the remote'); }));
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyL') { e.preventDefault(); LivePanel.toggle($('liveMore')); }
+});
+
 $('liveGo').addEventListener('click', () => {
   const go = $('liveGo');
+  // Stop asks twice: one stray click must not end a show.
+  if (liveOn() && Date.now() - liveStopArmed > 4000) {
+    liveStopArmed = Date.now();
+    go.textContent = 'Click again to stop';
+    setTimeout(() => paintLive({ live: liveNow, scenes: rowScenes, canvas: { live: rowLive } }), 4100);
+    return;
+  }
+  liveStopArmed = 0;
   go.disabled = true;
   const req = liveOn() ? post('/api/live/stop') : post('/api/live/start', {});
   req.then((r) => {
@@ -3784,5 +3802,6 @@ events.onmessage = (e) => {
   try { st = JSON.parse(e.data); } catch (_) { return; }
   try { paintSpotify(st); } catch (_) {}
   paintRegistry(st);
+  LivePanel.onState(st);          // the LIVE panel (livepanel.js), when it is open
 };
 

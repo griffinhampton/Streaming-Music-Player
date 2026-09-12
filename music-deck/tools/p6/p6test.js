@@ -177,9 +177,14 @@ const INTERCEPT = /\/api\/(window|lyrics\/window|queue\/window|captions\/window|
   await ev(`paintLive({ live: { state: 'live', has_key: true }, scenes: rowScenes, canvas: { live: rowLive } })`);
   const lv = await ev(`({ text: document.getElementById('liveState').textContent, go: document.getElementById('liveGo').textContent, state: document.getElementById('liveStrip').dataset.state })`);
   asked.length = 0;
+  await click('#liveGo');                    // P11: Stop asks twice, so one stray click cannot end a show
+  await sleep(150);
+  const armed = await ev(`document.getElementById('liveGo').textContent`);
+  const first = asked.length;
   await click('#liveGo');
   await sleep(300);
-  check('live, it shows LIVE and Stop asks to stop', lv.state === 'live' && lv.go === 'Stop' && has(/POST \/api\/live\/stop/), JSON.stringify(lv) + ' ' + asked.join('|'));
+  check('live, it shows LIVE; Stop asks twice, then asks the server to stop', lv.state === 'live' && lv.go === 'Stop' && armed === 'Click again to stop' && first === 0 && has(/POST \/api\/live\/stop/),
+    JSON.stringify(lv) + ` armed "${armed}", after one click ${first} asked; ` + asked.join('|'));
   await ev(`paintLive({ live: { state: 'idle', has_key: false }, scenes: rowScenes, canvas: { live: rowLive } })`);
   asked.length = 0;
   await click('#canvasBtn');

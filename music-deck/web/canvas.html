@@ -6,6 +6,7 @@
 <title>Awesome Streaming Deck - Canvas Builder</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="stylesheet" href="canvas.css">
+<link rel="stylesheet" href="livepanel.css">
 <script src="fonts.js"></script>
 <script src="motion.js"></script>
 </head>
@@ -42,7 +43,9 @@
   <span class="spacer"></span>
   <span class="cb-media" id="mediaLive" role="status" hidden></span>
   <span class="cb-save" id="saveState" data-state="saved">Saved</span>
-  <span class="cb-live" id="liveStatus" data-state="idle">Off air</span>
+  <button type="button" class="cb-live" id="liveStatus" data-state="idle" aria-haspopup="dialog" title="The LIVE panel: stream key, quality, sound, Start and Stop (Ctrl+Shift+L)">Off air</button>
+  <button type="button" class="btn sm tog" id="studioBtn" aria-pressed="false" title="Studio mode: edit here while another scene is on air, then Take (Ctrl+Shift+P)">Studio</button>
+  <button type="button" class="btn sm" id="remoteBtn" title="A small scene remote window, to switch scenes while you stream">Remote</button>
   <button type="button" class="btn" id="openOutput" title="Open this scene's output window">Open output</button>
   <button type="button" class="btn icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-haspopup="dialog">?</button>
 </header>
@@ -97,6 +100,24 @@
     <canvas class="ruler" id="rulerX" aria-hidden="true" hidden></canvas>
     <canvas class="ruler" id="rulerY" aria-hidden="true" hidden></canvas>
     <div class="ruler-corner" id="rulerCorner" aria-hidden="true" hidden></div>
+    <section class="program" id="programPanel" aria-label="Program: what is on air" hidden>
+      <div class="pg-head"><span class="pg-title">On air: <b id="pgScene">nothing yet</b></span><span class="pg-pill" id="pgState" data-state="idle">Off air</span></div>
+      <div class="pg-screen">
+        <img id="pgImg" alt="What the live output shows right now" hidden>
+        <p class="pg-none" id="pgNone">The live output window is not open. <button type="button" class="btn sm" id="pgOpen">Open it</button></p>
+      </div>
+      <div class="pg-controls">
+        <div class="seg" id="pgTrans" role="radiogroup" aria-label="Transition">
+          <button type="button" role="radio" data-t="cut" aria-checked="false">Cut</button>
+          <button type="button" role="radio" data-t="fade" aria-checked="true">Fade</button>
+        </div>
+        <select class="input sm" id="pgDur" aria-label="How long the fade takes">
+          <option value="300">0.3 s</option><option value="600">0.6 s</option><option value="1000">1 s</option><option value="2000">2 s</option>
+        </select>
+        <button type="button" class="btn primary" id="pgTake" title="Put the scene you are editing on air (Ctrl+Enter)">Take</button>
+      </div>
+      <p class="pg-note" id="pgNote" hidden></p>
+    </section>
     <div class="cb-empty" id="emptyState" hidden>
       <p>No scenes yet.</p>
       <button type="button" class="btn primary" id="emptyNew">Make a scene</button>
@@ -151,6 +172,8 @@
       <dt>Drag from a ruler</dt><dd>Add a guide (drag it back to remove it)</dd>
       <dt>Right-click &middot; Shift+F10</dt><dd>The menu for what is under the pointer &middot; the selection</dd>
       <dt>In number fields</dt><dd>+20 &middot; *2 &middot; /2 &middot; -=20 &middot; 1920/3; &uarr; &darr; step</dd>
+      <dt>Ctrl+Shift+L</dt><dd>The LIVE panel: stream key, quality, sound, Start and Stop</dd>
+      <dt>Ctrl+Shift+P &middot; Ctrl+Enter</dt><dd>Studio mode on or off &middot; Take: this scene on air</dd>
       <dt>Space + drag</dt><dd>Pan the canvas</dd>
       <dt>Wheel</dt><dd>Zoom around the pointer</dd>
       <dt>Ctrl+0 &middot; Ctrl+1</dt><dd>Zoom to fit &middot; actual size</dd>
@@ -169,5 +192,7 @@
 <script src="canvastools.js"></script>
 <script src="inspectors.js"></script>
 <script src="newscene.js"></script>
+<script src="livepanel.js"></script>
+<script src="studio.js"></script>
 </body>
 </html>

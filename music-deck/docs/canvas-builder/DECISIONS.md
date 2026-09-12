@@ -692,6 +692,90 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## P11 - running a show (2026-09-12)
+
+`web/livepanel.js` + `livepanel.css` (the LIVE panel, one for the deck and
+the editor), `web/studio.js` (studio mode in the editor), `web/remote.html`
+(the scene remote), and three small server pieces: the program monitor's
+picture, the remote's window and its "on top", and the sound sources
+remembered for the next start. P4's engine did the rest already.
+
+- **The LIVE panel** - from the editor's LIVE button and the deck strip's
+  LIVE…, or Ctrl+Shift+L in either. The Server URL and stream key (a
+  password field; Paste reads the clipboard into it; Save keeps it
+  encrypted with DPAPI and empties the field - the page never receives a
+  key back, only whether one is kept; Forget asks twice), the quality
+  preset with what it asks of your upload (the preset's video bitrate plus
+  audio, with a third to spare), the scene that goes out, the microphone
+  (which one) and desktop sound with gain, mute and a meter each (the meters
+  are the native mixer's levels, so they move while LIVE; sources and the
+  microphone count from the next start, gain and mute at once), Start and
+  Stop, and the health: time on air, bitrate, frame rate, dropped frames,
+  reconnects, delay. "TikTok refused the stream key after it had been live"
+  (the engine's own message when a key is rotated mid-stream) becomes a
+  plain "copy the new one from LIVE Center, paste it, Save, Start" with the
+  focus in the key field. While open it polls `/api/live/status` twice a
+  second when LIVE, every 1.5 s otherwise, never while closed or hidden.
+- **Stop asks twice**, in the panel, the deck's strip and the remote: one
+  stray click must not end a show. (P6's deck test clicks twice now.)
+- **Studio mode** (the editor's Studio, Ctrl+Shift+P): the scene being edited
+  is the preview; beside it the program - a picture of the live output
+  window taken once a second (`/api/live/program.png`, the stream's own
+  source, off screen or not) - with Cut or Fade and its length, and Take
+  (Ctrl+Enter) to put the edited scene on air, after saving it. Editing the
+  scene already on air turns Take off and says that changes go out as they
+  are made. Nothing polls while studio mode is off or the editor hidden.
+- **The scene remote** (Remote, in the editor and the deck): a small
+  window - every scene as a big button (press one: on air), the one before
+  or after, Cut or Fade, Start and Stop, and "On top" (remembered;
+  `winwin.set_topmost` on its window). It opens only when asked for - it is
+  a topmost window, and those never pop up by themselves. Keys: 1-9, the
+  arrows, C and F. One state feed, no polling.
+- **In-app shortcuts only** - no global hotkeys yet, so nothing is taken
+  from a game.
+
+Tests (`tools/p11/p11test.js`, headless, a real stream on the rig to a local
+ffmpeg RTMP listener, the live output window parked off screen and not on
+top, no camera in the scenes and the sound turned off in the panel - nothing
+of this PC's recorded):
+
+- 24 of 24. The LIVE button opens the panel with the focus in it; Start
+  waits for a key and a scene; the Server URL and key typed and saved (the
+  key gone from the page, never sent back, only "Saved"); 720p30, the scene,
+  the microphone and desktop sound off - all from the panel; the upload
+  hint. Start: LIVE in 3.5 s, the health showing 3.40 Mb/s at 30 fps (the
+  first run found Start disabled forever - it waited for the engine's URL,
+  empty until a first start; the vault's saved URL is in the status now,
+  and the numbers say "measuring…" for the seconds before they are
+  known). Ctrl+Shift+P: studio mode, its program monitor showing the live
+  output (off screen), Take off while editing the scene on air. 20 switches
+  - remote clicks, its number keys, a studio Take with Ctrl+Enter - each on
+  air, the stream LIVE throughout. Stop asked twice; the rotated-key error;
+  Forget (asked twice). Every control of the panel (16), the program panel
+  (3) and the remote (20) reached with Tab. The recording, decoded: 862
+  frames over 28.7 s - 30.0 fps, the largest gap 34 ms; 20 changes between
+  the two scenes (counted with a margin, so a fade passing the middle
+  counts once); no black frame and no frame darker than its neighbors -
+  the darkest 92, the brightest 182 of 255. No console errors.
+- Found by running P9 again after P11, and fixed:
+  - The editor's top bar went to two rows at 1600 px once the live-media
+    badge showed: Studio and Remote took the last 130 px, and every panel
+    below lost 40 px. It already wrapped at 1440. Below 1700 px the
+    "Canvas Builder" brand is hidden (the window title says it), so the bar
+    stays on one row, badge included.
+  - The voice threshold slider could save the old value. The meter polls
+    every 150 ms, and a reply landing inside the slider's 120 ms debounce
+    put the old number back into an unfocused slider; the timer then saved
+    that. The value is now taken when it changes, and until it is saved no
+    poll paints the slider (a poll asked before the change is ignored too).
+  - The P6 and P7 runners left a Chrome profile (cookies and all) and a
+    copy of the rig's scenes in the repo's tools folders, untracked and one
+    `git add` away from a commit. They use the rig's scratch folder now,
+    like every runner since P8.
+- Again after P11 and those fixes: P6 21 and 22 of 22 (Stop is now
+  clicked twice), P7 16 of 16, P8 56 of 56, P9 72 of 72, P10 24 of 24, P11
+  24 of 24; the Python tests, 81.
+
 ## P10 - the phone canvas (2026-09-12)
 
 `scenes.py` (the layout for another format, what sits under TikTok's
