@@ -31,7 +31,7 @@ every later prompt reads it first.
 | P5 | Optimization and hardening of the backend | Fable (part 2 on Opus) | [x] 2026-09-12 |
 | P6 | Deck integration: scrollable components row, screen-share group, Canvas Builder entry, LIVE strip | Opus | [x] 2026-09-12 |
 | P7 | Canvas Builder editor shell | Opus | [x] 2026-09-12 |
-| P8 | Canvas tools: transform, snapping, guides, groups, shortcuts | Opus | [ ] |
+| P8 | Canvas tools: transform, snapping, guides, groups, shortcuts | Opus | [x] 2026-09-12 |
 | P9 | Inspectors for every layer type and source | Opus | [ ] |
 | P10 | Phone canvas: safe zones, templates gallery, format conversion | Opus | [ ] |
 | P11 | Go LIVE panel, studio mode, scene remote | Opus | [ ] |

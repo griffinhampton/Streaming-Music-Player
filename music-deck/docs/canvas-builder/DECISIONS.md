@@ -692,6 +692,120 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## P8 - canvas tools (2026-09-12)
+
+Direct manipulation on the Canvas Builder's canvas: `web/canvastools.js`
+(the tools), `web/snap.js` (the snapping math, pure, so node tests it on its
+own), and small hooks in `canvas.js` (`recordGesture`, `paintHud`, the
+inspector's number fields).
+
+- **One gesture, one command.** A drag changes the working copy live - the
+  preview redraws, the inspector follows, the autosave runs - and on release
+  one command goes on the stack with the scene from before the drag
+  (`recordGesture`). Esc mid-drag puts the before back. If the scene is
+  replaced under a drag (a conflict reload, an undo), the drag is dropped
+  instead of being applied to the new scene.
+- **The output follows the drag.** Because the autosave runs during the drag
+  (every ~150 ms at most, one save at a time), an open output window - and
+  so a stream - shows a layer moving before it is let go; still one undo
+  step. Drag steps run on animation frames with a 50 ms timer behind them:
+  the test found a page with no frames (the output tab in front of the
+  editor's) stepped nothing until release.
+- **Pointer math.** scene = (client - viewport corner - pan) / zoom, all in
+  CSS pixels, so the screen's 150% never enters it. Handles, guides, rulers
+  and labels are drawn in screen space (`#hud`), the same size at any zoom;
+  the grid and safe zones in scene space under them. Tested at 49%, 200% and
+  30% with the page at device scale 1.5: moves and resizes land to the pixel.
+- **Whole pixels.** Moves and resizes of unrotated layers land on whole
+  pixels; the pointer's travel is rounded before it is used, so a resize
+  from the center stays centered (the test caught 299 for 298). Rotated
+  layers keep positions to 0.01 px: turning about the center with a corner
+  anchor needs them.
+- **Modifiers.** The plan asks Alt for both "resize from the center" and
+  "skip snapping". Moving: Shift keeps to one axis, Alt (or Ctrl) skips
+  snapping. Resizing: Shift keeps the shape, Alt from the center, Ctrl skips
+  snapping. Rotating: Shift turns in 15 degree steps; otherwise it settles
+  on 0/90/180/270 within 3 degrees. A modifier pressed or let go mid-drag
+  counts at once (the step is taken again). No Alt-drag duplicate: Alt is
+  the snapping override.
+- **What snaps, and to what.** The canvas's edges and center; other visible
+  layers' edges and centers (a rotated layer by its bounds); equal spacing
+  between two neighbors in a row or column; guides; the grid (only where
+  nothing else is in reach); the safe zones while shown. Reach: 6 screen
+  pixels. The closest line wins on each axis - which the test layout proved
+  twice by snapping to a line its author had not noticed (T's center, A's
+  middle). Resizing snaps the moving edges of an unrotated box. Smart
+  guides: a line across both boxes (or the whole canvas for canvas, guide
+  and safe-zone lines), the two equal gaps with their size, and while moving
+  the distance to the nearest neighbor on each side.
+- **Selecting.** A click picks the topmost visible, unlocked layer; a
+  grouped layer brings its whole group, and a double-click picks just the
+  layer. Background layers fill the canvas, so the canvas does not pick
+  them (dragging on one draws a selection box); the layer list does.
+  Pressing on the selection and dragging moves all of it; a click without
+  a drag narrows it to what was clicked. A selection box takes what it
+  touches; Shift or Ctrl adds.
+- **Guides** are the scene's own (`scene.guides {h, v}`, validated since
+  P2): dragged out of the rulers, moved, snapped to layers and the canvas
+  while dragged, removed by dragging them back onto a ruler or from their
+  menu. The view toggles - snapping, grid and its size, rulers, safe zones -
+  are this editor's (localStorage), not the scene's.
+- **Number fields take math.** They are text fields now: a plain number
+  applies as it is typed (one merged step), anything else on Enter or when
+  the field is left. `1920/3`, `100+20*2`; `+20`, `*2`, `/2` change what
+  the field held when you came to it; `-20` is a value, so subtracting is
+  `-=20` (`+=`, `*=`, `/=` also work). With several layers selected, each
+  one's own value changes (`*2` doubles each width) and the field is blank
+  where they differ. Up/Down step by 1 (Shift 10, Alt 0.1); Esc puts the
+  value back, and a merged run that ends where it began leaves no step
+  (`exec` drops it).
+- **Align, space out, arrange** work on units: a group selected whole moves
+  as one. One unit selected aligns to the canvas. Space out gives equal gaps,
+  the outer two staying. Send to back stops above background layers. Arrow
+  nudges merge into one step while the presses keep coming.
+- **Copy and paste.** Copy puts the layers on the clipboard in a type of
+  their own (`application/x-awesome-canvas`; Chrome carries custom types
+  between its pages, so another editor window can paste them), their names
+  as plain text, and a copy in localStorage for when the clipboard can't be
+  read. Pasting our layers: where they were; back onto their originals, a
+  24 px step per paste; off a smaller canvas, centered; background layers
+  sized to the new canvas; groups get new ids. A pasted picture is uploaded
+  to Assets and added as an image layer; pasted text becomes a text layer.
+  The tests use the page's own clipboard events, so the user's clipboard is
+  never touched.
+- **Menus** on layers (canvas and list), the empty canvas, guides and rulers:
+  `role=menu`, arrows, Home/End, Enter, Esc, disabled items skipped, focus
+  back where it was; Shift+F10 or the menu key opens the selection's.
+
+Tests (`tools/p8`, headless only - one monitor):
+
+- `snaptest.js`: 13 of 13 - bounds, edges, centers, guides, spacing, grid,
+  safe zones, distances, field math (also run by `tests/test_p8.py`
+  wherever node is installed).
+- `p8test.js`: 56 of 56 - real CDP pointer drags on the test layout at
+  49% zoom (snapping reach 12.3 scene px): select, box select over the
+  background, Shift/Ctrl+click; move exact; snapping to an edge (with its
+  smart guide), to the canvas center, to equal spacing (both 140 px gaps
+  labeled), to a guide and to the grid; Alt pressed mid-drag letting go of
+  a snap and letting it back; resize by corner, Shift, Alt, snapped to the
+  center line, two layers from their shared box, a rotated layer with its
+  far side fixed to 0.00 px; rotate to 90 about the center and in 15 degree
+  steps; nudges as one step; a guide added from the ruler, moved, snapped
+  to, removed onto the ruler; five inspector sums and a two-layer `*0.5`;
+  space out, align left, align one to the canvas; front, back, forward
+  from the keyboard; the right-click menu by pointer and keyboard and
+  Shift+F10; moves and resizes exact at 200% and 30% with the page at
+  device scale 1.5; an open output showing a drag before release; copy,
+  paste twice in place, paste into a phone scene, text pasted as a layer;
+  the phone scene's safe zones and grid; no console errors. Every action
+  checked for where it lands and for being exactly one undo step with exact
+  undo and redo; then undo all the way back to the layout (5 and 12 steps),
+  on the server too.
+- P7's suite again after P8: 16 of 16 (edit to output 83-87 ms).
+
+Not done here: Figma's rotate-from-outside-a-corner, snapping for rotated
+resizes, and editing a text layer's words on the canvas (P9's inspectors).
+
 ## P7 - the Canvas Builder editor (2026-09-12)
 
 `web/canvas.html` (+ `canvas.css`, `canvas.js`), opened from the deck's

@@ -10,8 +10,8 @@
    first) is dropped and the newer scene reloaded, with a notice.
 
    The canvas is the real renderer, scaled and panned; this page only draws
-   the selection over it. Moving and resizing on the canvas is P8, the full
-   inspectors P9. */
+   over it. Picking, moving, resizing, snapping, rulers and menus on the
+   canvas are canvastools.js (P8); the full inspectors are P9. */
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -49,10 +49,23 @@ function exec(label, mutate, mergeKey = '') {
   if (mergeKey && last && last.key === mergeKey && now - last.t < MERGE_MS) {
     last.after = after;
     last.t = now;
+    // Typed back to where the run began (Esc in a field): the step is gone.
+    if (JSON.stringify(last.before) === JSON.stringify(after)) store.undo.pop();
   } else {
     store.undo.push({ label, before, after, key: mergeKey, t: now });
     if (store.undo.length > HISTORY) store.undo.shift();
   }
+  store.redo.length = 0;
+  changed();
+  return true;
+}
+/* A drag on the canvas is one command too. It changed the working copy live
+   while it ran, so it arrives with the scene from before it. */
+function recordGesture(label, before) {
+  const after = clone(store.scene);
+  if (JSON.stringify(before) === JSON.stringify(after)) { renderAll(); return false; }
+  store.undo.push({ label, before, after, key: '', t: performance.now() });
+  if (store.undo.length > HISTORY) store.undo.shift();
   store.redo.length = 0;
   changed();
   return true;
@@ -299,6 +312,7 @@ function applyView() {
   $('zoomLabel').textContent = Math.round(view.z * 100) + '%';
   vp.setAttribute('aria-label', store.scene
     ? `Canvas, ${store.scene.width} by ${store.scene.height}, zoom ${Math.round(view.z * 100)} percent` : 'Canvas');
+  paintHud();
 }
 function zoomFit() {
   if (!store.scene) return;
@@ -345,16 +359,8 @@ vp.addEventListener('pointerdown', (e) => {
     vp.setPointerCapture(e.pointerId);
     vp.classList.add('panning');
     e.preventDefault();
-    return;
   }
-  if (e.button !== 0 || !store.scene) return;
-  // Pick the topmost unlocked, visible layer under the pointer.
-  const wr = $('world').getBoundingClientRect();
-  const sx = (e.clientX - wr.left) / view.z, sy = (e.clientY - wr.top) / view.z;
-  const hit = [...store.scene.layers].reverse().find((l) => l.visible !== false && !l.locked && contains(l, sx, sy));
-  if (!hit) { if (!e.shiftKey && !e.ctrlKey) selectOnly([]); return; }
-  if (e.shiftKey || e.ctrlKey) toggleSelect(hit.id);
-  else selectOnly([hit.id]);
+  // Everything else a press on the canvas does is canvastools.js.
 });
 vp.addEventListener('pointermove', (e) => {
   if (!pan) return;
@@ -380,16 +386,9 @@ function contains(l, x, y) {
 }
 
 function paintOverlay() {
-  const ov = $('overlay');
-  const boxes = selected().map((l) => {
-    const t = l.transform;
-    const [ox, oy] = ORIGIN[t.anchor] || ORIGIN.tl;
-    return `<div class="sel-box${l.locked ? ' locked' : ''}" style="left:${t.x}px;top:${t.y}px;width:${t.w}px;height:${t.h}px;` +
-      `transform:rotate(${t.rotation || 0}deg);transform-origin:${ox * 100}% ${oy * 100}%"></div>`;
-  });
-  ov.innerHTML = boxes.join('');
   const s = store.scene;
   $('checker').hidden = !s || (s.transparency !== 'see-through' && (s.background || {}).mode !== 'none');
+  paintHud();          // the selection, handles, guides, rulers (canvastools.js)
 }
 
 /* ------------------------------------------------------------- selection */
@@ -762,7 +761,12 @@ function renderInspector() {
         <button type="button" class="btn sm" data-multi="hide">Hide all</button>
         <button type="button" class="btn sm" data-multi="group">Group</button>
       </div>
-      <div class="f"><span>Opacity</span><input type="range" min="0" max="100" data-mfield="style.opacity" data-scale="100"></div></div>`;
+      <h3>Align</h3>${alignBar(selUnits().length)}
+      <h3>Position and size</h3>
+      <div class="grid4">${mnum('X', 'transform.x')}${mnum('Y', 'transform.y')}${mnum('W', 'transform.w', 'data-min="1"')}${mnum('H', 'transform.h', 'data-min="1"')}</div>
+      <div class="f"><span>Rotation</span><input class="input" ${NUM_ATTRS} data-min="-360" data-max="360" data-mfield="transform.rotation" placeholder="Mixed"></div>
+      <div class="f"><span>Opacity</span><input type="range" min="0" max="100" data-mfield="style.opacity" data-scale="100"></div>
+      <p class="hint">Number fields take math, for each layer: +20, *2, /2, -=20, or 1920/3.</p></div>`;
   }
   // Values, except in the field being typed in.
   el.querySelectorAll('[data-field]').forEach((node) => {
@@ -777,12 +781,17 @@ function renderInspector() {
   });
   el.querySelectorAll('[data-mfield]').forEach((node) => {
     if (node === document.activeElement || !sel.length) return;
+    if (node.dataset.kind === 'num') { numShow(node); return; }        // blank when they differ
     const v = getPath(sel[0], node.dataset.mfield);
     node.value = Math.round((Number(v) || 0) * Number(node.dataset.scale || 1));
   });
 }
+// Number fields are text, so they can take math (see numCommit).
+const NUM_ATTRS = 'type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-kind="num"';
 const num = (label, field, id, extra = '') =>
-  `<label><span>${label}</span><input class="input" type="number" data-layer="${esc(id)}" data-field="${field}" data-kind="num" ${extra}></label>`;
+  `<label><span>${label}</span><input class="input" ${NUM_ATTRS} data-layer="${esc(id)}" data-field="${field}" ${extra}></label>`;
+const mnum = (label, field, extra = '') =>
+  `<label><span>${label}</span><input class="input" ${NUM_ATTRS} data-mfield="${field}" placeholder="Mixed" ${extra}></label>`;
 function sel_(field, id, opts, label) {
   return `<div class="f"><span>${label}</span><select class="input" data-layer="${esc(id)}" data-field="${field}">` +
     opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('') + '</select></div>';
@@ -794,7 +803,7 @@ function sceneInspector() {
     ${sel_('background.mode', '', [['solid', 'Solid'], ['gradient', 'Gradient'], ['image', 'Image'], ['none', 'None']], 'Kind')}
     <div class="f"><span>Color</span><input type="color" data-layer="" data-field="background.color"></div>
     <div class="f"><span>Second color</span><input type="color" data-layer="" data-field="background.color2"></div>
-    <div class="f"><span>Angle</span><input class="input" type="number" min="0" max="360" data-layer="" data-field="background.angle" data-kind="num"></div>
+    <div class="f"><span>Angle</span><input class="input" ${NUM_ATTRS} data-min="0" data-max="360" data-layer="" data-field="background.angle"></div>
     <h3>Transparency</h3>
     ${sel_('transparency', '', [['opaque', 'Opaque'], ['see-through', 'See-through'], ['key', 'Key color']], 'Output')}
     <div class="f"><span>Key color</span><input type="color" data-layer="" data-field="key_color"></div>
@@ -805,10 +814,10 @@ function layerInspector(l) {
   let props = '';
   const P = (label, field, type = 'text', extra = '') => type === 'color'
     ? `<div class="f"><span>${label}</span><input type="color" data-layer="${esc(id)}" data-field="props.${field}"></div>`
-    : `<div class="f"><span>${label}</span><input class="input" type="${type}" data-layer="${esc(id)}" data-field="props.${field}"${type === 'number' ? ' data-kind="num"' : ''} ${extra}></div>`;
+    : `<div class="f"><span>${label}</span><input class="input" ${type === 'number' ? NUM_ATTRS : `type="${type}"`} data-layer="${esc(id)}" data-field="props.${field}" ${extra}></div>`;
   if (l.type === 'text') {
     props = `<div class="f"><span>Text</span><textarea class="input" data-layer="${esc(id)}" data-field="props.text" rows="3"></textarea></div>
-      ${P('Size', 'size', 'number', 'min="6" max="600"')}${P('Color', 'color', 'color')}
+      ${P('Size', 'size', 'number', 'data-min="6" data-max="600"')}${P('Color', 'color', 'color')}
       ${sel_('props.weight', id, [['400', 'Regular'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Heavy']], 'Weight')}
       ${sel_('props.align', id, [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'Align')}
       <p class="hint">Live text: {title} {artist} {album} {elapsed} {duration} {time} {date} {caption}</p>`;
@@ -834,11 +843,12 @@ function layerInspector(l) {
   return `<div class="insp"><h2><span>${esc(l.name)}</span><span class="tag">${esc(l.type)}</span></h2>
     <div class="f"><span>Name</span><input class="input" data-layer="${esc(id)}" data-field="name" maxlength="80"></div>
     <h3>Position and size</h3>
-    <div class="grid4">${num('X', 'transform.x', id)}${num('Y', 'transform.y', id)}${num('W', 'transform.w', id, 'min="1"')}${num('H', 'transform.h', id, 'min="1"')}</div>
-    <div class="f"><span>Rotation</span><input class="input" type="number" step="1" data-layer="${esc(id)}" data-field="transform.rotation" data-kind="num"></div>
+    <div class="grid4">${num('X', 'transform.x', id)}${num('Y', 'transform.y', id)}${num('W', 'transform.w', id, 'data-min="1"')}${num('H', 'transform.h', id, 'data-min="1"')}</div>
+    <div class="f"><span>Rotation</span><input class="input" ${NUM_ATTRS} data-min="-360" data-max="360" data-layer="${esc(id)}" data-field="transform.rotation"></div>
+    <h3>Align to the canvas</h3>${alignBar(1)}
     <h3>Look</h3>
     <div class="f"><span>Opacity</span><input type="range" min="0" max="100" data-layer="${esc(id)}" data-field="style.opacity" data-scale="100"></div>
-    <div class="f"><span>Corners</span><input class="input" type="number" min="0" data-layer="${esc(id)}" data-field="style.radius" data-kind="num"></div>
+    <div class="f"><span>Corners</span><input class="input" ${NUM_ATTRS} data-min="0" data-layer="${esc(id)}" data-field="style.radius"></div>
     ${sel_('style.blend', id, [['normal', 'Normal'], ['multiply', 'Multiply'], ['screen', 'Screen'], ['overlay', 'Overlay'], ['lighten', 'Lighten'], ['darken', 'Darken']], 'Blend')}
     <div class="row-checks">
       <label><input type="checkbox" data-layer="${esc(id)}" data-field="visible"> Visible</label>
@@ -848,6 +858,11 @@ function layerInspector(l) {
 }
 $('inspector').addEventListener('input', (e) => {
   const node = e.target;
+  if (node.dataset.kind === 'num') {
+    // A plain number applies as it is typed; math waits for Enter or leaving the field.
+    if (isPlainNum(node.value)) applyNum(node, () => Number(node.value));
+    return;
+  }
   if (node.dataset.mfield) {
     const v = Number(node.value) / Number(node.dataset.scale || 1);
     const ids = [...store.sel];
@@ -856,7 +871,6 @@ $('inspector').addEventListener('input', (e) => {
   }
   if (!node.dataset.field) return;
   let v = node.type === 'checkbox' ? node.checked : node.value;
-  if (node.dataset.kind === 'num') { if (node.value === '' || !Number.isFinite(Number(node.value))) return; v = Number(node.value); }
   if (node.dataset.scale) v = Number(node.value) / Number(node.dataset.scale);
   if (node.dataset.field === 'props.weight') v = Number(v);
   setField(node.dataset.layer || '', node.dataset.field, v);
@@ -865,7 +879,79 @@ $('inspector').addEventListener('input', (e) => {
 $('inspector').addEventListener('change', (e) => {
   // Selects and checkboxes land here only (inputs saved on input already).
   const node = e.target;
+  if (node.dataset.kind === 'num') { numCommit(node); return; }
   if (node.tagName === 'SELECT' || node.type === 'checkbox') node.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
+/* Number fields take math: a value ("120", "-20"), a sum ("1920/3"), or a
+   change to what the field held when you came to it: "+20", "*2", "/2",
+   "-=20". With several layers selected, the change is made to each one's
+   own value ("*2" doubles each width). Up/Down step by 1 (Shift 10, Alt
+   0.1); Esc puts back what was there. */
+const isPlainNum = (v) => /^\s*-?(\d+\.?\d*|\.\d+)\s*$/.test(v);
+function numTargets(node) {
+  return node.dataset.mfield ? [...store.sel].map((id) => ({ id, path: node.dataset.mfield }))
+    : [{ id: node.dataset.layer || '', path: node.dataset.field }];
+}
+function numNow(id, path) {
+  const t = id ? layerById(id) : store.scene;
+  return t ? Number(getPath(t, path)) || 0 : 0;
+}
+/** fn(id, current) for each layer the field stands for, as one command (merged while the field is worked on). */
+function applyNum(node, fn) {
+  const lo = node.dataset.min !== undefined ? Number(node.dataset.min) : -Infinity;
+  const hi = node.dataset.max !== undefined ? Number(node.dataset.max) : Infinity;
+  const targets = numTargets(node);
+  const key = node.dataset.mfield ? 'mfield:' + node.dataset.mfield : 'field:' + (node.dataset.layer || '') + ':' + node.dataset.field;
+  return exec('edit', (s) => {
+    for (const { id, path } of targets) {
+      const t = id ? s.layers.find((l) => l.id === id) : s;
+      if (!t) continue;
+      const v = fn(id, Number(getPath(t, path)) || 0);
+      if (v === null || !Number.isFinite(v)) continue;
+      setPath(t, path, Math.round(Math.min(hi, Math.max(lo, v)) * 100) / 100);
+    }
+  }, key);
+}
+function numBase(node) { node._base = new Map(numTargets(node).map(({ id, path }) => [id, numNow(id, path)])); }
+function numShow(node) {
+  const vals = numTargets(node).map(({ id, path }) => numNow(id, path));
+  node.value = vals.length && vals.every((v) => v === vals[0]) ? String(vals[0]) : '';
+}
+function numCommit(node) {
+  const text = node.value;
+  if (text.trim() && !isPlainNum(text)) {
+    const base = node._base || new Map();
+    if (Snap.evalField(text, 1) === null) {
+      node.setAttribute('aria-invalid', 'true');
+      announce('That is not a number or a sum');
+      return;
+    }
+    applyNum(node, (id, cur) => Snap.evalField(text, base.has(id) ? base.get(id) : cur));
+  }
+  node.removeAttribute('aria-invalid');
+  numShow(node);
+  numBase(node);
+}
+$('inspector').addEventListener('focusin', (e) => { if (e.target.dataset.kind === 'num') numBase(e.target); });
+$('inspector').addEventListener('keydown', (e) => {
+  const node = e.target;
+  if (node.dataset.kind !== 'num') return;
+  if (e.key === 'Enter') { e.preventDefault(); numCommit(node); node.select(); }
+  else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    const base = node._base;
+    if (base) applyNum(node, (id, cur) => (base.has(id) ? base.get(id) : cur));
+    node.removeAttribute('aria-invalid');
+    numShow(node);
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    const d = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : e.altKey ? 0.1 : 1);
+    applyNum(node, (id, cur) => cur + d);
+    numShow(node);
+    numBase(node);
+  }
 });
 $('inspector').addEventListener('click', (e) => {
   const b = e.target.closest('[data-multi]');

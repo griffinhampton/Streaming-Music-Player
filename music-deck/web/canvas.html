@@ -28,6 +28,16 @@
     <button type="button" class="btn" id="zoomFit" title="Zoom to fit (Ctrl+0)">Fit</button>
     <button type="button" class="btn" id="zoom100" title="Actual size (Ctrl+1)">100%</button>
   </div>
+  <div class="cb-group" role="group" aria-label="View">
+    <button type="button" class="btn sm tog" id="snapBtn" aria-pressed="true" title="Snapping (Ctrl+;). Hold Alt while moving to skip it">Snap</button>
+    <button type="button" class="btn sm tog" id="gridBtn" aria-pressed="false" title="Grid (Ctrl+')">Grid</button>
+    <select class="input sm" id="gridSize" aria-label="Grid size" title="Grid size, in pixels">
+      <option value="10">10</option><option value="20">20</option><option value="40">40</option><option value="50">50</option>
+      <option value="60">60</option><option value="100">100</option><option value="120">120</option>
+    </select>
+    <button type="button" class="btn sm tog" id="rulersBtn" aria-pressed="true" title="Rulers (Shift+R). Drag from one to add a guide">Rulers</button>
+    <button type="button" class="btn sm tog" id="safeBtn" aria-pressed="true" title="Where TikTok's buttons and comments cover a phone scene">Safe zones</button>
+  </div>
   <span class="spacer"></span>
   <span class="cb-save" id="saveState" data-state="saved">Saved</span>
   <span class="cb-live" id="liveStatus" data-state="idle">Off air</span>
@@ -71,12 +81,20 @@
   </aside>
 
   <main class="cb-canvas" id="viewport" tabindex="0" aria-label="Canvas" aria-describedby="canvasHelp">
-    <p id="canvasHelp" class="sr-only">Click a layer to select it. Hold Space and drag to pan; the wheel zooms around the pointer.</p>
+    <p id="canvasHelp" class="sr-only">Click a layer to select it; drag it to move it, or its handles to resize or rotate it.
+      Arrow keys nudge the selection, Shift+F10 opens its menu. Hold Space and drag to pan; the wheel zooms around the pointer.</p>
     <div class="world" id="world">
       <div class="checker" id="checker"></div>
       <iframe id="sceneFrame" title="Scene preview" tabindex="-1"></iframe>
-      <div class="overlay" id="overlay" aria-hidden="true"></div>
+      <div class="overlay" id="overlay" aria-hidden="true">
+        <div class="grid-layer" id="gridLayer" hidden></div>
+        <div class="safe-layer" id="safeLayer" hidden></div>
+      </div>
     </div>
+    <div class="hud" id="hud" aria-hidden="true"></div>
+    <canvas class="ruler" id="rulerX" aria-hidden="true" hidden></canvas>
+    <canvas class="ruler" id="rulerY" aria-hidden="true" hidden></canvas>
+    <div class="ruler-corner" id="rulerCorner" aria-hidden="true" hidden></div>
     <div class="cb-empty" id="emptyState" hidden>
       <p>No scenes yet.</p>
       <button type="button" class="btn primary" id="emptyNew">Make a scene</button>
@@ -103,6 +121,19 @@
       <dt>F2</dt><dd>Rename the layer</dd>
       <dt>Alt+&uarr; &middot; Alt+&darr;</dt><dd>Move the layer up or down</dd>
       <dt>&uarr; &darr; in the layer list</dt><dd>Move through the layers (Shift adds)</dd>
+      <dt>Click &middot; Shift/Ctrl+click</dt><dd>Select &middot; add or take away (a group is picked whole; double-click for one layer)</dd>
+      <dt>Drag on empty canvas</dt><dd>Select with a box (Shift adds)</dd>
+      <dt>Drag a layer</dt><dd>Move it (Shift: straight across or down &middot; Alt: no snapping)</dd>
+      <dt>Drag a handle</dt><dd>Resize (Shift: keep the shape &middot; Alt: from the center &middot; Ctrl: no snapping)</dd>
+      <dt>Drag the round handle</dt><dd>Rotate (Shift: 15&deg; steps)</dd>
+      <dt>Esc while dragging</dt><dd>Put it back</dd>
+      <dt>&larr; &uarr; &rarr; &darr; &middot; with Shift</dt><dd>Nudge 1 pixel &middot; 10 pixels</dd>
+      <dt>Ctrl+C &middot; Ctrl+X &middot; Ctrl+V</dt><dd>Copy &middot; cut &middot; paste (into any scene; a picture or text pastes as a layer)</dd>
+      <dt>Ctrl+] &middot; Ctrl+[</dt><dd>Forward &middot; backward (with Shift: to the front &middot; back)</dd>
+      <dt>Ctrl+; &middot; Ctrl+' &middot; Shift+R</dt><dd>Snapping &middot; grid &middot; rulers</dd>
+      <dt>Drag from a ruler</dt><dd>Add a guide (drag it back to remove it)</dd>
+      <dt>Right-click &middot; Shift+F10</dt><dd>The menu for what is under the pointer &middot; the selection</dd>
+      <dt>In number fields</dt><dd>+20 &middot; *2 &middot; /2 &middot; -=20 &middot; 1920/3; &uarr; &darr; step</dd>
       <dt>Space + drag</dt><dd>Pan the canvas</dd>
       <dt>Wheel</dt><dd>Zoom around the pointer</dd>
       <dt>Ctrl+0 &middot; Ctrl+1</dt><dd>Zoom to fit &middot; actual size</dd>
@@ -113,6 +144,8 @@
   </div>
 </div>
 
+<script src="snap.js"></script>
 <script src="canvas.js"></script>
+<script src="canvastools.js"></script>
 </body>
 </html>
