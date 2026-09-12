@@ -215,6 +215,13 @@ going LIVE without LIVE Studio or OBS at all.
 3. `getDisplayMedia` capture cost, cleanly measured (P1).
 4. Whether the user's account shows a Server URL + Stream key in LIVE
    Center (needed for direct streaming; LIVE Studio access suggests yes).
+   2026-09-12: the page is TikTok's LIVE Producer,
+   `livecenter.tiktok.com/producer` - fill in the LIVE, press Save and Go
+   LIVE, and the Server URL and Stream Key show a few seconds later; a new key
+   for every LIVE. Access is gated (guides, not TikTok's own help, say it is
+   unlocked through TikTok's creator networks); a page that redirects means
+   not unlocked. The user has asked where to find them; whether their account
+   has access is still open. The README says so.
 5. (After P12, all four above are still open and need the user at the PC.)
    The user's installed app was rebuilt from P12 on 2026-09-12 (they ran
    `rebuild.ps1 -NoLaunch` themselves: try-out passed, config.json and

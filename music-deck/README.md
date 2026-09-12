@@ -230,8 +230,11 @@ The app can stream to TikTok itself: it captures the **Canvas (live)** window,
 encodes it on your graphics card, and sends it straight to TikTok's server.
 No TikTok LIVE Studio, no OBS.
 
-1. In **TikTok LIVE Center**, get your **Server URL** and **Stream key** (the
-   page for streaming with other software).
+1. On a computer, open TikTok's **LIVE Producer** (`livecenter.tiktok.com/producer`),
+   fill in the title and topic and press **Save and Go LIVE**; a few seconds
+   later it shows a **Server URL** and a **Stream Key**. TikTok unlocks this page
+   only for some accounts - if it sends you somewhere else, yours isn't unlocked
+   yet. The key is new for every LIVE.
 2. Open the **LIVE panel**: **LIVE…** in the deck's top strip, or the LIVE
    button in the Canvas Builder's top bar (**Ctrl+Shift+L**).
 3. Paste both and press **Save**. The key is shown as dots, and once saved the
@@ -623,8 +626,9 @@ music-deck/
   to your app's user list in the Spotify dashboard, or make a separate app.
 - **Music on stream** – TikTok, like every platform, can mute or flag streams
   over copyrighted music. Your own files are only as safe as their licence.
-- **"TikTok stopped accepting your stream key"** – LIVE Center has issued a new
-  one. Copy it from there, paste it in the LIVE panel and Save.
+- **"TikTok stopped accepting your stream key"** – TikTok has issued a new one.
+  Copy it from LIVE Producer (`livecenter.tiktok.com/producer`), paste it in the
+  LIVE panel and Save. A new LIVE always needs the new key.
 - **The LIVE panel says Reconnecting…** – the connection to TikTok dropped. It
   keeps trying by itself; check your internet, or lower the quality if your
   upload is short.
