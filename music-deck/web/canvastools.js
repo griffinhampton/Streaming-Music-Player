@@ -58,9 +58,23 @@ for (const [id, k, name] of PREF_BUTTONS) {
 $('gridSize').addEventListener('change', () => setPref('gridSize', Number($('gridSize').value) || 40));
 
 let safeZones = {};
-fetch('/api/scenes/formats').then((r) => r.json()).then((d) => { safeZones = d.safe_zones || {}; paintPrefs(); paintOverlay(); }).catch(() => {});
+fetch('/api/scenes/formats').then((r) => r.json()).then((d) => { safeZones = d.safe_zones || {}; paintPrefs(); if (store.scene) renderAll(); }).catch(() => {});
 const zonesOf = (s) => (s ? safeZones[s.format] || [] : []);
 const zonesNow = () => (prefs.safe ? zonesOf(store.scene) : []);
+/* Which of TikTok's controls cover a layer on a phone scene - at least 8% of
+   it, backdrops left out (the same rule as scenes.zone_hits on the server). */
+const UNDER_UI = 0.08;
+function zoneHits(l, s = store.scene) {
+  const zones = zonesOf(s);
+  if (!zones.length || !l || l.visible === false) return [];
+  const b = Snap.boundsOf(l.transform);
+  if (l.type === 'background' || (b.w >= 0.9 * s.width && b.h >= 0.9 * s.height)) return [];
+  const area = Math.max(1, b.w * b.h);
+  return zones.filter((z) => {
+    const w = Math.min(b.x + b.w, z.x + z.w) - Math.max(b.x, z.x), h = Math.min(b.y + b.h, z.y + z.h) - Math.max(b.y, z.y);
+    return w > 0 && h > 0 && w * h >= UNDER_UI * area;
+  }).map((z) => z.name);
+}
 
 /* ------------------------------------------------------------- geometry */
 
@@ -512,6 +526,14 @@ function paintHud() {
       if (!moving) handles(U, out, svg);
     }
   }
+  // A layer under TikTok's controls (phone scenes): a mark at its corner.
+  if (zonesOf(s).length) {
+    for (const l of s.layers) {
+      if (!zoneHits(l).length) continue;
+      const q = scr(Snap.boundsOf(l.transform));
+      out.push(`<div class="zone-badge" style="left:${q.x + 4}px;top:${q.y + 4}px">⚠</div>`);
+    }
+  }
   if (g && g.kind === 'marquee' && g.rect) out.push(outline(g.rect, 'marquee'));
   if (g && g.hits && g.hits.length) smartGuides(g, svg, out);
   if (moving && g.box) distances(g, svg, out);
@@ -598,6 +620,7 @@ function paintWorldAids() {
   grid.hidden = !(s && prefs.grid && prefs.gridSize * view.z >= 5);
   if (!grid.hidden) grid.style.setProperty('--grid', prefs.gridSize + 'px');
   const zones = zonesNow();
+  $('safeBtn').disabled = !zonesOf(s).length;         // follows the scene: a phone scene has zones
   const sig = JSON.stringify(zones);
   if (safe.dataset.sig !== sig) {
     safe.dataset.sig = sig;

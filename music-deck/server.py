@@ -1959,6 +1959,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/scenes/formats":
             return self._json({"formats": {k: list(v) for k, v in scenes.FORMATS.items()},
                                "safe_zones": scenes.SAFE_ZONES, "templates": scenes.template_list()})
+        if path == "/api/scenes/templates":
+            # The New scene gallery: each template's size, background and layer boxes.
+            return self._json({"templates": scenes.template_previews(), "safe_zones": scenes.SAFE_ZONES})
         m = re.match(r"^/api/scenes/([^/]+)(/backups)?$", path)
         if m:
             scene = SCENES.get(m.group(1))
@@ -2189,11 +2192,27 @@ class Handler(BaseHTTPRequestHandler):
                 CONFIG.setdefault("voice", {})["threshold"] = VOICE.set_threshold(data.get("threshold"))
                 save_config(CONFIG)
             return self._json(VOICE.status())
-        m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore))?$", path)
+        if path == "/api/scenes/convert":
+            # The editor's working copy laid out for another format, not stored:
+            # a format switch in place, which the editor makes one undo step.
+            src = data.get("scene") if isinstance(data.get("scene"), dict) else None
+            if not src or data.get("format") not in scenes.FORMATS:
+                return self._json({"ok": False, "reason": "a scene and a format, please"}, 400)
+            return self._json({"ok": True, "scene": scenes.convert(src, data["format"])})
+        m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore|convert))?$", path)
         if m:
             sid, what = m.groups()
             if not SCENES.get(sid):
                 return self._json({"ok": False, "reason": "no such scene"}, 404)
+            if what == "convert":
+                # "Make a phone version": a new scene, laid out for the other format.
+                fmt = data.get("format")
+                if fmt not in scenes.FORMATS:
+                    return self._json({"ok": False, "reason": "no such format"}, 400)
+                src = SCENES.get(sid)
+                made = scenes.convert(src, fmt, name=data.get("name") or f"{src['name']} ({fmt})")
+                made["id"] = ""
+                return self._json({"ok": True, "scene": SCENES.add(made)})
             if what == "delete":
                 COMPONENTS.remove(COMPONENTS.scene_id(sid))
                 return self._json({"ok": SCENES.delete(sid)})

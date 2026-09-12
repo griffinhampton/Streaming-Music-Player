@@ -111,6 +111,19 @@
 <input type="file" id="pickFile" accept="image/*,video/webm,video/mp4" hidden>
 <div id="toast" class="toast" role="status" hidden></div>
 
+<div class="modal" id="newDialog" role="dialog" aria-modal="true" aria-labelledby="newTitle" hidden>
+  <div class="modal-box nd-box">
+    <h2 id="newTitle">New scene</h2>
+    <label class="nd-field"><span>Name</span><input class="input" id="newName" maxlength="80" placeholder="Untitled scene"></label>
+    <div class="nd-grid" id="newGrid" role="radiogroup" aria-label="Start from"></div>
+    <div class="nd-foot">
+      <span class="hint" id="newHint"></span>
+      <button type="button" class="btn" id="newCancel">Cancel</button>
+      <button type="button" class="btn primary" id="newCreate">Make the scene</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle" hidden>
   <div class="modal-box">
     <h2 id="shortcutsTitle">Keyboard shortcuts</h2>
@@ -155,5 +168,6 @@
 <script src="canvas.js"></script>
 <script src="canvastools.js"></script>
 <script src="inspectors.js"></script>
+<script src="newscene.js"></script>
 </body>
 </html>

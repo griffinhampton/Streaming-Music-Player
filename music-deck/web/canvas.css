@@ -412,4 +412,34 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .cb-media { font-size: .8em; padding: 3px 10px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 18%, transparent); }
 .row.live-src .row-name::after { content: " ●"; color: var(--bad); }
 
+/* ---------------------------------------------------------------- phone canvas (P10) */
+
+/* Layers under TikTok's controls: marked on the canvas, in the list, in the inspector. */
+.zone-badge {
+  position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; line-height: 1;
+  background: var(--warn); color: #1a1200; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+}
+.row-warn { flex: 0 0 auto; color: var(--warn); font-size: .85em; cursor: help; }
+.insp-warn { margin: 0 0 8px; padding: 5px 9px; border-radius: 8px; font-size: .86em; background: color-mix(in srgb, var(--warn) 18%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+/* The New scene gallery. */
+.nd-box { width: min(1000px, 94vw); display: flex; flex-direction: column; gap: 12px; }
+.nd-box h2 { margin: 0; }
+.nd-field { display: grid; grid-template-columns: 70px minmax(0, 360px); align-items: center; gap: 10px; color: var(--label); }
+.nd-grid { display: flex; flex-direction: column; gap: 14px; max-height: 64vh; overflow: auto; padding: 4px; }
+.nd-group h3 { margin: 0 0 8px; font-size: .74em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.nd-cards { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.nd-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; cursor: pointer; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .7); color: var(--label);
+}
+.nd-card.horizontal .nd-thumb { width: 200px; height: 112.5px; }
+.nd-card.phone .nd-thumb { width: 90px; height: 160px; }
+.nd-thumb { display: block; border-radius: 6px; background: #000; }
+.nd-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.nd-card[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--fg); }
+.nd-name { font-size: .88em; max-width: 200px; }
+.nd-foot { display: flex; align-items: center; gap: 8px; }
+.nd-foot .hint { flex: 1 1 auto; margin: 0; }
+
 @media (max-width: 1300px) { .cb-body { grid-template-columns: 240px 1fr 270px; } }

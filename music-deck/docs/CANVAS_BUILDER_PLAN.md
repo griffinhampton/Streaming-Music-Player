@@ -33,7 +33,7 @@ every later prompt reads it first.
 | P7 | Canvas Builder editor shell | Opus | [x] 2026-09-12 |
 | P8 | Canvas tools: transform, snapping, guides, groups, shortcuts | Opus | [x] 2026-09-12 |
 | P9 | Inspectors for every layer type and source | Opus | [x] 2026-09-12 |
-| P10 | Phone canvas: safe zones, templates gallery, format conversion | Opus | [ ] |
+| P10 | Phone canvas: safe zones, templates gallery, format conversion | Opus | [x] 2026-09-12 |
 | P11 | Go LIVE panel, studio mode, scene remote | Opus | [ ] |
 | P12 | Release: QA, import/export, docs, build | Fable, then Opus for UI fixes | [ ] |
 

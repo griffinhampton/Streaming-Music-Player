@@ -10,6 +10,7 @@ Every save bumps a revision so editors and outputs can tell stale from
 current.
 """
 
+import copy
 import json
 import math
 import os
@@ -246,16 +247,48 @@ def template_music_lyrics():
 
 
 def template_gaming_portrait():
+    # Everything between TikTok's top bar (230) and its comments (1330), left of
+    # its side buttons (880): the P3 version put the camera, the captions and
+    # Now Playing right under the comments.
     s = new_scene("Gaming portrait", "phone")
     s["background"] = {"mode": "gradient", "color": "#0b0b10", "color2": "#1c1230", "angle": 180}
     s["layers"] = [
-        _capture("Game", 0, 230, 1080, 1080),
-        _placed("shape", "Camera frame", 40, 1330, 380, 380, kind="frame", pad=10, hole_radius=190,
+        _capture("Game", 0, 230, 1080, 608),
+        _placed("shape", "Camera frame", 48, 862, 300, 300, kind="frame", pad=10, hole_radius=150,
                 fill="rgba(255,255,255,.14)", stroke={"w": 3, "color": "#ffffff"}),
-        _camera("Camera", 50, 1340, 360, 360, mask="circle"),
-        _component("Captions", "captions", 440, 1330, 600, 150, card_bg=False, frame=False),
-        _component("Now Playing", "np", 60, 1500, 760, 190, hide=["progress", "transport"]),
-        _text("Handle", 60, 120, 900, 90, "{title}", size=44, weight=600, color="#ffffff", fit=True),
+        _camera("Camera", 58, 872, 280, 280, mask="circle"),
+        _text("Handle", 372, 872, 488, 80, "{title}", size=40, weight=600, color="#ffffff", fit=True),
+        _component("Captions", "captions", 372, 968, 488, 180, card_bg=False, frame=False),
+        _component("Now Playing", "np", 48, 1172, 760, 134, hide=["progress", "transport"]),
+    ]
+    return validate(s)
+
+
+def template_just_chatting_phone():
+    s = new_scene("Just chatting (phone)", "phone")
+    s["background"] = {"mode": "gradient", "color": "#141026", "color2": "#2b1b4d", "angle": 170}
+    s["layers"] = [
+        _text("Title", 48, 254, 812, 90, "Just chatting", size=64, letter=0.02),
+        _placed("shape", "Camera frame", 48, 360, 812, 760, kind="frame", pad=16, hole_radius=36,
+                fill="rgba(255,255,255,.12)", stroke={"w": 3, "color": "#c9a7ff"}),
+        _camera("Camera", 64, 376, 780, 728, mask="rounded"),
+        _component("Captions", "captions", 64, 960, 780, 140, card_bg=False, frame=False),
+        _component("Now Playing", "np", 48, 1136, 812, 170),
+    ]
+    return validate(s)
+
+
+def template_music_phone():
+    s = new_scene("Music (phone)", "phone")
+    s["background"] = {"mode": "scene", "color": "#1a0f1f", "color2": "#241a3d", "angle": 135, "image": "",
+                       "fit": "cover", "scene": {"id": "sakura", "c1": "", "c2": "", "c3": "",
+                                                 "scale": 1.0, "density": 1.0, "tile_scale": 1.0, "seed": 3}}
+    s["layers"] = [
+        _component("Now Playing", "np", 48, 254, 984, 230),
+        _component("Lyrics", "lyrics", 48, 510, 812, 440),
+        _text("Song", 48, 980, 812, 120, "{title}", size=60, fit=True, align="center"),
+        _text("Artist", 48, 1110, 812, 76, "{artist}", size=38, weight=500, align="center", color="#e9ddff"),
+        _component("Captions", "captions", 48, 1196, 812, 110, card_bg=False, frame=False),
     ]
     return validate(s)
 
@@ -277,8 +310,10 @@ def template_gaming_landscape():
 TEMPLATES = {
     "just_chatting": ("Just chatting", "horizontal", template_just_chatting),
     "music_lyrics": ("Music + lyrics", "horizontal", template_music_lyrics),
-    "gaming_portrait": ("Gaming portrait", "phone", template_gaming_portrait),
     "gaming_landscape": ("Gaming landscape", "horizontal", template_gaming_landscape),
+    "just_chatting_phone": ("Just chatting (phone)", "phone", template_just_chatting_phone),
+    "music_phone": ("Music (phone)", "phone", template_music_phone),
+    "gaming_portrait": ("Gaming portrait", "phone", template_gaming_portrait),
 }
 
 
@@ -288,6 +323,281 @@ def template_list():
 
 def from_template(key):
     return TEMPLATES[key][2]()
+
+
+def template_previews():
+    """Every template as the New scene gallery draws it: its size, its
+    background and each layer's box (P10)."""
+    keep = ("component", "kind", "mask", "text", "fill")
+    out = []
+    for key, (name, fmt, make) in TEMPLATES.items():
+        s = make()
+        out.append({"id": key, "name": name, "format": fmt, "width": s["width"], "height": s["height"],
+                    "background": s["background"],
+                    "layers": [{"type": l["type"], "name": l["name"], "transform": l["transform"],
+                                "props": {k: l["props"][k] for k in keep if k in l["props"]}}
+                               for l in s["layers"]]})
+    return out
+
+
+# ---------------------------------------------------------------- formats (P10)
+
+ANCHOR_FRAC = {"tl": (0, 0), "tc": (.5, 0), "tr": (1, 0), "ml": (0, .5), "mc": (.5, .5), "mr": (1, .5),
+               "bl": (0, 1), "bc": (.5, 1), "br": (1, 1)}
+MARGIN = 48             # from the canvas edge, when a layout places things
+GAP = 16                # between things a layout stacks
+UNDER_UI = 0.08         # a layer counts as under TikTok's controls when they cover this share of it
+
+
+def bounds(t):
+    """The axis-aligned box a transform covers, its rotation included: (x, y, w, h)."""
+    x, y, w, h = (float(t.get(k) or 0) for k in ("x", "y", "w", "h"))
+    r = math.radians(float(t.get("rotation") or 0))
+    if abs(math.sin(r)) < 1e-9 and math.cos(r) > 0:
+        return x, y, w, h
+    fx, fy = ANCHOR_FRAC.get(t.get("anchor"), (0, 0))
+    px, py = x + fx * w, y + fy * h
+    c, s = math.cos(r), math.sin(r)
+    pts = [(px + (qx - px) * c - (qy - py) * s, py + (qx - px) * s + (qy - py) * c)
+           for qx, qy in ((x, y), (x + w, y), (x + w, y + h), (x, y + h))]
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+
+
+def _union(boxes):
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    return x0, y0, max(b[0] + b[2] for b in boxes) - x0, max(b[1] + b[3] for b in boxes) - y0
+
+
+def _overlap(a, b):
+    w = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+    h = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+    return w * h if w > 0 and h > 0 else 0.0
+
+
+def safe_zones(fmt):
+    return SAFE_ZONES.get(fmt) or []
+
+
+def _backdrop(layer, width, height):
+    """Background layers, and anything filling most of the canvas: meant to sit under everything."""
+    if layer.get("type") == "background":
+        return True
+    b = bounds(layer.get("transform") or {})
+    return b[2] >= 0.9 * width and b[3] >= 0.9 * height
+
+
+def zone_hits(scene, layer):
+    """The names of TikTok's on-screen controls covering part of this layer
+    (a phone scene): those covering at least UNDER_UI of it. Backdrops are
+    meant to sit under them and are left out, as are hidden layers."""
+    zones = safe_zones(scene.get("format"))
+    if not zones or layer.get("visible") is False or _backdrop(layer, scene["width"], scene["height"]):
+        return []
+    b = bounds(layer.get("transform") or {})
+    area = max(1.0, b[2] * b[3])
+    return [z["name"] for z in zones if _overlap(b, (z["x"], z["y"], z["w"], z["h"])) >= UNDER_UI * area]
+
+
+def _band(fmt, width, height):
+    """Where a layout puts things, top to bottom: clear of TikTok's top bar and
+    comments on a phone, inside the margins otherwise."""
+    zones = safe_zones(fmt)
+    top = max([MARGIN] + [z["y"] + z["h"] + 24 for z in zones if z["y"] <= 0])
+    bottom = min([height - MARGIN] + [z["y"] - 24 for z in zones if z["y"] > height / 2 and z["x"] <= 0])
+    return top, bottom
+
+
+def _fills(layer, w0, h0):
+    """Does this layer fill the old canvas - the background, the game?"""
+    if layer.get("type") == "background":
+        return True
+    b = bounds(layer.get("transform") or {})
+    if layer.get("type") == "capture" and (b[2] >= 0.85 * w0 or b[3] >= 0.85 * h0):
+        return True
+    return b[2] >= 0.85 * w0 and b[3] >= 0.85 * h0
+
+
+def _hero_rect(fmt, width, height, layer, top):
+    """Where a layer that filled the old canvas goes on the new one."""
+    t = layer["transform"]
+    if layer["type"] == "background":
+        return 0, 0, width, height
+    if layer["type"] == "capture":
+        # A game or a screen is 16:9: as wide as the canvas, under TikTok's top bar on a phone.
+        if fmt == "phone":
+            return 0, max(0, top - 24), width, round(width * 9 / 16)
+        return 0, 0, width, height
+    aspect = max(0.01, float(t["w"]) / max(1.0, float(t["h"])))
+    w, h = width, width / aspect
+    if h > height:
+        h, w = height, height * aspect
+    return (width - w) / 2, (height - h) / 2, w, h
+
+
+def _units(items):
+    """Layers that move as one: a group, and layers stacked on each other
+    (a camera inside its frame, a caption on a picture)."""
+    parent = list(range(len(items)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    boxes = [bounds(l["transform"]) for l in items]
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            gi, gj = items[i].get("group"), items[j].get("group")
+            smaller = max(1.0, min(boxes[i][2] * boxes[i][3], boxes[j][2] * boxes[j][3]))
+            if (gi and gi == gj) or _overlap(boxes[i], boxes[j]) >= 0.6 * smaller:
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(len(items)):
+        groups.setdefault(find(i), []).append(items[i])
+    return list(groups.values())
+
+
+def _clear_side_zones(fmt, box):
+    """Out from under a zone at the side (TikTok's buttons), if it fits to the left of it."""
+    x, y, w, h = box
+    for z in safe_zones(fmt):
+        if z["x"] > 0 and y < z["y"] + z["h"] and y + h > z["y"] and x + w > z["x"]:
+            nx = z["x"] - GAP - w
+            if nx >= MARGIN:
+                x = nx
+    return x, y, w, h
+
+
+def _layout(boxes, fmt, width, h0, w0, top, bottom, k, pack):
+    """Place the units: each on its side of the canvas (which third it was in),
+    in its old order down the page - where it was, in proportion, or packed
+    from the top - never over another one, all scaled by k. Returns each
+    unit's (x, y, scale) and how far down it went."""
+    span = max(1.0, bottom - top)
+    placed, res = [], [None] * len(boxes)
+    for i in sorted(range(len(boxes)), key=lambda i: (boxes[i][1] + boxes[i][3] / 2, i)):
+        ux, uy, uw, uh = boxes[i]
+        sc = min(1.0, (width - 2 * MARGIN) / max(1.0, uw), span / max(1.0, uh)) * k
+        w, h = uw * sc, uh * sc
+        cx, cy = ux + uw / 2, uy + uh / 2
+        if w >= width - 2 * MARGIN - 1:
+            x = (width - w) / 2
+        elif cx < w0 / 3:
+            x = MARGIN
+        elif cx > 2 * w0 / 3:
+            x = width - MARGIN - w
+        else:
+            x = (width - w) / 2
+        y = top if pack else max(top, min(top + (cy / h0) * span - h / 2, bottom - h))
+        box = (x, y, w, h)
+        for _ in range(4 * len(boxes) + 4):
+            box = _clear_side_zones(fmt, box)
+            hit = next((p for p in placed if _overlap(box, p) > 0), None)
+            if not hit:
+                break
+            box = (box[0], hit[1] + hit[3] + GAP, w, h)
+        placed.append(box)
+        res[i] = (box[0], box[1], sc)
+    return res, max((p[1] + p[3] for p in placed), default=top)
+
+
+def _scale_props(layer, sc):
+    """Sizes a layer carries in pixels shrink with its box."""
+    if abs(sc - 1) < 1e-6:
+        return
+    p, st = layer.get("props") or {}, layer.get("style") or {}
+    if layer["type"] == "text" and p.get("size"):
+        p["size"] = max(6, round(float(p["size"]) * sc, 1))
+    for key in ("pad", "hole_radius"):
+        if isinstance(p.get(key), (int, float)):
+            p[key] = round(p[key] * sc, 1)
+    if isinstance(p.get("stroke"), dict) and p["stroke"].get("w"):
+        p["stroke"]["w"] = max(1, round(p["stroke"]["w"] * sc, 1))
+    if st.get("radius"):
+        st["radius"] = round(st["radius"] * sc, 1)
+    if isinstance(st.get("border"), dict) and st["border"].get("w"):
+        st["border"]["w"] = max(1, round(st["border"]["w"] * sc, 1))
+
+
+def _keep_inside(t, width, height):
+    """Whatever happened before: the layer's box, rotation included, inside the canvas."""
+    b = bounds(t)
+    if b[2] > width or b[3] > height:
+        f = min(width / max(1e-6, b[2]), height / max(1e-6, b[3]))
+        cx, cy = t["x"] + t["w"] / 2, t["y"] + t["h"] / 2
+        t["w"], t["h"] = t["w"] * f, t["h"] * f
+        t["x"], t["y"] = cx - t["w"] / 2, cy - t["h"] / 2
+        b = bounds(t)
+    t["x"] += -b[0] if b[0] < 0 else min(0.0, width - (b[0] + b[2]))
+    t["y"] += -b[1] if b[1] < 0 else min(0.0, height - (b[1] + b[3]))
+    r = math.radians(float(t.get("rotation") or 0))
+    if abs(math.sin(r)) < 1e-9 and math.cos(r) > 0:      # upright, as bounds() means it (180 is not)
+        t["w"], t["h"] = max(1, min(width, round(t["w"]))), max(1, min(height, round(t["h"])))
+        t["x"] = max(0, min(width - t["w"], round(t["x"])))
+        t["y"] = max(0, min(height - t["h"], round(t["y"])))
+    else:
+        for k in ("x", "y", "w", "h"):
+            t[k] = round(t[k], 2)
+        b = bounds(t)            # rounding may not push it out: shrink the step it made
+        t["x"] += max(0.0, -b[0]) + min(0.0, width - (b[0] + b[2]))
+        t["y"] += max(0.0, -b[1]) + min(0.0, height - (b[1] + b[3]))
+
+
+def convert(scene, fmt, name=None):
+    """The scene laid out again for another format (P10) - a starting point to
+    fix by hand, never a layer off the canvas.
+
+    Backgrounds fill the new canvas; a game or screen capture that filled the
+    old one becomes the picture across the top (16:9, under TikTok's top bar
+    on a phone). Everything else moves in units - groups, and layers stacked on
+    each other, like a camera and its frame - each keeping its side of the
+    canvas and its place down the page, between TikTok's top bar and its
+    comments, clear of its side buttons, and none over another. When they do
+    not fit they shrink together, down to half size; then they overflow below
+    the band and are marked as under TikTok's controls. Every layer keeps its
+    id, order and settings; sizes in pixels (text, frames) shrink with it."""
+    if fmt not in FORMATS:
+        raise ValueError(f"no format {fmt!r}")
+    out = validate(copy.deepcopy(scene))
+    w0, h0 = out["width"], out["height"]
+    width, height = FORMATS[fmt]
+    out.update(format=fmt, width=width, height=height, guides={"h": [], "v": []})
+    if name:
+        out["name"] = str(name)[:80]
+    top, bottom = _band(fmt, width, height)
+    heroes, items = [], []
+    for layer in out["layers"]:
+        (heroes if _fills(layer, w0, h0) else items).append(layer)
+    hero_bottom = None
+    for layer in heroes:
+        x, y, w, h = _hero_rect(fmt, width, height, layer, top)
+        layer["transform"].update(x=x, y=y, w=w, h=h, rotation=0)
+        if layer["type"] == "capture" and fmt == "phone":
+            hero_bottom = max(hero_bottom or 0, y + h)
+    if hero_bottom is not None and bottom - (hero_bottom + 24) >= 160:
+        top = hero_bottom + 24
+    units = _units(items)
+    boxes = [_union([bounds(l["transform"]) for l in u]) for u in units]
+    # Where they were, at full size; else packed from the top, shrinking until they fit.
+    res, reach = _layout(boxes, fmt, width, h0, w0, top, bottom, 1.0, False)
+    if reach > bottom:
+        k = 1.0
+        for _ in range(12):
+            res, reach = _layout(boxes, fmt, width, h0, w0, top, bottom, k, True)
+            if reach <= bottom or k <= 0.5:
+                break
+            k = max(0.5, min(k - 0.02, k * (bottom - top) / max(1.0, reach - top)))
+    for unit, (ux, uy, _uw, _uh), (x, y, sc) in zip(units, boxes, res):
+        for layer in unit:
+            t = layer["transform"]
+            t["x"], t["y"] = x + (t["x"] - ux) * sc, y + (t["y"] - uy) * sc
+            t["w"], t["h"] = t["w"] * sc, t["h"] * sc
+            _scale_props(layer, sc)
+    for layer in out["layers"]:
+        _keep_inside(layer["transform"], width, height)
+    return validate(out)
 
 
 def native_sources(scene):

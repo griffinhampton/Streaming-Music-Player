@@ -294,7 +294,7 @@ function paintScenePick() {
 }
 $('scenePick').addEventListener('change', async () => {
   const v = $('scenePick').value;
-  if (v === '__new') { await newScene(); return; }
+  if (v === '__new') { $('scenePick').value = store.scene ? store.scene.id : ''; openNewDialog(); return; }
   if (v && (!store.scene || v !== store.scene.id)) loadScene(v);
 });
 
@@ -625,10 +625,12 @@ function renderTree() {
 }
 function layerRow(l, level) {
   const hidden = l.visible === false;
+  const under = zoneHits(l);              // TikTok's controls over it (a phone scene)
+  const warn = under.length ? `<span class="row-warn" role="img" title="Under TikTok's ${esc(under.join(' and '))}" aria-label="Under TikTok's ${esc(under.join(' and '))}">⚠</span>` : '';
   return `<div class="row${hidden ? ' is-hidden' : ''}${liveIds.has(l.id) ? ' live-src' : ''}" role="treeitem" aria-level="${level}" aria-selected="${store.sel.has(l.id)}"
     tabindex="-1" data-key="${esc(l.id)}" data-id="${esc(l.id)}" draggable="true" style="--indent:${(level - 1) * 18}px">
     <span class="row-type" aria-hidden="true" title="${esc(l.type)}">${TYPE_ICON[l.type] || '□'}</span>
-    <span class="row-name" title="Double-click or F2 to rename">${esc(l.name)}</span>
+    <span class="row-name" title="Double-click or F2 to rename">${esc(l.name)}</span>${warn}
     <button type="button" class="row-btn${hidden ? '' : ' on'}" data-act="eye" aria-label="${hidden ? 'Show' : 'Hide'} ${esc(l.name)}" aria-pressed="${!hidden}" tabindex="-1">${hidden ? '◌' : '◉'}</button>
     <button type="button" class="row-btn${l.locked ? ' on' : ''}" data-act="lock" aria-label="${l.locked ? 'Unlock' : 'Lock'} ${esc(l.name)}" aria-pressed="${!!l.locked}" tabindex="-1">${l.locked ? '🔒' : '🔓'}</button>
   </div>`;
@@ -802,6 +804,7 @@ function sel_(field, id, opts, label) {
 function sceneInspector() {
   return `<div class="insp"><h2>Scene <span class="tag">${store.scene.width} × ${store.scene.height}</span></h2>
     <div class="f"><span>Name</span><input class="input" data-layer="" data-field="name" maxlength="80"></div>
+    ${sceneFormatSection()}
     ${sceneBackgroundSection()}
     <h3>Transparency</h3>
     ${sel_('transparency', '', [['opaque', 'Opaque'], ['see-through', 'See-through'], ['key', 'Key color']], 'Output')}
@@ -814,6 +817,7 @@ function layerInspector(l) {
   const id = l.id;
   return `<div class="insp"><h2><span>${esc(l.name)}</span><span class="tag">${esc(TYPE_NAME[l.type] || l.type)}</span></h2>
     <p class="insp-live" data-live-note hidden></p>
+    <p class="insp-warn" data-zone-note hidden></p>
     <div class="f"><span>Name</span><input class="input" data-layer="${esc(id)}" data-field="name" maxlength="80"></div>
     <h3>Position and size</h3>
     <div class="grid4">${num('X', 'transform.x', id)}${num('Y', 'transform.y', id)}${num('W', 'transform.w', id, 'data-min="1"')}${num('H', 'transform.h', id, 'data-min="1"')}</div>
@@ -1054,8 +1058,7 @@ $('redoBtn').addEventListener('click', redo);
 $('formatSeg').addEventListener('click', (e) => {
   const b = e.target.closest('[data-f]');
   if (!b || !store.scene || store.scene.format === b.dataset.f) return;
-  setField('', 'format', b.dataset.f, 'format');
-  zoomFit();
+  switchFormat(b.dataset.f);          // the layers laid out again too (newscene.js)
 });
 $('openOutput').addEventListener('click', () => {
   if (!store.scene) return;
@@ -1068,7 +1071,7 @@ $('groupBtn').addEventListener('click', () => groupLayers([...store.sel]));
 $('ungroupBtn').addEventListener('click', () => ungroupLayers([...store.sel]));
 $('dupBtn').addEventListener('click', () => duplicateLayers([...store.sel]));
 $('delBtn').addEventListener('click', () => removeLayers([...store.sel]));
-$('emptyNew').addEventListener('click', () => newScene());
+$('emptyNew').addEventListener('click', () => openNewDialog());
 
 /* ------------------------------------------------------------- keys */
 

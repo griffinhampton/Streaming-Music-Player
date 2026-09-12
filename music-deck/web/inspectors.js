@@ -14,7 +14,7 @@
 'use strict';
 
 let feedState = null;                          // the latest snapshot: designs, fonts
-const openSecs = new Set(['type', 'scene-bg']); // which sections are open - a view choice
+const openSecs = new Set(['type', 'scene-bg', 'scene-format']); // which sections are open - a view choice
 const TYPE_NAME = { text: 'Text', image: 'Picture or video', background: 'Background', shape: 'Shape',
   component: 'Window', camera: 'Camera', capture: 'Screen or window', reactive: 'Reactive image' };
 const COMP_NAME = { np: 'Now Playing', lyrics: 'Lyrics', queue: 'Queue', captions: 'Captions' };
@@ -371,6 +371,7 @@ function mountInspector(root) {
 /* On every change: values into the controls, and what shows for them. */
 function syncInspector(root) {
   if (store.sel.size > 1 || !store.scene) return;
+  paintZoneNotes(root);                   // what sits under TikTok's controls (newscene.js)
   const l = oneLayer();
   const sc = l ? LX : SX;
   syncDesign(root, sc);

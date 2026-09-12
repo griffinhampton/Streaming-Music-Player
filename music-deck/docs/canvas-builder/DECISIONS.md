@@ -692,6 +692,80 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## P10 - the phone canvas (2026-09-12)
+
+`scenes.py` (the layout for another format, what sits under TikTok's
+controls, the gallery's data, three phone templates), `web/newscene.js` (the
+gallery, the format switch, "Make a phone version"), and the warnings in
+the canvas tools, the layer list and the inspector.
+
+- **One layout, on the server.** `scenes.convert(scene, fmt)` lays a scene
+  out again for the other format; the unit tests hold it to its promise -
+  every layer inside the canvas, rotation included, for every template both
+  ways and sixty random scenes (huge, off the canvas, rotated, grouped). It
+  keeps every layer's id, order and settings. "Make a phone version" stores
+  its result as a new scene (`POST /api/scenes/<id>/convert`); the editor's
+  Horizontal / Phone switch uses it on the working copy
+  (`POST /api/scenes/convert`, nothing stored) and makes it one undo step -
+  before P10 the switch only resized the canvas and left the layers where
+  they were, off it.
+- **The rules.** Backgrounds fill the new canvas. A game or screen capture
+  that filled the old one becomes the picture across the top - 16:9, as wide
+  as the phone, just under TikTok's top bar. Everything else moves in units:
+  a group, and layers stacked on each other (a camera inside its frame, a
+  caption on a picture), found by overlap. Each unit keeps its side of the
+  canvas - the third it was in - and its order down the page, placed where
+  it was in proportion; if that runs past the room, they are packed from the
+  top, side by side where they do not overlap, none over another, and shrink
+  together until they fit (down to half; beyond that they overflow and are
+  marked). On a phone the room is between TikTok's top bar and its comments,
+  and clear of its side buttons. Sizes in pixels (text, frame widths,
+  corners, strokes) shrink with the box.
+- **TikTok's controls** (`SAFE_ZONES`, P3's approximations): a layer is
+  "under" them when they cover at least 8% of it; backgrounds and anything
+  filling most of the canvas are meant to sit under them and are left out.
+  The same rule in Python (`zone_hits`) and in the editor (`zoneHits`):
+  a ⚠ at the layer's corner on the canvas, a ⚠ on its row, a line in its
+  inspector naming the controls, and the scene's count in the scene
+  inspector. The overlay itself (P8) still toggles, and its edges are
+  snapping targets; the warnings stay when it is hidden - the controls are
+  there on the phone either way.
+- **Templates.** "Gaming portrait" (P3) had its camera, captions and Now
+  Playing under the comments; it is laid out again, and two phone templates
+  join it - Just chatting (phone), Music (phone) - all clear of TikTok's
+  controls (a unit test). The New scene dialog (the scene menu's "+ New
+  scene…", or the empty editor's button) shows two blanks and every
+  template, each drawn from its boxes as a small picture (background,
+  windows, camera, text, TikTok's zones on phone ones): instant, and exactly
+  where things are. A name, arrows between the choices, Enter to make it,
+  Esc to go back.
+
+Tests:
+
+- Unit (`tests/test_p10.py`, 12): every template both ways inside, and the
+  horizontal ones clear of TikTok as phone versions; sixty random scenes
+  inside; a camera kept in its frame; a group moving as one; the game across
+  the top and backgrounds filling; text shrinking with its box; which
+  controls cover a layer, a sliver not counting, none on horizontal scenes;
+  the phone templates clear; the gallery's data.
+- `tools/p10/p10test.js` (headless, fake camera): 24 of 24. Every template
+  as its output draws it, a screenshot each, every layer drawn and inside;
+  each laid out for the other format and drawn again, inside, and the phone
+  versions of the horizontal ones clear of TikTok's controls. The gallery: two
+  blanks and six templates, each with its thumbnail; the scene's format
+  chosen and focused, the scene menu left as it was; arrows, Esc; a template
+  made into a named scene the editor opens. The Phone switch: every layer
+  inside, none under TikTok, one undo step, undone exactly. "Make a phone
+  version": a new phone scene, the original untouched. A layer moved under
+  the comments: the ⚠ on the canvas and its row, the inspector's line, the
+  scene's count. The safe zones toggling off and on (the first run found the
+  button stuck disabled after a switch from a horizontal scene - it now
+  follows the scene), the warnings staying; a layer dragged near the
+  comments snapping to their edge. No console errors.
+- Again after P10: P7 16 of 16, P8 56 of 56, P9 72 of 72 (its scene
+  inspector's golden rewritten for the new Format section, checked by eye
+  first - the only difference); Python 76.
+
 ## P9 - inspectors for every layer type (2026-09-12)
 
 `web/inspectors.js` (the sections), `web/designer.js` (the deck's control
