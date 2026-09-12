@@ -327,6 +327,8 @@ def summary(scene):
 
 
 class SceneStore:
+    backup_every = 60.0      # seconds; 0 keeps one backup per save
+
     def __init__(self, folder, on_change=None, log=None):
         self.folder = folder
         self.on_change = on_change
@@ -375,11 +377,17 @@ class SceneStore:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(scene, f, indent=1)
         if os.path.isfile(path):
-            for n in range(BACKUPS, 1, -1):
-                older = self._path(scene["id"], n - 1)
-                if os.path.isfile(older):
-                    os.replace(older, self._path(scene["id"], n))
-            shutil.copyfile(path, self._path(scene["id"], 1))
+            # The editor saves many times a minute; the backups are for going
+            # back minutes, not the last five keystrokes. So they only shuffle
+            # down when the newest is at least backup_every seconds old.
+            newest = self._path(scene["id"], 1)
+            if (not os.path.isfile(newest)
+                    or time.time() - os.path.getmtime(newest) >= self.backup_every):
+                for n in range(BACKUPS, 1, -1):
+                    older = self._path(scene["id"], n - 1)
+                    if os.path.isfile(older):
+                        os.replace(older, self._path(scene["id"], n))
+                shutil.copyfile(path, newest)
         os.replace(tmp, path)
 
     def _changed(self):

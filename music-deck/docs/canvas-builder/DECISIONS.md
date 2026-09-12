@@ -692,6 +692,86 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## P7 - the Canvas Builder editor (2026-09-12)
+
+`web/canvas.html` (+ `canvas.css`, `canvas.js`), opened from the deck's
+Canvas Builder button or a scene card's Edit. What it is built on:
+
+- **The canvas is the real renderer.** The center shows `scene.html` in
+  preview mode, sized to the scene and scaled and panned by the editor -
+  so what you edit is exactly what an output window shows, every layer
+  type included, with no second renderer to keep in step. The editor
+  pushes its working copy into that preview by `postMessage` on every
+  change (a small hook in scene.js, preview only, same origin only; once
+  pinned, the preview ignores revisions from the feed, because the editor
+  is ahead of them). The editor itself only draws the selection over it.
+  Zoom to fit, 100%, the wheel zooming around the pointer, Space+drag (or
+  the middle button) to pan; a checkerboard shows through see-through
+  scenes; a click picks the topmost visible, unlocked layer, rotation
+  included.
+- **One store, every change a command.** A command keeps the scene before
+  and after it, so undo and redo are exact whatever the change was; the
+  same change repeated within 0.9 s (typing a name, dragging a slider)
+  merges into one step. History is 200 steps.
+- **Autosave, with revision checks.** A change is saved 60 ms after the
+  last edit and never more than 150 ms after the first unsaved one, one
+  save in flight at a time, each carrying the revision it was based on
+  (`expect_rev`). A save the server refuses as stale (409: someone saved
+  first) is dropped; the newer scene is loaded, the history cleared, and a
+  notice says so. With nothing pending, a change made elsewhere (the deck,
+  another editor) is simply taken. An open output window sees an edit
+  through the ordinary path - save, revision, feed, render - and that path
+  is short (`tools/p7/latprobe.js`, six edits): the save's round trip 15-19
+  ms, the feed reaching the output 1-4 ms, the output fetching the scene
+  and showing it 3-4 ms, 21-25 ms in all; the editor's own 60 ms debounce
+  comes on top. An undo or redo ends a merge run, so an edit after one is
+  a step of its own.
+- **Backups at the editor's pace.** The scene store kept five backups and
+  shuffled them on every save - with an editor saving several times a
+  second they would have held the last few keystrokes. They now shuffle
+  only when the newest is a minute old (`SceneStore.backup_every`; the
+  rotation tests set 0, `tests/test_p7.py` covers the throttle).
+- **Layers panel:** top first; drag to reorder (a layer, the selection, or
+  a whole group); visibility and lock per layer and per group; rename by
+  double-click, F2 or Enter; click, Ctrl+click and Shift+click selection;
+  groups (`layer.group`, names in `scene.groups`, a collapsed group is a
+  view choice and not saved). **Sources:** an Add menu from the layer
+  types (text, shape, image or video, camera, the four components,
+  reactive image, background), and the windows and screens from
+  `/api/capture/sources` with a thumbnail each - picked, they become a
+  native capture layer. **Assets:** the library with thumbnails, upload,
+  and a picked asset either becomes a picture layer or replaces the
+  selected one's picture.
+- **Inspector:** the selection's name, position, size, rotation, opacity,
+  corners, blend, visibility and lock, plus the main settings of its type;
+  with nothing selected, the scene's own name, background and transparency.
+  (The full per-type inspectors are P9; moving and resizing on the canvas
+  is P8.)
+- **Keyboard and accessibility:** a toolbar, tabs with arrow keys, the
+  layers as a multi-select tree (one Tab stop, arrows and Shift+arrows,
+  Alt+arrows to reorder), a labeled canvas and inspector, a visible focus
+  ring, announcements for undo, redo, saves and conflicts, and a shortcuts
+  dialog (`?`) that keeps focus and gives it back.
+
+Tests (`tools/p7/p7run.sh`, headless only - test windows never go on the
+main monitor, and the second one was unplugged): 16 of 16 on a
+just-chatting scene. The page and the scene fit at 1600x900 and 1280x720
+(screenshots); the panels are tabs, the layers a multi-select tree with one
+item per layer and one Tab stop, the inspector labeled; Tab goes top bar,
+panels, canvas, inspector, with a visible focus ring; `?` opens the
+shortcuts and Esc gives focus back. Undo of all 11 steps of a mixed run -
+add, rename, move, text, hide, lock, group, reorder, duplicate, delete, a
+scene field - returns the scene exactly, redo returns every change, and
+typing a name is one step. Autosave lands on the server. An edit reaches a
+separate output page in 83-96 ms (median 83; the first run read ~400 ms
+because the headless output page was a throttled background tab - the
+runner now starts Chrome with the app's own no-throttling flags). An
+autosave conflict - the editor's save held while the scene was saved from
+outside, then let go - is refused, the newer scene loaded, the history
+cleared and a notice shown; an outside change with nothing pending is
+taken quietly. No console errors in the editor or the output page.
+`tests/test_p7.py` covers the backup throttle.
+
 ## P6 - the deck shows the new backend (2026-09-12)
 
 What the deck gained, and the choices behind it:

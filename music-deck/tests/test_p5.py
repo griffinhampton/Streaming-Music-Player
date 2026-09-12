@@ -74,6 +74,7 @@ class SceneBackups(unittest.TestCase):
 
     def test_a_corrupted_file_falls_back_to_the_newest_good_backup(self):
         store = scenes.SceneStore(self.dir)
+        store.backup_every = 0        # one backup per save (P7 throttles it to once a minute)
         s = store.add(scenes.from_template("just_chatting"))
         for n in range(3):
             s = store.get(s["id"])

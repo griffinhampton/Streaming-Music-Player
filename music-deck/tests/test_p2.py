@@ -78,6 +78,7 @@ class SceneStoreTests(Temp):
     def test_create_save_backup_conflict_restore(self):
         events = []
         store = scenes.SceneStore(self.dir, on_change=lambda: events.append(1))
+        store.backup_every = 0        # one backup per save: this tests the rotation itself
         s = store.create("First", "horizontal")
         self.assertEqual(s["rev"], 1)
         self.assertTrue(os.path.isfile(os.path.join(self.dir, s["id"] + ".json")))

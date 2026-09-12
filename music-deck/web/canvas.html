@@ -5,41 +5,114 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Awesome Streaming Deck - Canvas Builder</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
-<!-- A placeholder: the editor itself - layers, sources, the inspector -
-     is the next step of the plan (P7). This page proves the window, the
-     route and the scene hand-off from the deck. -->
-<style>
-  :root { color-scheme: dark; --bg: #0b0b11; --panel: #14141c; --line: #26263a; --fg: #f0f0f4; --dim: #8e8ea0; --accent: #8b5cf6; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 48px 28px; }
-  h1 { margin: 0 0 6px; font-size: 1.6em; }
-  p { color: var(--dim); margin: 0 0 22px; }
-  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--panel);
-       border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 10px; }
-  li.on { border-left-color: var(--accent); }
-  li .fmt { color: var(--dim); font-variant-numeric: tabular-nums; }
-  .empty { color: var(--dim); }
-</style>
+<link rel="stylesheet" href="canvas.css">
+<script src="motion.js"></script>
 </head>
 <body>
-<main>
-  <h1>Canvas Builder</h1>
-  <p>The editor - layers, sources and the inspector - arrives in the next step. Your scenes so far:</p>
-  <ul id="scenes"><li class="empty">Loading&hellip;</li></ul>
-</main>
-<script>
-  const want = new URLSearchParams(location.search).get('scene') || '';
-  const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  fetch('/api/scenes').then((r) => r.json()).then((d) => {
-    const list = document.getElementById('scenes');
-    const scenes = d.scenes || [];
-    list.innerHTML = scenes.length
-      ? scenes.map((s) => `<li class="${s.id === want ? 'on' : ''}"><span>${esc(s.name)}</span>` +
-          `<span class="fmt">${esc(s.width)} &times; ${esc(s.height)}</span></li>`).join('')
-      : '<li class="empty">No scenes yet.</li>';
-  }).catch(() => { document.getElementById('scenes').innerHTML = '<li class="empty">The deck is not running.</li>'; });
-</script>
+
+<header class="cb-top" role="toolbar" aria-label="Canvas Builder">
+  <div class="cb-brand"><span class="dot" aria-hidden="true"></span><b>Canvas Builder</b></div>
+  <select id="scenePick" class="input" aria-label="Scene"></select>
+  <div class="seg" id="formatSeg" role="radiogroup" aria-label="Format">
+    <button type="button" role="radio" data-f="horizontal" aria-checked="false" title="Horizontal, 1920 by 1080">Horizontal</button>
+    <button type="button" role="radio" data-f="phone" aria-checked="false" title="Phone, 1080 by 1920">Phone</button>
+  </div>
+  <div class="cb-group" role="group" aria-label="History">
+    <button type="button" class="btn icon" id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;</button>
+    <button type="button" class="btn icon" id="redoBtn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">&#8631;</button>
+  </div>
+  <div class="cb-group" role="group" aria-label="Zoom">
+    <button type="button" class="btn icon" id="zoomOut" title="Zoom out (Ctrl+-)" aria-label="Zoom out">&minus;</button>
+    <span class="zoom-label" id="zoomLabel" aria-live="polite">100%</span>
+    <button type="button" class="btn icon" id="zoomIn" title="Zoom in (Ctrl+=)" aria-label="Zoom in">+</button>
+    <button type="button" class="btn" id="zoomFit" title="Zoom to fit (Ctrl+0)">Fit</button>
+    <button type="button" class="btn" id="zoom100" title="Actual size (Ctrl+1)">100%</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="cb-save" id="saveState" data-state="saved">Saved</span>
+  <span class="cb-live" id="liveStatus" data-state="idle">Off air</span>
+  <button type="button" class="btn" id="openOutput" title="Open this scene's output window">Open output</button>
+  <button type="button" class="btn icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-haspopup="dialog">?</button>
+</header>
+
+<div class="cb-body">
+  <aside class="cb-left" aria-label="Scene contents">
+    <div class="tabs" role="tablist" aria-label="Panels">
+      <button type="button" role="tab" id="tabLayers" aria-controls="paneLayers" aria-selected="true">Layers</button>
+      <button type="button" role="tab" id="tabSources" aria-controls="paneSources" aria-selected="false" tabindex="-1">Sources</button>
+      <button type="button" role="tab" id="tabAssets" aria-controls="paneAssets" aria-selected="false" tabindex="-1">Assets</button>
+    </div>
+
+    <section class="pane" id="paneLayers" role="tabpanel" aria-labelledby="tabLayers">
+      <div class="pane-tools">
+        <button type="button" class="btn sm" id="groupBtn" title="Group (Ctrl+G)">Group</button>
+        <button type="button" class="btn sm" id="ungroupBtn" title="Ungroup (Ctrl+Shift+G)">Ungroup</button>
+        <button type="button" class="btn sm" id="dupBtn" title="Duplicate (Ctrl+D)">Duplicate</button>
+        <button type="button" class="btn sm danger" id="delBtn" title="Delete (Del)">Delete</button>
+      </div>
+      <div id="layerTree" class="tree" role="tree" aria-label="Layers, top first" aria-multiselectable="true"></div>
+      <p class="hint" id="treeEmpty" hidden>No layers yet &mdash; add one from Sources or Assets.</p>
+    </section>
+
+    <section class="pane" id="paneSources" role="tabpanel" aria-labelledby="tabSources" hidden>
+      <h3 class="pane-h">Add a layer</h3>
+      <div id="addGrid" class="add-grid"></div>
+      <h3 class="pane-h">Capture a window or screen <button type="button" class="btn sm ghost" id="refreshSources">Refresh</button></h3>
+      <div id="captureList" class="capture-list"><p class="hint">Loading&hellip;</p></div>
+    </section>
+
+    <section class="pane" id="paneAssets" role="tabpanel" aria-labelledby="tabAssets" hidden>
+      <div class="pane-tools">
+        <button type="button" class="btn sm" id="uploadBtn">Upload a picture or video&hellip;</button>
+        <input type="file" id="uploadInput" accept="image/*,video/webm,video/mp4" hidden>
+      </div>
+      <div id="assetGrid" class="asset-grid"><p class="hint">Loading&hellip;</p></div>
+    </section>
+  </aside>
+
+  <main class="cb-canvas" id="viewport" tabindex="0" aria-label="Canvas" aria-describedby="canvasHelp">
+    <p id="canvasHelp" class="sr-only">Click a layer to select it. Hold Space and drag to pan; the wheel zooms around the pointer.</p>
+    <div class="world" id="world">
+      <div class="checker" id="checker"></div>
+      <iframe id="sceneFrame" title="Scene preview" tabindex="-1"></iframe>
+      <div class="overlay" id="overlay" aria-hidden="true"></div>
+    </div>
+    <div class="cb-empty" id="emptyState" hidden>
+      <p>No scenes yet.</p>
+      <button type="button" class="btn primary" id="emptyNew">Make a scene</button>
+    </div>
+  </main>
+
+  <aside class="cb-right" id="inspector" aria-label="Inspector"></aside>
+</div>
+
+<div id="announce" class="sr-only" aria-live="polite"></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<div class="modal" id="shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle" hidden>
+  <div class="modal-box">
+    <h2 id="shortcutsTitle">Keyboard shortcuts</h2>
+    <dl class="keys">
+      <dt>Ctrl+Z</dt><dd>Undo</dd>
+      <dt>Ctrl+Shift+Z &middot; Ctrl+Y</dt><dd>Redo</dd>
+      <dt>Del</dt><dd>Delete the selection</dd>
+      <dt>Ctrl+D</dt><dd>Duplicate</dd>
+      <dt>Ctrl+G &middot; Ctrl+Shift+G</dt><dd>Group &middot; ungroup</dd>
+      <dt>Ctrl+A &middot; Esc</dt><dd>Select all &middot; select none</dd>
+      <dt>H &middot; L</dt><dd>Hide or show &middot; lock or unlock</dd>
+      <dt>F2</dt><dd>Rename the layer</dd>
+      <dt>Alt+&uarr; &middot; Alt+&darr;</dt><dd>Move the layer up or down</dd>
+      <dt>&uarr; &darr; in the layer list</dt><dd>Move through the layers (Shift adds)</dd>
+      <dt>Space + drag</dt><dd>Pan the canvas</dd>
+      <dt>Wheel</dt><dd>Zoom around the pointer</dd>
+      <dt>Ctrl+0 &middot; Ctrl+1</dt><dd>Zoom to fit &middot; actual size</dd>
+      <dt>Ctrl+= &middot; Ctrl+-</dt><dd>Zoom in &middot; out</dd>
+      <dt>?</dt><dd>This list</dd>
+    </dl>
+    <button type="button" class="btn primary" id="shortcutsClose">Close</button>
+  </div>
+</div>
+
+<script src="canvas.js"></script>
 </body>
 </html>

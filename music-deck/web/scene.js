@@ -744,6 +744,20 @@ async function loadScene(id, transition) {
   }
 }
 
+/* The editor (P7) pushes its working copy here as you edit - before the
+   autosave lands - so its canvas never lags a keystroke. Preview only, and
+   only from our own origin. Once pinned, the editor is the source of truth:
+   a revision the feed reports is one the editor already has or will have. */
+let editorPinned = false;
+if (PREVIEW) {
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin || !e.data || e.data.type !== 'editor-scene' || !e.data.scene) return;
+    editorPinned = true;
+    banner.hidden = true;
+    show(e.data.scene);
+  });
+}
+
 /* One feed for the whole scene, embedded components included. */
 function onState(s) {
   lastState = s;
@@ -762,7 +776,8 @@ function onState(s) {
     voiceNow.started = false;
   }
   if (current) current.state(s);
-  // Which scene, and which revision of it.
+  // Which scene, and which revision of it - unless the editor feeds it.
+  if (editorPinned) return;
   const canvas = s.canvas || {};
   const wantId = FOLLOW ? canvas.live : SCENE_ID;
   const have = currentScene();
