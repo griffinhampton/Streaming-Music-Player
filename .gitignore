@@ -25,6 +25,7 @@ built in themes/
 # Build output belongs on the releases page, not in git history: it is tens of
 # megabytes per build and regenerable from source in one command.
 dist/
+dist-staging/
 .build-env/
 __pycache__/
 *.pyc

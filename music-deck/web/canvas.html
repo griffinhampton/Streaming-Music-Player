@@ -130,6 +130,7 @@
 <div id="announce" class="sr-only" aria-live="polite"></div>
 <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2" multiple hidden>
 <input type="file" id="pickFile" accept="image/*,video/webm,video/mp4" hidden>
+<input type="file" id="importFile" accept=".zip,application/zip" hidden>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <div class="modal" id="newDialog" role="dialog" aria-modal="true" aria-labelledby="newTitle" hidden>
@@ -139,6 +140,7 @@
     <div class="nd-grid" id="newGrid" role="radiogroup" aria-label="Start from"></div>
     <div class="nd-foot">
       <span class="hint" id="newHint"></span>
+      <button type="button" class="btn" id="newImport" title="A scene exported from a Canvas Builder, as one .zip file">Import a .zip…</button>
       <button type="button" class="btn" id="newCancel">Cancel</button>
       <button type="button" class="btn primary" id="newCreate">Make the scene</button>
     </div>

@@ -196,6 +196,10 @@ going LIVE without LIVE Studio or OBS at all.
 3. `getDisplayMedia` capture cost, cleanly measured (P1).
 4. Whether the user's account shows a Server URL + Stream key in LIVE
    Center (needed for direct streaming; LIVE Studio access suggests yes).
+5. (After P12, all four above are still open and need the user at the PC.)
+   Rebuild the user's installed app - it still runs pre-P1 code - with the
+   scratchpad `rebuild.ps1`, when they are not gaming; then a first real
+   TikTok LIVE from the app with their own key.
 
 ## P1 - the streaming engine (measured 2026-09-11)
 
@@ -691,6 +695,121 @@ frames 200 ms (three over 100 ms). At the very end someone closed the
 live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
+
+## P12 - release (2026-09-12)
+
+Run on Opus 5 (the plan has Fable first, then Opus for what it flags; the
+user continued on Opus). `sceneio.py`, `tests/test_p12.py`, `tools/p12`,
+README sections, and the rebuild script (scratchpad `rebuild.ps1`).
+
+- **A scene as one .zip (`sceneio.py`).** Export writes `scene.json`, a
+  `manifest.json` (format `awesome-streaming-deck/scene`, version, what is
+  inside), `assets/<id>` for every picture or video the scene names anywhere
+  (stored, not squeezed again; thumbnails ride along) and `fonts/<id>` for
+  every added font whose family the scene names. Shipped artwork
+  (`builtin:`) is listed, not packed: it is not in the repository, so a
+  friend's build may not have it, and the import says so. A picture that is
+  used but was deleted is listed as missing.
+- **Where an export goes.** `POST /api/scenes/<id>/export` writes it into
+  `canvas.export_dir`, or the real Downloads folder (SHGetKnownFolderPath,
+  so a moved Downloads is found), as "Name.zip", then "Name (2).zip" - never
+  over a file. Not a browser download: the editor is a Chrome app window,
+  where where a download lands and whether it asks is not ours to know; a
+  file in Downloads and a line saying which is predictable, and a test can
+  point `export_dir` at a scratch folder instead of the user's Downloads.
+  `GET /api/scenes/<id>/export` returns the bytes (the build check uses it).
+- **An import trusts nothing.** Refused outright (a person-readable
+  `ImportRefused`): empty, not a zip, over 300 MB, over 500 members, over
+  600 MB unpacked, password-protected, no `scene.json`, a manifest of another
+  format, `scene.json` over 4 MB, damaged, or not a scene. Then per file,
+  left out and listed: names that are absolute, have a drive, a backslash
+  or `..`; anything but `assets/<hash>.<ext>` and `fonts/<hash>.<ext>`;
+  files the scene does not use; a file larger than its kind allows (checked
+  on the header, and again on what is actually read - a lying header cannot
+  unpack a bomb); a picture, video or font that does not start the way its
+  kind of file starts. Files are stored by their own hash, as uploads are:
+  one whose content changed gets its real name, and the scene is pointed at
+  it (`id`, and `/asset/<id>` forms). Fonts are kept only when the scene
+  names their family. The scene goes through `scenes.migrate`, and
+  `SceneStore.add` gives it a new id. The route sits before the per-scene
+  regex, which would take "import" for a scene id.
+- **SVG.** Pictures can now come from someone else's scene. An `<img>` never
+  runs an SVG's script, but a tab opened on `/asset/x.svg` would have run it
+  on the app's own origin; SVGs are served with `Content-Security-Policy:
+  default-src 'none'; ...; sandbox` and every asset with `nosniff`.
+- **One way in for files.** `AssetStore.save_bytes` and `FontStore.save_bytes`
+  take bytes; uploads decode their data URL and call them, imports call them
+  directly. `used_by` speaks the deck's words ("the Now Playing window").
+- **A damaged scene file** is set aside as `<file>.corrupt` - not tried again
+  at every start, and not shuffled into the backups by the next save (it
+  would have become backup 1, and restoring it a 500). A scene that came
+  back from a backup has its file written whole again at once. One with no
+  good copy is listed in `/api/scenes` as `unreadable`, and the editor says
+  so once. `restore()` of a damaged backup returns None.
+- **QA found, and fixed:**
+  - The deck's delete on a picture a scene uses did nothing, and said
+    nothing: the server refused, the deck ignored the answer. It now says
+    where the picture is used and asks "Delete it anyway?".
+  - A picture whose file is gone (deleted anyway, or not in an import)
+    showed Chrome's broken-image icon on stream. `scene.js` hides it there
+    and outlines the box in the editor's preview ("Picture missing").
+  - The editor's top bar wrapped to two rows at 1280 wide (150% on a
+    1920 x 1080 screen). The grid size menu shows only while the grid is on,
+    the bar is tighter under 1440 px, and the save state says "Saved" (as
+    the page starts) rather than "All changes saved".
+  - The deck at 480 and 360 px wide cut off its LIVE strip (Remote, Quit)
+    and the looks row ("Delete"): `body` does not scroll sideways, so what
+    was wider than the window could not be reached at all. Both rows wrap.
+  - A font that is not on this PC was already handled (`writeControl` adds
+    "Nope Sans (not available)" to the menu) - checked, not changed.
+  - Autosave conflicts: P7's test covers them (a save held while someone
+    else saves; the editor reloads and says so) and passed again.
+- **The build.** `rebuild.ps1` is rewritten. The old one let PyInstaller's
+  `--noconfirm` replace the whole app folder and put back only config.json
+  and five cache folders - the scenes and the saved stream key
+  (`cache\live.json`) would have been lost, and the app was down for the
+  whole build. Now: the build goes to `dist-staging` while the app runs; it
+  is tried there on port 8797 (every page and API, and a scene exported and
+  imported by the build itself); only then is the app asked to quit and the
+  program files mirrored over with `robocopy /MIR`, `config.json` and
+  `cache\` excluded by full path, so nothing of the user's is moved, copied
+  over or deleted (a safety copy is still made first). `pip --no-index`: a
+  rebuild never downloads. `-CheckOnly` stops after the try-out: built in
+  50 s, every new web file inside, all ten pages and APIs 200, export and
+  import 200 - the user's app untouched.
+- **Tests.** `tests/test_p12.py` (16): the round trip to a second PC's
+  stores, thumbnails, a new name, a newer manifest, never over a file, a
+  deleted picture listed; every refusal above; every file left out above;
+  capped reads; a changed file re-pointed; the damaged-file handling; an
+  upload with its thumbnail; `used_by` in words; the import route's place;
+  the SVG policy. `tools/p12` on the rig, headless, 30 of 30: the two scene
+  files damaged by the runner (one back from its backup, one set aside and
+  said once); the missing font; Export from Share (2 pictures and 1 font
+  inside) and Import from New scene (the same scene back as a new one, and
+  what came with it said); a tampered .zip (1 picture not in it, outlined;
+  2 files left out, said) and a file that is no .zip (refused in words,
+  nothing changed); the deck's delete on a picture in use (where it is used;
+  No keeps it, "anyway" deletes it; the output then shows nothing there);
+  every inspector field of seven layer types and of the scene - 271, each
+  one undo step, undo and redo exact (a first run failed from field ~200 on:
+  the editor keeps 200 steps, so the test now reloads between layer types);
+  keyboard only (33 Tabs to the layers list, arrows, Shift+arrows, Ctrl+D,
+  Delete, Ctrl+Z / Ctrl+Shift+Z, "+20" Enter in X, ? and Esc); the editor at
+  150% on 1920 x 1080 and 2560 x 1440 screens and at 100% (one row, nothing
+  sideways); the deck at 1400, 1280 at 150%, 1024, 760, 480 and 360 px; no
+  console errors. `p12live.js`, 7 of 7: LIVE from the panel to a local
+  listener; the listener killed - *Reconnecting* in 0.1 s; a new listener -
+  LIVE again 0.5 s later, one reconnect counted; Stop asked twice; the 191
+  frames recorded after the reconnect decode without a decoder error (the
+  engine sends a keyframe first).
+- Again after P12: P6 21 and 22 of 22, P7 16 of 16, P8 56 of 56, P9 72 of
+  72 (its scene inspector golden replaced: the new Share section, placed
+  after Transparency - an action after the settings), P10 24 of 24, P11 24
+  of 24; the Python tests, 97.
+- **Still open, and the user's:** the transparency test page in LIVE Studio
+  (a Link source on `/transparency-test.html`), a first real TikTok LIVE
+  with their own key, and rebuilding their installed app (it runs pre-P1
+  code) - `rebuild.ps1`, when they are not gaming.
 
 ## P11 - running a show (2026-09-12)
 

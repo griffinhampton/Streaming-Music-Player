@@ -883,6 +883,7 @@ body.decor-animate .app-decor .decor-strip span { animation: drift 24s linear in
 
 .theme-bar {
   display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; row-gap: 8px;     /* a narrow deck puts the looks on a second line */
   padding: calc(11px * var(--d)) calc(14px * var(--d));
   border-bottom: 1px solid var(--line-strong);
 }
@@ -1104,6 +1105,13 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 .livestrip select { min-width: 110px; max-width: 170px; height: 26px; padding: 0 6px; font-size: .82em; }
 .livestrip .btn { border-radius: 999px; }
 @media (max-width: 1100px) { .livestrip select { max-width: 130px; } }
+/* A narrow deck: the strip wraps into a rounded box rather than pushing
+   Remote and Quit out of the window. */
+@media (max-width: 520px) {
+  .livestrip { flex-wrap: wrap; row-gap: 6px; border-radius: 14px; padding: 6px 8px 6px 11px; }
+  .livestrip select { flex: 1 1 120px; min-width: 0; max-width: none; }
+  .theme-bar select { flex: 1 1 120px; min-width: 110px; }
+}
 
 .tabs button[hidden] { display: none !important; }
 

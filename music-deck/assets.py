@@ -110,6 +110,20 @@ class AssetStore:
             raw = self._decode(data_url)
             if raw is None:
                 return {"ok": False, "reason": "bad upload"}
+            res = self.save_bytes(name, raw, self._decode(thumb) if thumb else None)
+        except Exception as exc:
+            return {"ok": False, "reason": str(exc)}
+        if res.get("ok"):
+            res["assets"] = self.list()
+        return res
+
+    def save_bytes(self, name, raw, thumb=None):
+        """Store a file's bytes - an upload, or a picture from an imported
+        scene. `thumb` is an optional small JPEG/PNG, as bytes."""
+        try:
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in self.OK_EXT:
+                return {"ok": False, "reason": f"{ext or 'that file type'} is not a picture or video"}
             limit = self.MAX_VIDEO_BYTES if ext in self.VIDEO_EXT else self.MAX_BYTES
             if len(raw) > limit:
                 return {"ok": False, "reason": f"file is larger than {limit // (1024 * 1024)} MB"}
@@ -126,15 +140,13 @@ class AssetStore:
             meta = self._index.get(asset_id) or {"added": round(time.time())}
             meta.update({"name": os.path.basename(name), "bytes": len(raw), "animated": animated})
             self._index[asset_id] = meta
-            if thumb:
-                small = self._decode(thumb)
-                if small and len(small) <= 512 * 1024:
-                    with open(full + self.THUMB, "wb") as f:
-                        f.write(small)
+            if thumb and len(thumb) <= 512 * 1024:
+                with open(full + self.THUMB, "wb") as f:
+                    f.write(thumb)
             self._save_index()
             return {"ok": True, "id": asset_id, "name": os.path.basename(name),
                     "url": f"/asset/{asset_id}", "duplicate": duplicate,
-                    "kind": self.kind_of(asset_id, animated), "assets": self.list()}
+                    "kind": self.kind_of(asset_id, animated)}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)}
 
@@ -231,9 +243,12 @@ class AssetStore:
             if self._mentions(scene.get("background"), asset_id) or \
                     any(self._mentions(l.get("props"), asset_id) for l in scene.get("layers", [])):
                 users.append(f"scene: {scene.get('name', scene.get('id'))}")
-        for section in ("nowplaying", "lyrics", "queue", "captions", "ui"):
+        # Said the way the deck names them, since people read this.
+        for section, label in (("nowplaying", "the Now Playing window"), ("lyrics", "the Lyrics window"),
+                               ("queue", "the Queue window"), ("captions", "the Captions window"),
+                               ("ui", "the deck's own look")):
             if config and self._mentions(config.get(section), asset_id):
-                users.append(section)
+                users.append(label)
         return users
 
     def delete(self, asset_id):

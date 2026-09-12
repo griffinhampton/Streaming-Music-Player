@@ -660,11 +660,12 @@ class SceneStore:
             return json.load(f)
 
     def _load_all(self):
+        self.unreadable = []        # scene files no version of which could be read
         for name in sorted(os.listdir(self.folder)):
             if not name.endswith(".json"):
                 continue
             sid = name[:-5]
-            scene = None
+            scene, bad = None, []
             for n in range(0, BACKUPS + 1):
                 path = self._path(sid, n)
                 if not os.path.isfile(path):
@@ -675,10 +676,29 @@ class SceneStore:
                         self.log(f"scenes: {sid} restored from backup {n}")
                     break
                 except Exception as exc:
+                    bad.append(path)
                     self.log(f"scenes: {os.path.basename(path)} unreadable ({exc})")
+            # A file that cannot be read is set aside as "<file>.corrupt", where
+            # it can still be looked at, rather than tried again at every start
+            # or shuffled into the backups by the next save.
+            kept = [self._set_aside(path) for path in bad]
             if scene:
                 scene["id"] = sid
                 self._scenes[sid] = scene
+                if bad and bad[0] == self._path(sid):
+                    self._write(scene)          # the newest readable copy is the scene again
+            elif kept:
+                self.unreadable.append({"id": sid, "file": name, "kept_as": os.path.basename(kept[0] or name)})
+
+    def _set_aside(self, path):
+        target = path + ".corrupt"
+        if os.path.exists(target):
+            target = f"{path}.{round(time.time())}.corrupt"
+        try:
+            os.replace(path, target)
+            return target
+        except OSError:
+            return None
 
     def _write(self, scene):
         """Atomic: the new file lands whole or not at all, and the previous
@@ -802,6 +822,10 @@ class SceneStore:
         path = self._path(sid, int(n))
         if not os.path.isfile(path):
             return None
-        scene = migrate(self._read(path))
+        try:
+            scene = migrate(self._read(path))
+        except (OSError, ValueError, RecursionError) as exc:
+            self.log(f"scenes: {os.path.basename(path)} unreadable ({exc})")
+            return None
         scene["id"] = sid
         return self.save(scene)

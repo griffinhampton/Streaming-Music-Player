@@ -845,8 +845,14 @@ $('bgEditors').addEventListener('click', (e) => {
   }
   const del = e.target.closest('[data-del]');
   if (del) {
-    post('/api/assets/delete', { id: del.dataset.del }).then((d) => {
-      ASSETS = d.assets || [];
+    const id = del.dataset.del;
+    post('/api/assets/delete', { id }).then(async (d) => {
+      // Still used somewhere: say where, and delete only if they insist.
+      if (d && !d.ok && (d.used_by || []).length &&
+          confirm(`This picture is ${d.reason}.\n\nDelete it anyway? Those will show nothing where it was.`)) {
+        d = await post('/api/assets/delete', { id, force: true });
+      }
+      ASSETS = (d && d.assets) || ASSETS;
       renderPickers();
     });
     return;

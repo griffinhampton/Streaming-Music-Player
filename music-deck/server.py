@@ -39,6 +39,7 @@ import components
 import feeds
 import guard
 import scenes
+import sceneio
 import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
@@ -72,6 +73,7 @@ DEFAULT_CONFIG = {
         "live": "",                  # the scene the "Canvas (live)" output follows
         "transition": "fade",        # fade | cut, when the live scene changes
         "duration": 300,             # ms, for the fade
+        "export_dir": "",            # where a scene's Export .zip goes; "" = the Downloads folder
     },
     "voice": {
         "threshold": 0.08,           # how loud counts as talking, for reactive images (voice.py)
@@ -1743,8 +1745,12 @@ class Handler(BaseHTTPRequestHandler):
             with open(asset, "rb") as f:
                 data_bytes = f.read()
             mime = mimetypes.guess_type(asset)[0] or "image/png"
-            return self._send(200, data_bytes, mime,
-                              {"Cache-Control": "max-age=86400"})
+            # A picture can come from someone else's scene now (an import): an
+            # SVG opened on its own must not run script on this origin.
+            extra = {"Cache-Control": "max-age=86400", "X-Content-Type-Options": "nosniff"}
+            if asset.lower().endswith(".svg"):
+                extra["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+            return self._send(200, data_bytes, mime, extra)
 
         if path == "/api/assets":
             return self._json({"assets": ASSET_STORE.list((query.get("kind") or [None])[0])})
@@ -1992,20 +1998,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(comp.overlay.status())
 
         if path == "/api/scenes":
-            return self._json({"scenes": SCENES.list()})
+            # "unreadable": scene files set aside at start because no copy of them could be read.
+            return self._json({"scenes": SCENES.list(), "unreadable": SCENES.unreadable})
         if path == "/api/scenes/formats":
             return self._json({"formats": {k: list(v) for k, v in scenes.FORMATS.items()},
                                "safe_zones": scenes.SAFE_ZONES, "templates": scenes.template_list()})
         if path == "/api/scenes/templates":
             # The New scene gallery: each template's size, background and layer boxes.
             return self._json({"templates": scenes.template_previews(), "safe_zones": scenes.SAFE_ZONES})
-        m = re.match(r"^/api/scenes/([^/]+)(/backups)?$", path)
+        m = re.match(r"^/api/scenes/([^/]+)(/backups|/export)?$", path)
         if m:
             scene = SCENES.get(m.group(1))
             if not scene:
                 return self._json({"ok": False, "reason": "no such scene"}, 404)
-            if m.group(2):
+            if m.group(2) == "/backups":
                 return self._json({"backups": SCENES.backups(scene["id"])})
+            if m.group(2) == "/export":
+                # The scene as one .zip - its pictures and fonts inside (sceneio.py).
+                zipped, filename, _ = sceneio.export_zip(scene, ASSET_STORE, FONT_STORE)
+                return self._send(200, zipped, "application/zip",
+                                  {"Content-Disposition": f'attachment; filename="{filename}"'})
             return self._json(scene)
 
         if path == "/api/capture/sources":
@@ -2241,6 +2253,16 @@ class Handler(BaseHTTPRequestHandler):
                 CONFIG.setdefault("voice", {})["threshold"] = VOICE.set_threshold(data.get("threshold"))
                 save_config(CONFIG)
             return self._json(VOICE.status())
+        if path == "/api/scenes/import":
+            # A scene someone exported, as a .zip: sceneio.py trusts nothing in it.
+            try:
+                scene, report = sceneio.import_zip(sceneio.from_data_url(data.get("data")),
+                                                   ASSET_STORE, FONT_STORE, name=data.get("name"))
+            except sceneio.ImportRefused as exc:
+                return self._json({"ok": False, "reason": str(exc)}, 400)
+            if report["fonts"]:
+                HUB.broadcast()          # the pages' fonts.css has new faces in it
+            return self._json({"ok": True, "scene": SCENES.add(scene), "report": report})
         if path == "/api/scenes/convert":
             # The editor's working copy laid out for another format, not stored:
             # a format switch in place, which the editor makes one undo step.
@@ -2248,11 +2270,18 @@ class Handler(BaseHTTPRequestHandler):
             if not src or data.get("format") not in scenes.FORMATS:
                 return self._json({"ok": False, "reason": "a scene and a format, please"}, 400)
             return self._json({"ok": True, "scene": scenes.convert(src, data["format"])})
-        m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore|convert))?$", path)
+        m = re.match(r"^/api/scenes/([^/]+)(?:/(delete|duplicate|restore|convert|export))?$", path)
         if m:
             sid, what = m.groups()
             if not SCENES.get(sid):
                 return self._json({"ok": False, "reason": "no such scene"}, 404)
+            if what == "export":
+                # Saved as a file where downloads go (or canvas.export_dir), never over another.
+                folder = CONFIG["canvas"].get("export_dir") or sceneio.downloads_dir()
+                try:
+                    return self._json(sceneio.save_export(SCENES.get(sid), ASSET_STORE, FONT_STORE, folder))
+                except OSError as exc:
+                    return self._json({"ok": False, "reason": f"Could not write the file: {exc}"}, 500)
             if what == "convert":
                 # "Make a phone version": a new scene, laid out for the other format.
                 fmt = data.get("format")

@@ -25,6 +25,11 @@ Five windows:
 - **Awesome Streaming Deck - Captions** – a pop-out that turns what you say into your
   microphone into closed captions, live. Optional, off until you press Start.
 
+And the **Canvas Builder**, which lays all of that out into scenes - with text,
+pictures, your camera and your game - and can go LIVE on TikTok by itself,
+with no other streaming app. See [The Canvas Builder](#the-canvas-builder) and
+[Going LIVE from the app](#going-live-from-the-app).
+
 ## Live captions
 
 Press **Start** on the Captions tab and the deck listens to your microphone
@@ -174,6 +179,117 @@ the window itself, even behind a fullscreen game.
 Audio: music from your files plays out of the deck window, which is Chrome.
 Capture desktop audio, or add Chrome as an application audio source. Spotify's
 audio is Spotify's as usual.
+
+## The Canvas Builder
+
+Press **Canvas Builder** in the deck. A *scene* is a whole layout at the size
+you stream: **Horizontal** (1920 × 1080) or **Phone** (1080 × 1920, TikTok's
+own shape). Start one blank or from a template with **New scene**.
+
+- **Layers** – text (including the song playing), shapes, pictures and videos,
+  the Now Playing / Lyrics / Queue / Captions windows, your camera, a screen or
+  a window (your game), a *reactive image* that talks when you do, and
+  full-size backgrounds. Add them from the left panel; pick one on the canvas or
+  in the list to change it on the right.
+- **Moving things** – drag, resize from the handles, rotate from the top
+  handle. Things snap to the canvas, the center and each other (hold **Alt** to
+  place freely); rulers and guides are there if you want them. Number fields
+  take math: `+20`, `*2`, `1920/3`.
+- **Undo everything** – **Ctrl+Z**, **Ctrl+Shift+Z**. Scenes save themselves as
+  you go. Press **?** for every shortcut; the whole editor works from the
+  keyboard.
+- **Phone scenes** show where TikTok's own buttons and comments cover your
+  stream (**Safe zones**), and warn when something sits under them. **Make a
+  phone version** lays a horizontal scene out again for a phone.
+- **On stream** – every scene has its own window, **Open output**; the
+  **Canvas (live)** window follows whichever scene is live.
+- **Studio mode** (**Ctrl+Shift+P**) – change one scene while another is on air,
+  then **Take** it live (**Ctrl+Enter**). The top bar's **Remote** opens a small
+  scene remote with a big button per scene; number keys switch too.
+
+### Share a scene
+
+With nothing selected, the right panel shows the scene's own settings. Under
+**Share**, **Export as a .zip** saves the scene as one file in your Downloads
+folder, with the pictures it shows and any fonts you added for it inside. Give
+it to a friend; they open it from **New scene → Import a .zip…**.
+
+An import checks everything in the file before it keeps anything: it must be a
+scene this app exported, each picture and font has to really be one, and only
+what the scene uses is kept. Anything left out is said. A picture that did not
+come with it is outlined in the editor, and on stream it simply shows nothing.
+
+If a scene's file is ever damaged (a crash mid-save, a disk hiccup), the app
+keeps its last five versions and comes back from the newest good one. A file
+with no good copy is set aside as `<name>.json.corrupt` in `cache\scenes`, and
+the Canvas Builder tells you once.
+
+## Going LIVE from the app
+
+The app can stream to TikTok itself: it captures the **Canvas (live)** window,
+encodes it on your graphics card, and sends it straight to TikTok's server.
+No TikTok LIVE Studio, no OBS.
+
+1. In **TikTok LIVE Center**, get your **Server URL** and **Stream key** (the
+   page for streaming with other software).
+2. Open the **LIVE panel**: **LIVE…** in the deck's top strip, or the LIVE
+   button in the Canvas Builder's top bar (**Ctrl+Shift+L**).
+3. Paste both and press **Save**. The key is shown as dots, and once saved the
+   page never gets it back.
+4. Pick the **quality** (it tells you how much upload speed it needs), the
+   **scene**, and your **sound**: the microphone, what the PC plays, each with
+   its own volume, mute and meter.
+5. **Start**. The panel shows how long you have been live, the bitrate, frames
+   per second, dropped frames and reconnects.
+
+If your connection drops, the stream reconnects by itself and the panel says
+*Reconnecting…* until it is back. **Stop** asks twice, so a stray click cannot
+end your LIVE. TikTok issues a new stream key now and then; when it refuses
+the old one, the panel says to copy the new one from LIVE Center.
+
+## Capturing in TikTok LIVE Studio
+
+Rather stream with LIVE Studio (or OBS)? Capture a scene's window instead:
+
+1. In the Canvas Builder, press **Open output** (or **Open output** on the
+   scene's card in the deck).
+2. In LIVE Studio: **Add source → Window** → **Awesome Streaming Deck -
+   Canvas: *your scene's name***. Or pick **Awesome Streaming Deck - Canvas
+   (live)** to follow whichever scene is live, and switch scenes from the app.
+3. The window keeps drawing when it is covered or behind a fullscreen game.
+   Do not minimize a window you are capturing: a minimized window rests to
+   save power, and the app will not minimize the one that is on air.
+
+For see-through parts, set the scene's **Transparency** to **See-through**
+when your capture keeps a window's transparency, or to **Key color** and add a
+chroma key in LIVE Studio when it does not. To see what your capture software
+does, add a source in LIVE Studio (**Add source → Browser capture**) with
+`http://127.0.0.1:8713/transparency-test.html`: whatever is under it should
+show through everywhere except the pink card, the cyan block, the yellow dot
+and the words. If it comes out black, use **Key color**. Delete the test
+source afterwards.
+
+## Camera, capture and privacy
+
+- **Nothing is uploaded.** The app answers only this PC (`127.0.0.1`). The one
+  thing that ever leaves it is a LIVE stream you start, to the server you
+  pasted.
+- **Your camera** opens only while a scene with a camera layer is showing, and
+  closes when none is. The Canvas Builder shows a red badge in its top bar, on
+  the layer and in its settings whenever the camera or a screen capture is
+  live.
+- **Screen and window capture** runs only while a scene shows it, and leaves
+  out the mouse pointer unless the layer asks for it.
+- **The microphone** opens for captions only when you press Start; for reactive
+  images only while a scene uses your voice (and nothing but a level and a
+  yes/no leaves the listening part). It goes into a LIVE stream only if
+  **Microphone** is ticked in the LIVE panel; the same for what the PC plays.
+- **The stream key** is encrypted with your Windows account (DPAPI) in
+  `cache\live.json`: another account or another PC cannot read it. It is
+  never written to a log or shown again. **Forget** in the LIVE panel removes
+  it.
+- **A scene export** holds the scene's pictures and fonts. Look at what is in a
+  scene before you give it away.
 
 ## Move, resize, reshape
 
@@ -461,12 +577,26 @@ music-deck/
   lyrics.py          .lrc files and lrclib.net, with a cache
   tags.py            reads ID3 / FLAC / MP4 / Ogg / WAV tags and cover art
   paths.py           where files live when running from source vs the .exe
+  guard.py           only this PC's own pages may use the server
+  components.py      the windows the app can open, and what each needs
+  scenes.py          scenes: the store, checks, templates, the phone layout
+  sceneio.py         a scene as one .zip, out and back in
+  assets.py, fonts.py  the pictures and fonts people add
+  capture.py         screen and window capture (Windows Graphics Capture)
+  camera.py          the camera, read natively while LIVE
+  voice.py           is the streamer talking (for reactive images)
+  live.py            going LIVE: RTMP, quality presets, reconnects, the key vault
+  mfenc.py, nativelive.py, audio.py   hardware H.264, the compositor, the sound
   web/               the deck and the pop-outs (plain HTML/CSS/JS, no build step)
+    canvas.html      the Canvas Builder
+    scene.html       a scene's output window
+    remote.html      the scene remote
     scenes.js        the generated artwork
     decor.js         the edge frames
   config.json        your settings (created on first run)
   ../built in themes/  artwork shipped with the app; bundled into the .exe
-  cache/             library index, album art, lyrics, uploads, Chrome profiles
+  cache/             library index, album art, lyrics, pictures, fonts, scenes,
+                     the stream key (encrypted), Chrome profiles
   build.bat          makes the .exe
 ```
 
@@ -492,3 +622,13 @@ music-deck/
   to your app's user list in the Spotify dashboard, or make a separate app.
 - **Music on stream** – TikTok, like every platform, can mute or flag streams
   over copyrighted music. Your own files are only as safe as their licence.
+- **"TikTok stopped accepting your stream key"** – LIVE Center has issued a new
+  one. Copy it from there, paste it in the LIVE panel and Save.
+- **The LIVE panel says Reconnecting…** – the connection to TikTok dropped. It
+  keeps trying by itself; check your internet, or lower the quality if your
+  upload is short.
+- **A scene is missing after a crash** – look in `cache\scenes` for a
+  `.corrupt` file: that scene could not be read, and no good backup of it was
+  left. The Canvas Builder says which one when it starts.
+- **An imported scene has an outlined empty box** – a picture it uses was not in
+  the .zip. Pick another from **Assets**, or ask for the file.

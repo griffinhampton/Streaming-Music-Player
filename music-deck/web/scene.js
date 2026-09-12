@@ -35,6 +35,17 @@ const ORIGIN = { tl: '0% 0%', tc: '50% 0%', tr: '100% 0%', ml: '0% 50%', mc: '50
                  bl: '0% 100%', bc: '50% 100%', br: '100% 100%' };
 const fmtTime = (s) => { s = Math.max(0, Math.floor(Number(s) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const assetUrl = (src) => !src ? '' : /^(\/|https?:|data:|blob:)/.test(src) ? src : '/asset/' + encodeURIComponent(src);
+/* A picture or video whose file is gone (deleted anyway, or a scene imported
+   without it) shows nothing on stream instead of a broken-image icon; the
+   editor's preview outlines the empty box so it can be found and fixed. */
+function watchMissing(m, entry) {
+  const mark = (gone) => {
+    m.classList.toggle('missing', gone);
+    if (PREVIEW) entry.el.classList.toggle('missing-media', gone && !!m.getAttribute('src'));
+  };
+  m.addEventListener('error', () => mark(true));
+  m.addEventListener(m.tagName === 'VIDEO' ? 'loadeddata' : 'load', () => mark(false));
+}
 const isVideo = (src) => /\.(webm|mp4|m4v)(\?|$)/i.test(src || '');
 
 function fillVars(text, state) {
@@ -174,6 +185,7 @@ TYPES.image = {
       this.destroy(entry);
       m = document.createElement(want.toLowerCase());
       m.className = 'media';
+      if (want !== 'DIV') watchMissing(m, entry);
       if (want === 'VIDEO') {
         m.autoplay = true; m.loop = p.loop !== false; m.muted = p.muted !== false; m.playsInline = true;
         m.dataset.src = src; m.src = src;
@@ -408,6 +420,7 @@ TYPES.reactive = {
   create(entry) {
     entry.el.innerHTML = '<img class="media reactive">';
     entry.media = entry.el.querySelector('img');
+    watchMissing(entry.media, entry);
     this.update(entry);
   },
   update(entry) {

@@ -125,6 +125,38 @@ $('newGrid').addEventListener('click', (e) => {
 });
 $('newGrid').addEventListener('dblclick', (e) => { if (e.target.closest('.nd-card')) createFromDialog(); });
 $('newCreate').addEventListener('click', createFromDialog);
+
+/* A scene someone exported (one .zip): the server checks everything in it
+   and keeps only what the scene uses; the name typed above, if any, wins. */
+$('newImport').addEventListener('click', () => { $('importFile').value = ''; $('importFile').click(); });
+$('importFile').addEventListener('change', async () => {
+  const file = $('importFile').files[0];
+  if (!file) return;
+  const name = $('newName').value.trim();
+  closeNewDialog(false);
+  let data;
+  try { data = await readDataURL(file); } catch (_) { toast(`Could not read ${file.name}`); vp.focus(); return; }
+  toast(`Importing ${file.name}…`);
+  const d = await postJ('/api/scenes/import', { data, name: name || undefined });
+  if (!d || !d.ok) { toast((d && d.reason) || `Could not import ${file.name}`); vp.focus(); return; }
+  await refreshScenes();
+  await loadScene(d.scene.id);
+  vp.focus({ preventScroll: true });
+  const msg = importSummary(d.scene.name, d.report || {});
+  toast(msg);
+  announce(msg);
+});
+function importSummary(name, r) {
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  const parts = [];
+  if (r.assets) parts.push(n(r.assets, 'picture', 'pictures'));
+  if (r.fonts) parts.push(n(r.fonts, 'font', 'fonts'));
+  let msg = `Imported ${name}` + (parts.length ? `, with ${parts.join(' and ')}` : '');
+  const gone = (r.missing || []).length + (r.builtin_missing || []).length;
+  if (gone) msg += `. ${n(gone, 'picture was', 'pictures were')} not in the file: outlined on the canvas`;
+  if ((r.skipped || []).length) msg += `. Left out ${n(r.skipped.length, 'file', 'files')} that did not check out`;
+  return msg + '.';
+}
 $('newCancel').addEventListener('click', () => closeNewDialog(true));
 $('newDialog').addEventListener('click', (e) => { if (e.target === $('newDialog')) closeNewDialog(true); });
 $('newDialog').addEventListener('keydown', (e) => {
@@ -144,8 +176,8 @@ $('newDialog').addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Tab') {
-    // Focus stays in the dialog: name, the chosen card, Cancel, Make.
-    const stops = [$('newName'), $('newGrid').querySelector('.nd-card[tabindex="0"]'), $('newCancel'), $('newCreate')].filter(Boolean);
+    // Focus stays in the dialog: name, the chosen card, Import, Cancel, Make.
+    const stops = [$('newName'), $('newGrid').querySelector('.nd-card[tabindex="0"]'), $('newImport'), $('newCancel'), $('newCreate')].filter(Boolean);
     const i = stops.indexOf(document.activeElement.closest('.nd-card') || document.activeElement);
     e.preventDefault();
     stops[(i + (e.shiftKey ? stops.length - 1 : 1)) % stops.length].focus();
@@ -192,6 +224,33 @@ function sceneFormatSection() {
     <p class="hint">A new scene with these layers laid out for ${other === 'phone' ? 'a phone, between TikTok\'s top bar and its comments' : 'a horizontal screen'}
       - a start to fix by hand. This scene stays as it is. The Horizontal / Phone switch at the top lays out this scene itself instead.</p>`);
 }
+/* Share: the scene as one .zip - its pictures and the fonts added for it
+   inside - saved where downloads go, never over another file. */
+function sceneShareSection() {
+  return section('scene-share', 'Share', `
+    <button type="button" class="btn" data-export-scene>Export as a .zip</button>
+    <p class="hint" data-export-note>One file with this scene, the pictures it shows and the fonts you added for it:
+      to keep, or to give a friend, who opens it with Import in New scene.</p>`);
+}
+async function exportScene(btn) {
+  if (!store.scene) return;
+  btn.disabled = true;
+  await flush();
+  const d = await postJ(`/api/scenes/${encodeURIComponent(store.scene.id)}/export`, {});
+  btn.disabled = false;
+  if (!d || !d.ok) { toast((d && d.reason) || 'Could not export the scene'); return; }
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  let msg = `Saved ${d.file} in ${d.path.slice(0, d.path.length - d.file.length - 1)}`
+    + ` (${n(d.assets, 'picture', 'pictures')}${d.fonts ? ', ' + n(d.fonts, 'font', 'fonts') : ''})`;
+  if (d.missing.length) msg += `. ${n(d.missing.length, 'picture it uses is', 'pictures it uses are')} gone, so not in it`;
+  if (d.builtin.length) msg += `. It also uses ${n(d.builtin.length, 'picture', 'pictures')} that come with the app`;
+  msg += '.';
+  const note = btn.parentElement.querySelector('[data-export-note]');
+  if (note) note.textContent = msg;
+  toast(msg);
+  announce(msg);
+}
+
 /* What sits under TikTok's controls: the scene's count, the layer's own line. */
 function paintZoneNotes(root) {
   const s = store.scene;
@@ -214,6 +273,8 @@ function paintZoneNotes(root) {
 $('inspector').addEventListener('click', (e) => {
   const b = e.target.closest('[data-make-version]');
   if (b) makeVersion(b.dataset.makeVersion);
+  const x = e.target.closest('[data-export-scene]');
+  if (x && !x.disabled) exportScene(x);
 });
 
 /* For tests. */

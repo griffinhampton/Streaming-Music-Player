@@ -172,7 +172,7 @@ function onConflict(serverScene) {
 function setSaveState(state, why) {
   const el = $('saveState');
   el.dataset.state = state;
-  el.textContent = { saved: 'All changes saved', saving: 'Saving…', pending: 'Saving…',
+  el.textContent = { saved: 'Saved', saving: 'Saving…', pending: 'Saving…',
                      error: 'Not saved' + (why ? ': ' + why : ''), conflict: 'Reloaded a newer version' }[state] || state;
 }
 
@@ -230,10 +230,18 @@ async function newScene(fmt) {
   announce('Made a new scene');
 }
 
+let unreadableTold = false;
 async function refreshScenes() {
   const d = await (await fetch('/api/scenes', { cache: 'no-store' })).json();
   store.scenes = d.scenes || [];
   paintScenePick();
+  // Scene files no copy of which could be read were set aside at start: said once.
+  const bad = d.unreadable || [];
+  if (bad.length && !unreadableTold) {
+    unreadableTold = true;
+    toast(`${bad.length === 1 ? 'A scene file' : bad.length + ' scene files'} could not be read, so ${bad.length === 1 ? 'it was' : 'they were'} set aside`
+      + ` in the cache\\scenes folder as ${bad.map((b) => b.kept_as).join(', ')}.`);
+  }
 }
 
 /* ------------------------------------------------------------- the feed */
@@ -810,6 +818,7 @@ function sceneInspector() {
     <h3>Transparency</h3>
     ${sel_('transparency', '', [['opaque', 'Opaque'], ['see-through', 'See-through'], ['key', 'Key color']], 'Output')}
     <div class="f"><span>Key color</span><input type="color" data-layer="" data-field="key_color"></div>
+    ${sceneShareSection()}
     <p class="hint">Nothing selected: these are the scene's own settings. Pick a layer on the canvas or in the list to edit it.</p></div>`;
 }
 /* One layer: where it is, then its own sections (inspectors.js) - what it

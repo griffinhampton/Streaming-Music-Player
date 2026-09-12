@@ -136,6 +136,13 @@ class FontStore:
             raw = base64.b64decode(data_url.split(",", 1)[1], validate=False)
         except ValueError:
             return {"ok": False, "reason": "bad upload"}
+        return self.save_bytes(name, raw)
+
+    def save_bytes(self, name, raw):
+        """Store a font file's bytes - an upload, or a font from an imported scene."""
+        ext = os.path.splitext(name or "")[1].lower()
+        if ext not in EXT:
+            return {"ok": False, "reason": "fonts have to be .ttf, .otf, .woff or .woff2 files"}
         if not raw:
             return {"ok": False, "reason": "empty file"}
         if len(raw) > MAX_BYTES:

@@ -35,7 +35,7 @@ every later prompt reads it first.
 | P9 | Inspectors for every layer type and source | Opus | [x] 2026-09-12 |
 | P10 | Phone canvas: safe zones, templates gallery, format conversion | Opus | [x] 2026-09-12 |
 | P11 | Go LIVE panel, studio mode, scene remote | Opus | [x] 2026-09-12 |
-| P12 | Release: QA, import/export, docs, build | Fable, then Opus for UI fixes | [ ] |
+| P12 | Release: QA, import/export, docs, build | Fable, then Opus for UI fixes | [x] 2026-09-12 (run on Opus) |
 
 ---
 

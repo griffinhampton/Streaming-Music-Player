@@ -469,3 +469,11 @@ button.cb-live:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(-
 /* The window's title already says Canvas Builder: below this width its room
    keeps the bar on one row (with the live-media badge and Studio/Remote). */
 @media (max-width: 1700px) { .cb-brand { display: none; } }
+/* The grid's size only matters while the grid is on. */
+#gridBtn[aria-pressed="false"] + #gridSize { display: none; }
+/* 150% on a 1920 x 1080 screen is 1280 wide: a tighter bar still fits one row. */
+@media (max-width: 1440px) {
+  .cb-top { gap: 6px; padding-left: 10px; padding-right: 10px; }
+  #scenePick { min-width: 140px; }
+  .cb-group { gap: 3px; }
+}
