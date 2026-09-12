@@ -197,9 +197,10 @@ going LIVE without LIVE Studio or OBS at all.
 4. Whether the user's account shows a Server URL + Stream key in LIVE
    Center (needed for direct streaming; LIVE Studio access suggests yes).
 5. (After P12, all four above are still open and need the user at the PC.)
-   Rebuild the user's installed app - it still runs pre-P1 code - with the
-   scratchpad `rebuild.ps1`, when they are not gaming; then a first real
-   TikTok LIVE from the app with their own key.
+   The user's installed app was rebuilt from P12 on 2026-09-12 (they ran
+   `rebuild.ps1 -NoLaunch` themselves: try-out passed, config.json and
+   cache\ left in place, a safety copy kept); next, a first real TikTok
+   LIVE from the app with their own key.
 
 ## P1 - the streaming engine (measured 2026-09-11)
 
