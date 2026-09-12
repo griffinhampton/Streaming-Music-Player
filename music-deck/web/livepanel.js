@@ -20,8 +20,12 @@ const LivePanel = (() => {
   const ON_AIR = ['connecting', 'live', 'reconnecting'];
   const STATE_TEXT = { idle: 'Off air', connecting: 'Connecting…', live: 'LIVE', reconnecting: 'Reconnecting…', failed: 'Stopped by an error', stopped: 'Off air' };
 
-  let el = null, anchor = null, timer = null, stopArmed = 0;
+  let el = null, anchor = null, timer = null, stopArmed = 0, endArmed = 0;
   let status = { state: 'idle' }, snap = null, presets = {}, devices = null, cfg = {};
+  // The TikTok tab: what the app holds (token, a live session) and what
+  // Streamlabs last said about the account behind it.
+  const TABS = ['Key', 'TikTok'];
+  let tab = 'Key', tt = {}, acct = {};
 
   const $ = (sel) => el.querySelector(sel);
   const onAir = () => ON_AIR.includes(status.state);
@@ -52,19 +56,60 @@ const LivePanel = (() => {
       <label class="lp-field"><span>Scene on air</span><select class="lp-input" data-lp="scene"></select></label>
       <label class="lp-field"><span>Quality</span><select class="lp-input" data-lp="preset"></select></label>
       <p class="lp-hint" data-lp="presetHint"></p>
-      <fieldset class="lp-group">
-        <legend>Stream key</legend>
-        <label class="lp-field"><span>Server URL</span>
-          <input class="lp-input" type="text" data-lp="url" autocomplete="off" spellcheck="false" placeholder="rtmp://…"></label>
-        <label class="lp-field"><span>Stream key</span>
-          <input class="lp-input" type="password" data-lp="key" autocomplete="off" spellcheck="false"></label>
+      <div class="lp-tabs" role="tablist" aria-label="How to go LIVE">
+        <button type="button" role="tab" id="lpTabKey" aria-controls="lpPaneKey" aria-selected="true">Stream key</button>
+        <button type="button" role="tab" id="lpTabTikTok" aria-controls="lpPaneTikTok" aria-selected="false" tabindex="-1">TikTok</button>
+      </div>
+      <section class="lp-pane" id="lpPaneKey" role="tabpanel" aria-labelledby="lpTabKey">
+        <fieldset class="lp-group">
+          <legend>Stream key</legend>
+          <label class="lp-field"><span>Server URL</span>
+            <input class="lp-input" type="text" data-lp="url" autocomplete="off" spellcheck="false" placeholder="rtmp://…"></label>
+          <label class="lp-field"><span>Stream key</span>
+            <input class="lp-input" type="password" data-lp="key" autocomplete="off" spellcheck="false"></label>
+          <div class="lp-row">
+            <button type="button" class="lp-btn" data-lp="paste">Paste the key</button>
+            <button type="button" class="lp-btn" data-lp="save">Save</button>
+            <button type="button" class="lp-btn ghost" data-lp="forget">Forget the key</button>
+          </div>
+          <p class="lp-hint" data-lp="keyHint">Both are in TikTok LIVE Center, under your stream key. The key is kept encrypted on this PC and never shown again.</p>
+        </fieldset>
+      </section>
+      <section class="lp-pane" id="lpPaneTikTok" role="tabpanel" aria-labelledby="lpTabTikTok" hidden>
+        <fieldset class="lp-group">
+          <legend>Streamlabs</legend>
+          <label class="lp-field"><span>Token</span>
+            <div class="lp-row">
+              <input class="lp-input" type="password" data-lp="ttToken" autocomplete="off" spellcheck="false" placeholder="Paste one, or load it below">
+              <button type="button" class="lp-btn ghost" data-lp="ttEye" aria-pressed="false">Show</button>
+            </div></label>
+          <div class="lp-row">
+            <button type="button" class="lp-btn" data-lp="ttLocal">Load from this PC</button>
+            <button type="button" class="lp-btn" data-lp="ttWeb">Sign in</button>
+            <button type="button" class="lp-btn ghost" data-lp="ttForget">Forget it</button>
+          </div>
+          <p class="lp-hint" data-lp="ttHint">Load from this PC reads the token Streamlabs already keeps here; Sign in opens Streamlabs in your browser. Either way it is kept encrypted on this PC and never shown again.</p>
+        </fieldset>
+        <dl class="lp-health" data-lp="ttAcct" hidden>
+          <div><dt>Account</dt><dd data-lp="ttUser">-</dd></div>
+          <div><dt>Application</dt><dd data-lp="ttStatus">-</dd></div>
+          <div><dt>Can go live</dt><dd data-lp="ttCan">-</dd></div>
+        </dl>
+        <fieldset class="lp-group">
+          <legend>This stream</legend>
+          <label class="lp-field"><span>Title</span>
+            <input class="lp-input" type="text" data-lp="ttTitle" maxlength="120" placeholder="What you are streaming"></label>
+          <label class="lp-field"><span>Category</span>
+            <input class="lp-input" type="text" data-lp="ttCat" list="lpTtCats" autocomplete="off" spellcheck="false" placeholder="Start typing a game">
+            <datalist id="lpTtCats"></datalist></label>
+          <label class="lp-check"><input type="checkbox" data-lp="ttMature"><span>Mature content</span></label>
+        </fieldset>
         <div class="lp-row">
-          <button type="button" class="lp-btn" data-lp="paste">Paste the key</button>
-          <button type="button" class="lp-btn" data-lp="save">Save</button>
-          <button type="button" class="lp-btn ghost" data-lp="forget">Forget the key</button>
+          <button type="button" class="lp-btn primary" data-lp="ttGo">Go LIVE</button>
+          <button type="button" class="lp-btn danger" data-lp="ttEnd">End Live</button>
         </div>
-        <p class="lp-hint" data-lp="keyHint">Both are in TikTok LIVE Center, under your stream key. The key is kept encrypted on this PC and never shown again.</p>
-      </fieldset>
+        <p class="lp-hint" data-lp="ttHint2"></p>
+      </section>
       <fieldset class="lp-group">
         <legend>Sound</legend>
         ${['mic', 'system'].map((s) => `
@@ -138,6 +183,142 @@ const LivePanel = (() => {
     }
     $('[data-lp="micDevice"]').addEventListener('change', (e) => post('/api/live/audio', { mic_device: e.target.value }).then((d) => { if (d.audio) cfg.audio = d.audio; }));
     $('[data-lp="go"]').addEventListener('click', go);
+    wireTabs();
+    wireTikTok();
+  }
+
+  /* The two ways to go LIVE, one at a time: a key you pasted, or TikTok
+     opening the live for you. Same keyboard shape as the editor's panels. */
+  function wireTabs() {
+    const tabs = $('.lp-tabs');
+    tabs.addEventListener('click', (e) => {
+      const t = e.target.closest('[role="tab"]');
+      if (t) showTab(t.id.slice(5));
+    });
+    tabs.addEventListener('keydown', (e) => {
+      const i = TABS.indexOf((document.activeElement.id || '').slice(5));
+      if (i < 0 || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
+      e.preventDefault();
+      showTab(TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length], true);
+    });
+  }
+
+  function showTab(name, focus) {
+    if (!TABS.includes(name)) return;
+    tab = name;
+    for (const t of TABS) {
+      const btn = $('#lpTab' + t), on = t === name;
+      btn.setAttribute('aria-selected', String(on));
+      btn.tabIndex = on ? 0 : -1;
+      $('#lpPane' + t).hidden = !on;
+      if (on && focus) btn.focus();
+    }
+    if (name === 'TikTok') refreshTikTok();
+    paint();
+  }
+
+  function wireTikTok() {
+    const token = $('[data-lp="ttToken"]');
+    $('[data-lp="ttEye"]').addEventListener('click', (e) => {
+      const show = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+      e.currentTarget.setAttribute('aria-pressed', String(show));
+      e.currentTarget.textContent = show ? 'Hide' : 'Show';
+      token.type = show ? 'text' : 'password';
+    });
+    token.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); useToken(); } });
+    token.addEventListener('blur', () => { if (token.value.trim()) useToken(); });
+    $('[data-lp="ttLocal"]').addEventListener('click', () => getToken('local', 'ttLocal', 'Searching…'));
+    $('[data-lp="ttWeb"]').addEventListener('click', () => getToken('web', 'ttWeb', 'Waiting for the browser…'));
+    $('[data-lp="ttForget"]').addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'Click again to forget it'; setTimeout(() => { b.dataset.armed = ''; b.textContent = 'Forget it'; }, 4000); return; }
+      b.dataset.armed = '';
+      b.textContent = 'Forget it';
+      await post('/api/tiktok/token/forget');
+      tt = {}; acct = {};
+      ttNote('The Streamlabs token is gone from this PC');
+      await refreshTikTok();
+    });
+    // Categories come from Streamlabs as you type; a datalist keeps the
+    // keyboard behaviour the browser already gives a text field.
+    $('[data-lp="ttCat"]').addEventListener('input', (e) => {
+      clearTimeout(e.target._t);
+      const q = e.target.value.trim();
+      if (!q || !tt.has_token) return;
+      e.target._t = setTimeout(async () => {
+        try {
+          const d = await (await fetch('/api/tiktok/search?q=' + encodeURIComponent(q))).json();
+          $('#lpTtCats').innerHTML = (d.categories || []).map((c) => `<option value="${esc(c.full_name)}"></option>`).join('');
+        } catch (_) { /* type on; the field still takes anything */ }
+      }, 250);
+    });
+    $('[data-lp="ttGo"]').addEventListener('click', ttGo);
+    $('[data-lp="ttEnd"]').addEventListener('click', ttEnd);
+  }
+
+  async function useToken() {
+    const box = $('[data-lp="ttToken"]');
+    const token = box.value.trim();
+    if (!token) return;
+    const d = await post('/api/tiktok/token', { token });
+    box.value = '';                                        // never kept on the page
+    ttNote(d.ok ? 'Saved - the token is kept encrypted on this PC' : (d.error || 'Could not keep that token'));
+    await refreshTikTok();
+  }
+
+  async function getToken(source, which, busy) {
+    const b = $(`[data-lp="${which}"]`), was = b.textContent;
+    b.disabled = true;
+    b.textContent = busy;
+    const d = await post('/api/tiktok/token', { source });
+    if (!d.ok) { ttNote(d.error || 'That did not work'); b.disabled = false; b.textContent = was; await refreshTikTok(); return; }
+    if (d.signing_in) {
+      // The browser has up to five minutes; the poll picks the token up.
+      ttNote('Finish signing in to Streamlabs in your browser');
+      await refreshTikTok();
+      return;
+    }
+    b.disabled = false;
+    b.textContent = was;
+    ttNote('Signed in - the token is kept encrypted on this PC');
+    await refreshTikTok();
+  }
+
+  async function ttGo() {
+    const b = $('[data-lp="ttGo"]');
+    b.disabled = true;
+    ttNote('Opening the live at TikTok…');
+    const d = await post('/api/tiktok/start', {
+      title: $('[data-lp="ttTitle"]').value.trim(),
+      category: $('[data-lp="ttCat"]').value.trim(),
+      mature: $('[data-lp="ttMature"]').checked,
+      preset: $('[data-lp="preset"]').value,
+    });
+    if (!d.ok) ttNote(d.error || d.reason || 'Could not go live');
+    await refreshTikTok();
+    await refresh();
+  }
+
+  async function ttEnd() {
+    const b = $('[data-lp="ttEnd"]');
+    if (Date.now() - endArmed > 4000) {
+      endArmed = Date.now();
+      b.textContent = 'Click again to end it';
+      setTimeout(() => { if (Date.now() - endArmed >= 4000) paint(); }, 4100);
+      return;
+    }
+    endArmed = 0;
+    b.disabled = true;
+    await post('/api/tiktok/end');
+    await refreshTikTok();
+    await refresh();
+  }
+
+  function ttNote(text) {
+    const h = $('[data-lp="ttHint2"]');
+    h.textContent = text;
+    clearTimeout(h._t);
+    h._t = setTimeout(() => { h.textContent = ''; paint(); }, 6000);
   }
 
   async function saveKey() {
@@ -257,7 +438,10 @@ const LivePanel = (() => {
       md.innerHTML = '<option value="">Windows default microphone</option>' + (devices.capture || []).map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
     }
     if (document.activeElement !== md) md.value = a.mic_device || '';
-    // Start / Stop.
+    // Start / Stop - the pasted-key way, so it stands down on the TikTok tab,
+    // which has its own pair and would otherwise be a second Start on screen.
+    const foot = $('.lp-foot');
+    foot.hidden = tab === 'TikTok';
     const b = $('[data-lp="go"]');
     const armed = Date.now() - stopArmed < 4000;
     b.textContent = onAir() ? (armed ? 'Click again to stop' : 'Stop') : 'Start';
@@ -267,6 +451,42 @@ const LivePanel = (() => {
     b.disabled = !onAir() && (!st.has_key || !saved || !cur);
     const h = $('[data-lp="goHint"]');
     if (!h._t) h.textContent = onAir() ? '' : !st.has_key || !saved ? 'Save the Server URL and the stream key first' : !cur ? 'Pick the scene to go out first' : '';
+    paintTikTok(cur);
+  }
+
+  /* The TikTok tab. Which controls are live follows the same rule the rest of
+     the panel uses: nothing is offered before the thing it needs exists. */
+  function paintTikTok(scene) {
+    if (tab !== 'TikTok') return;
+    const has = !!tt.has_token, can = !!acct.can_be_live;
+    $('[data-lp="ttForget"]').disabled = !has;
+    $('[data-lp="ttToken"]').placeholder = has ? 'Kept - paste another to replace it' : 'Paste one, or load it below';
+    $('[data-lp="ttWeb"]').disabled = !!tt.signing_in;
+    // The account, once Streamlabs has told us about it.
+    const box = $('[data-lp="ttAcct"]');
+    box.hidden = !has || !acct.ok;
+    if (!box.hidden) {
+      $('[data-lp="ttUser"]').textContent = acct.username || 'Unknown';
+      $('[data-lp="ttStatus"]').textContent = acct.status || 'Unknown';
+      $('[data-lp="ttCan"]').textContent = can ? 'Yes' : 'No';
+    }
+    for (const f of ['ttTitle', 'ttCat', 'ttMature']) $(`[data-lp="${f}"]`).disabled = !can;
+    // Go LIVE needs an account that may, and a scene to send. End Live needs
+    // something to end - a session we opened, or a stream already running.
+    const live = onAir() || !!tt.live_id;
+    const go = $('[data-lp="ttGo"]'), end = $('[data-lp="ttEnd"]');
+    go.disabled = live || !can || !scene;
+    end.disabled = !live;
+    end.textContent = Date.now() - endArmed < 4000 ? 'Click again to end it' : 'End Live';
+    const h = $('[data-lp="ttHint2"]');
+    if (!h._t) {
+      h.textContent = tt.signing_in ? 'Finish signing in to Streamlabs in your browser'
+        : !has ? 'Load the token from this PC, or sign in to Streamlabs'
+        : !acct.ok ? (acct.error || tt.error || 'Streamlabs has not answered yet')
+        : !can ? 'Streamlabs says this account cannot go live yet'
+        : !scene ? 'Pick the scene to go out first'
+        : live ? '' : 'Go LIVE opens the live at TikTok and starts streaming to it';
+    }
   }
 
   async function refresh() {
@@ -277,12 +497,29 @@ const LivePanel = (() => {
     } catch (_) { /* next time */ }
     paint();
   }
+
+  /* What the app holds, and then - only if it holds a token - what Streamlabs
+     says about the account. Asked for on the TikTok tab alone: it is a call
+     out to the internet, not a local read like the rest of the panel. */
+  async function refreshTikTok() {
+    try {
+      tt = await (await fetch('/api/tiktok/status', { cache: 'no-store' })).json();
+    } catch (_) { return; }
+    if (!tt.has_token) { acct = {}; paint(); return; }
+    try {
+      acct = await (await fetch('/api/tiktok/info', { cache: 'no-store' })).json();
+    } catch (_) { acct = { ok: false, error: 'Streamlabs did not answer' }; }
+    paint();
+  }
+
   function poll() {
     clearTimeout(timer);
     if (!el || el.hidden) return;
     const next = () => { timer = setTimeout(poll, onAir() ? 500 : 1500); };
     if (document.hidden) { next(); return; }
-    refresh().finally(next);
+    // While a sign-in is out at the browser, watch for the token landing.
+    const also = tab === 'TikTok' && tt.signing_in ? refreshTikTok() : Promise.resolve();
+    Promise.all([refresh(), also]).finally(next);
   }
 
   async function open(from) {

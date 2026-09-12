@@ -250,6 +250,27 @@ If your connection drops, the stream reconnects by itself and the panel says
 end your LIVE. TikTok issues a new stream key now and then; when it refuses
 the old one, the panel says to copy the new one from LIVE Center.
 
+### The TikTok tab
+
+If LIVE Center never showed you a Server URL and Stream key, the panel's
+**TikTok** tab asks Streamlabs for one instead, the way its desktop app does:
+
+1. **Load from this PC** reads the token Streamlabs already keeps here, or
+   **Sign in** opens Streamlabs in your browser. The token is encrypted with
+   your Windows account like the stream key, and never shown again.
+2. The tab then says which account it is, what its application status is, and
+   whether it may go live.
+3. Give the stream a **title** and a **category** (they come from TikTok as you
+   type), tick **Mature content** if it applies, and press **Go LIVE**. That
+   opens the live at TikTok, keeps the key it hands back, and starts streaming
+   to it in one step.
+4. **End Live** closes the live at TikTok's end as well as stopping the stream.
+   So does **Stop** anywhere else - the panel, the deck strip, the remote, or
+   quitting the app - so a live is never left open with nothing arriving on it.
+
+This goes through Streamlabs' account rather than TikTok's own stream-key
+screen, so it is bound by whatever Streamlabs allows your account to do.
+
 ## Capturing in TikTok LIVE Studio
 
 Rather stream with LIVE Studio (or OBS)? Capture a scene's window instead:

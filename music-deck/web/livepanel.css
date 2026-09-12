@@ -60,5 +60,16 @@
 .lp-meter i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--good); }
 .lp-meter.muted i { background: var(--dim); }
 .lp-hint { margin: 0; font-size: .84em; color: var(--dim); }
+/* The two ways to go LIVE, drawn like the editor's panel tabs. */
+.lp-tabs { display: flex; border-bottom: 1px solid var(--line-strong); }
+.lp-tabs [role="tab"] {
+  flex: 1 1 0; height: 32px; background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: var(--dim); font: inherit; cursor: pointer;
+}
+.lp-tabs [role="tab"][aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.lp-pane { display: flex; flex-direction: column; gap: 10px; }
+.lp-pane[hidden] { display: none !important; }
+
 .lp-foot { display: flex; align-items: center; gap: 10px; }
+.lp-foot[hidden] { display: none !important; }
 .lp-foot .lp-btn { min-width: 96px; }

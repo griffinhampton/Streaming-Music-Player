@@ -44,6 +44,7 @@ import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
 import tags
+import tiktok_live
 import winwin
 from smtc import MediaBridge
 from captions import CaptionBridge
@@ -1195,8 +1196,30 @@ def live_stop():
         AUDIO[0] = None
     LIVE.restamp_audio = False
     res = LIVE.stop()
+    # End Live, wherever Stop was pressed: the panel, the deck strip, the
+    # remote, or quitting. Closing the RTMP side only would leave the live open
+    # at TikTok with nothing arriving on it. A no-op when we did not open one.
+    ended = TIKTOK.end()
     HUB.broadcast()
-    return res
+    return dict(res, tiktok_ended=bool(ended.get("ended")))
+
+
+def tiktok_go_live(data):
+    """The TikTok tab's Go LIVE: open the live at TikTok's end, keep what it
+    hands back the way a pasted key is kept, and stream to it.
+
+    Two buttons became one on purpose - opening a live nobody streams to, or
+    streaming at a key no live is listening on, are both halfway states worth
+    not having."""
+    res = TIKTOK.start(data.get("title", ""), data.get("category", ""), bool(data.get("mature")))
+    if not res.get("ok"):
+        return res
+    LIVE.vault.save(res["url"], res["key"])
+    started = live_start(dict(data, url=res["url"], key=res["key"]))
+    if not started.get("ok"):
+        TIKTOK.end()        # nothing is going out on it: do not leave it open
+        return started
+    return dict(started, live_id=res.get("live_id"))
 
 
 def live_audio(data):
@@ -1410,6 +1433,9 @@ BROWSER = overlay_mod.find_browser()
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()
 NATIVE = nativelive.NativeVideo(LIVE, log=lambda msg: print("  " + msg))
+# TikTok's own side of the show: the key Go LIVE asks for, and the session
+# End Live closes. The engine above streams; this opens and shuts the live.
+TIKTOK = tiktok_live.TikTokBridge(CACHE, log=lambda msg: print("  " + msg))
 
 
 def window_action(ov, cfg, page, action, data):
@@ -1905,6 +1931,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._send(404, f"no picture: {exc}", "text/plain")
             return self._send(200, png, "image/png", {"Cache-Control": "no-store"})
+        if path == "/api/tiktok/status":
+            return self._json(TIKTOK.status())
+        if path == "/api/tiktok/info":
+            return self._json(TIKTOK.info())
+        if path == "/api/tiktok/search":
+            return self._json(TIKTOK.search((query.get("q") or [""])[0]))
         if path == "/api/live/presets":
             return self._json({"presets": live.PRESETS, "current": CONFIG.get("live", {}).get("preset")})
         if path == "/api/live/devices":
@@ -2441,6 +2473,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(NATIVE.start(title=data.get("title"), hwnd=data.get("hwnd"),
                                            monitor=data.get("monitor"), fps=data.get("fps", 30),
                                            kbps=data.get("kbps", 3400)))
+        if path == "/api/tiktok/token":
+            # Pasted, read off this PC, or fetched through the browser. The
+            # token is kept encrypted and never handed back to the page.
+            src = data.get("source")
+            if src == "local":
+                return self._json(TIKTOK.load_local())
+            if src == "web":
+                return self._json(TIKTOK.sign_in())
+            return self._json(TIKTOK.use_token(data.get("token", "")))
+        if path == "/api/tiktok/token/forget":
+            return self._json(TIKTOK.forget())
+        if path == "/api/tiktok/start":
+            return self._json(tiktok_go_live(data))
+        if path == "/api/tiktok/end":
+            # End Live from the tab: the same stop everything else uses, which
+            # closes TikTok's side with it.
+            return self._json(live_stop())
         if path == "/api/live/key":
             return self._json(LIVE.vault.save(data.get("url", ""), data.get("key", "")))
         if path == "/api/live/key/forget":
