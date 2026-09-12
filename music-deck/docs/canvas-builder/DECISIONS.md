@@ -220,8 +220,12 @@ going LIVE without LIVE Studio or OBS at all.
    LIVE, and the Server URL and Stream Key show a few seconds later; a new key
    for every LIVE. Access is gated (guides, not TikTok's own help, say it is
    unlocked through TikTok's creator networks); a page that redirects means
-   not unlocked. The user has asked where to find them; whether their account
-   has access is still open. The README says so.
+   not unlocked. **Answered the same day: the user's account is not
+   unlocked** - `/producer` redirects them to the LIVE Center home (Home,
+   Analytics, Real-time performance, LIVE recordings, LIVE rewards, Fan Club,
+   About me; no Producer entry). So for now they stream through LIVE Studio:
+   scenes by Window capture (solid), see-through overlays by Link. The app's
+   own LIVE engine is done and tested and waits for a key.
 5. (After P12, all four above are still open and need the user at the PC.)
    The user's installed app was rebuilt from P12 on 2026-09-12 (they ran
    `rebuild.ps1 -NoLaunch` themselves: try-out passed, config.json and
