@@ -1,0 +1,29 @@
+/* Awesome Streaming Deck - what every page that scrolls needs.
+
+   Chrome on Windows draws its default scrollbar with arrow buttons and a pale
+   track, which on a near-black panel looks like a piece of another program
+   showing through. deck.css has styled them from the beginning; canvas.html and
+   remote.html never did, so the Canvas Builder's two side panels, its
+   inspector, its pickers and its modals - and the scene remote - all showed the
+   Windows one. The LIVE panel scrolls too, and belongs to both pages.
+
+   Linked BEFORE each page's own stylesheet, so a page can still override it:
+   the deck hides the scrollbar on its window strip exactly that way.
+
+   The ::-webkit- properties only, deliberately. Chrome also supports the
+   standard scrollbar-width / scrollbar-color, and when both are set the
+   standard pair wins and quietly replaces all of this with a hairline. The app
+   ships its own Chrome, so this is the pair that matters here.
+
+   The colors are the deck's, unchanged to the byte: the pages that had nothing
+   are what is being fixed, and the deck's own look is photographed by tests. */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border-radius: 8px; border: 3px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 24%, transparent); background-clip: content-box; }
+/* Where a vertical and a horizontal bar meet. Unstyled, this is a pale square. */
+::-webkit-scrollbar-corner { background: transparent; }

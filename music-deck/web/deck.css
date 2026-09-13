@@ -784,13 +784,10 @@ details.adv[open] { display: flex; flex-direction: column; gap: calc(10px * var(
 
 /* ---------------------------------------------------------------- misc */
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--fg) 12%, transparent);
-  border-radius: 8px; border: 3px solid transparent; background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 24%, transparent); background-clip: content-box; }
+/* The scrollbars moved to base.css, which every page that scrolls now links
+   before its own sheet - the Canvas Builder and the scene remote were showing
+   Windows' own. The strip below still hides its bar; that override works
+   because this file comes second. */
 
 .toast {
   position: fixed; left: 50%; bottom: 24px;

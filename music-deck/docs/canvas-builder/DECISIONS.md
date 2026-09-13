@@ -732,6 +732,69 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## S1 - scrollbars, and what they were hiding in the goldens (2026-09-12)
+
+First step of the Stream Deck plan (`docs/STREAM_DECK_PLAN.md`). The Canvas
+Builder was showing Chrome's own Windows scrollbar - pale track, arrow buttons -
+in a near-black panel, looking like a piece of another program showing through.
+
+`deck.css` had styled them from the beginning and nothing else had. There is no
+shared stylesheet in `web/`, so the rule moved to a new `base.css`, linked
+*before* each page's own sheet so a page can still override it - the deck hides
+the bar on its window strip exactly that way, and that override still works
+because `deck.css` comes second.
+
+Three pages link it: the deck, the Canvas Builder and the scene remote
+(`remote.css` `.rm-list` scrolls and had nothing either - the next place you
+would have hit it). The LIVE panel scrolls too and belongs to both the deck and
+the editor, so it came along. `scene.html` and every overlay page are
+`overflow: hidden` throughout and render onto the stream, where a scrollbar
+would be a visible defect: deliberately left alone, checked rather than assumed.
+
+Two decisions worth keeping:
+
+- **The `::-webkit-` properties only.** Chrome supports the standard
+  `scrollbar-width` / `scrollbar-color` as well, and when both are set the
+  standard pair wins and quietly replaces the 10 px thumb with a hairline. The
+  app ships its own Chrome.
+- **The deck's colors unchanged to the byte.** The thumb is faint and could
+  stand to be more visible, but P6 photographs the deck and there was no reason
+  yet to believe those shots were safe. Checked afterwards: `p6test.js` captures
+  to its output folder and never compares (same as P8), so the visibility tweak
+  is a known-safe follow-up rather than a gamble.
+
+**What it turned up, which is the useful part.** P9 came back 71 of 72: the Now
+Playing inspector's golden no longer matched. Two explanations were wrong before
+the right one. First: taller content reflowing the clip - no, every golden is
+the same size to the pixel, `np` included (300x3351). Second, from that: no
+reflow at all, so something else must have changed - also wrong.
+
+Measured instead of guessed (a stdlib PNG differ; there is no imaging library
+here, `capture._png` writes PNGs by hand). 6.51% of pixels differ against a 1%
+threshold, in two parts:
+
+| Where | Why |
+|---|---|
+| x 285-298, on **every** one of 3351 rows | The scrollbar is *inside* the shot. `#inspector` is 300 px wide including its bar, and the clip is that whole width, so Chrome's 15 px default was in the picture and our 10 px thumb replaced it. |
+| Scattered from x 15 rightward | The narrower bar handed the content five more pixels, so every `width: 100%` control shifted sideways. Their heights do not depend on five pixels, which is why the height never moved and the size check waved it through. |
+
+Both are the intended change, so `p9_np.png` was regenerated - that one only,
+the other nine left under comparison, and P9 is back to 72 of 72.
+
+The finding that outlives this step: **the goldens contain the inspector's
+scrollbar**, so any future scrollbar change silently breaks the suite with no
+size difference to warn anyone. `HIDE_DYNAMIC` already hides the live note, the
+meters and the save state for stable shots; the bar belongs in that list. That
+means rewriting all ten, so it is booked for S16, which has to rewrite them
+anyway for the inspector's type.
+
+Verified: `tools/ui/scrollprobe.js`, 12 of 12 - on each of the three pages,
+`base.css` is linked, a synthetic `overflow: scroll` element measures 10 px
+rather than Chrome's 15-17 (which works whether or not the page happens to
+overflow just then), and `--fg` resolves, because `base.css` paints the thumb
+with `color-mix(... var(--fg) ...)` and on a page that never defines it the
+whole declaration would be invalid and the thumb would quietly revert.
+
 ## Keys you can see, and handles you can hit (2026-09-12)
 
 The third slice of the walk-through: the spatial mechanics. Not all of them -
