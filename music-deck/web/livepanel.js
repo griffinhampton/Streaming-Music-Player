@@ -25,7 +25,7 @@ const LivePanel = (() => {
   // The TikTok tab: what the app holds (token, a live session) and what
   // Streamlabs last said about the account behind it.
   const TABS = ['Key', 'TikTok'];
-  let tab = 'Key', tt = {}, acct = {};
+  let tab = 'Key', tt = {}, acct = {}, shown = null;
 
   const $ = (sel) => el.querySelector(sel);
   const onAir = () => ON_AIR.includes(status.state);
@@ -109,6 +109,21 @@ const LivePanel = (() => {
           <button type="button" class="lp-btn danger" data-lp="ttEnd">End Live</button>
         </div>
         <p class="lp-hint" data-lp="ttHint2"></p>
+        <fieldset class="lp-group" data-lp="ttOut" hidden>
+          <legend>This live</legend>
+          <label class="lp-field"><span>Server URL</span>
+            <div class="lp-row">
+              <input class="lp-input" type="text" data-lp="ttUrl" readonly spellcheck="false">
+              <button type="button" class="lp-btn ghost" data-lp="ttCopyUrl">Copy</button>
+            </div></label>
+          <label class="lp-field"><span>Stream key</span>
+            <div class="lp-row">
+              <input class="lp-input" type="password" data-lp="ttKey" readonly spellcheck="false" value="****************">
+              <button type="button" class="lp-btn ghost" data-lp="ttShowKey" aria-pressed="false">Show</button>
+              <button type="button" class="lp-btn ghost" data-lp="ttCopyKey">Copy</button>
+            </div></label>
+          <p class="lp-hint">The deck is already streaming to these. They are here for a second app - OBS, or LIVE Studio - and TikTok stops accepting them when the live ends.</p>
+        </fieldset>
       </section>
       <fieldset class="lp-group">
         <legend>Sound</legend>
@@ -254,6 +269,41 @@ const LivePanel = (() => {
     });
     $('[data-lp="ttGo"]').addEventListener('click', ttGo);
     $('[data-lp="ttEnd"]').addEventListener('click', ttEnd);
+    $('[data-lp="ttCopyUrl"]').addEventListener('click', () => copyOut('url'));
+    $('[data-lp="ttCopyKey"]').addEventListener('click', () => copyOut('key'));
+    $('[data-lp="ttShowKey"]').addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      if (b.getAttribute('aria-pressed') === 'true') { shown = null; maskKey(); return; }
+      const d = await post('/api/tiktok/reveal');
+      if (!d.ok) { ttNote(d.error || 'There is no key to show yet'); return; }
+      shown = d;
+      const box = $('[data-lp="ttKey"]');
+      box.type = 'text';
+      box.value = d.key;
+      b.setAttribute('aria-pressed', 'true');
+      b.textContent = 'Hide';
+    });
+  }
+
+  /* The key goes back behind the dots: when Hide is pressed, and by itself
+     when the live ends and there is nothing left to show. */
+  function maskKey() {
+    const box = $('[data-lp="ttKey"]'), b = $('[data-lp="ttShowKey"]');
+    box.type = 'password';
+    box.value = '****************';
+    b.setAttribute('aria-pressed', 'false');
+    b.textContent = 'Show';
+  }
+
+  /* Copy without showing: the key is fetched for the clipboard alone if it was
+     never revealed on screen. */
+  async function copyOut(which) {
+    const d = shown && shown.key ? shown : await post('/api/tiktok/reveal');
+    if (!d.ok) { ttNote(d.error || 'There is nothing to copy yet'); return; }
+    try {
+      await navigator.clipboard.writeText(which === 'key' ? d.key : d.url);
+      ttNote(which === 'key' ? 'Stream key copied' : 'Server URL copied');
+    } catch (_) { ttNote('This page could not reach the clipboard'); }
   }
 
   async function useToken() {
@@ -478,12 +528,23 @@ const LivePanel = (() => {
     go.disabled = live || !can || !scene;
     end.disabled = !live;
     end.textContent = Date.now() - endArmed < 4000 ? 'Click again to end it' : 'End Live';
+    // What the live is going out on, the way the standalone generator showed
+    // it: the address plain, the key behind Show, both copyable. It appears
+    // when Streamlabs hands the pair over and goes when the live ends.
+    const out = $('[data-lp="ttOut"]');
+    out.hidden = !tt.has_session_key;
+    if (out.hidden) { shown = null; maskKey(); }
+    else $('[data-lp="ttUrl"]').value = tt.url || '';
     const h = $('[data-lp="ttHint2"]');
     if (!h._t) {
       h.textContent = tt.signing_in ? 'Finish signing in to Streamlabs in your browser'
         : !has ? 'Load the token from this PC, or sign in to Streamlabs'
         : !acct.ok ? (acct.error || tt.error || 'Streamlabs has not answered yet')
-        : !can ? 'Streamlabs says this account cannot go live yet'
+        // Why not, in TikTok's own words: never_applied is the common one and
+        // the only one you can do anything about, so it says what to do.
+        : !can ? (acct.status === 'never_applied'
+          ? 'TikTok has not granted this account LIVE access yet - apply for it first, then come back'
+          : `Streamlabs says this account cannot go live yet (${acct.status || 'no reason given'})`)
         : !scene ? 'Pick the scene to go out first'
         : live ? '' : 'Go LIVE opens the live at TikTok and starts streaming to it';
     }

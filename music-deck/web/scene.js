@@ -321,7 +321,53 @@ function attachStream(entry, stream) {
 
 function dropStream(entry) {
   if (entry.stream) { entry.stream.getTracks().forEach((t) => t.stop()); entry.stream = null; }
+  if (entry.shots) { clearInterval(entry.shots); entry.shots = null; }
+  if (entry.shot) { entry.shot.remove(); entry.shot = null; }
   if (entry.media) { entry.media.remove(); entry.media = null; }
+}
+
+/* What a native source looks like in the editor.
+
+   The picture of a native capture only ever exists in the stream: the page
+   leaves a hole and the server's compositor fills it while LIVE, so in the
+   editor the box was a black rectangle for good and read as broken. The
+   server already takes one-shot thumbnails for the picker, so the editor
+   shows the real window from those - no browser capture, which the editor's
+   iframe is not allowed to do anyway, and nothing extra while streaming. */
+const SHOT_MS = 1500;
+function holePreview(entry, src, what) {
+  const img = document.createElement('img');
+  img.className = 'media hole-shot';
+  img.alt = '';
+  entry.el.appendChild(img);
+  // Deliberately not entry.media. SceneDebug reports `media: !!e.media`, and
+  // the editor's red "Camera and screen on" badge counts any camera or capture
+  // layer that has it - a badge whose whole job is to tell you something is
+  // watching. This is a still fetched over HTTP, not a stream held open, and
+  // saying otherwise raises an alarm that is not true.
+  entry.shot = img;
+  const url = src.kind === 'monitor'
+    ? `/api/capture/thumb?monitor=${Number(src.monitor || 0)}&w=640`
+    : `/api/capture/thumb?title=${encodeURIComponent(src.title || '')}&w=640`;
+  const shoot = () => {
+    if (!img.isConnected) { clearInterval(entry.shots); entry.shots = null; return; }
+    if (document.hidden) return;
+    const probe = new Image();
+    probe.onload = () => {
+      img.src = probe.src;
+      img.classList.add('on');
+      noteSource(entry, `${what} - the app puts this on your stream`, false);
+    };
+    // The window was closed, or renamed: say so rather than show a stale one.
+    probe.onerror = () => {
+      img.classList.remove('on');
+      noteSource(entry, `${what} is not open right now`, true);
+    };
+    probe.src = url + '&t=' + Math.floor(performance.now());
+  };
+  shoot();
+  clearInterval(entry.shots);
+  entry.shots = setInterval(shoot, SHOT_MS);
 }
 
 TYPES.camera = {
@@ -383,7 +429,10 @@ TYPES.capture = {
         else this.browser(entry, p);
       }
     }
-    if (entry.media) entry.media.style.objectFit = p.fit === 'contain' ? 'contain' : 'cover';
+    // A stream, or the editor's still: native() has already run above, so this
+    // fits whichever of the two the layer ended up with.
+    const shown = entry.media || entry.shot;
+    if (shown) shown.style.objectFit = p.fit === 'contain' ? 'contain' : 'cover';
   },
   native(entry, p) {
     // The app's own capture puts the source here while LIVE: the box is
@@ -391,7 +440,10 @@ TYPES.capture = {
     // compositor keys the picture into exactly that shape.
     paintHole(entry);
     const src = p.source || {};
-    noteSource(entry, `native capture: ${src.title || (src.kind === 'monitor' ? 'screen ' + (src.monitor ?? 0) : 'window')}`, false);
+    if (!src.kind) { noteSource(entry, 'Choose a window or screen for this box', true); return; }
+    const what = src.kind === 'monitor' ? `Screen ${Number(src.monitor || 0) + 1}` : (src.title || 'A window');
+    noteSource(entry, `${what} - the app puts this on your stream`, false);
+    if (PREVIEW) holePreview(entry, src, what);       // the editor shows the real thing
   },
   async browser(entry, p) {
     noteSource(entry, 'capture starting', false);

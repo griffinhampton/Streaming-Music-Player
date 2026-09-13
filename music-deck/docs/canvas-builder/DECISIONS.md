@@ -226,6 +226,11 @@ going LIVE without LIVE Studio or OBS at all.
    About me; no Producer entry). So for now they stream through LIVE Studio:
    scenes by Window capture (solid), see-through overlays by Link. The app's
    own LIVE engine is done and tested and waits for a key.
+   The second route to one - the TikTok tab, below - is built but just as
+   shut: Streamlabs answers `never_applied` and `can_be_live: false` for this
+   account (2026-09-12, the user at the PC), so neither path has a key. A
+   Streamlabs token is not LIVE access; TikTok granting LIVE access is the one
+   thing both are waiting on.
 5. (After P12, all four above are still open and need the user at the PC.)
    The user's installed app was rebuilt from P12 on 2026-09-12 (they ran
    `rebuild.ps1 -NoLaunch` themselves: try-out passed, config.json and
@@ -726,6 +731,295 @@ frames 200 ms (three over 100 ms). At the very end someone closed the
 live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
+
+## Keys you can see, and handles you can hit (2026-09-12)
+
+The third slice of the walk-through: the spatial mechanics. Not all of them -
+Space-to-pan, wheel-to-zoom and drag-to-marquee are conventions worth arguing
+about separately, and this slice only makes what already exists legible.
+
+- **Handles.** 9 px squares, aimed at by people who miss. 12 px now, with the
+  invisible padding widened so the target is 28 px rather than 23. The rotate
+  knob differed from the eight resize handles by two pixels and a border
+  radius; it is filled with the accent and ringed in white, so it reads as a
+  different control rather than a ninth corner.
+- **The modifier keys.** Shift, Alt and Ctrl change what a drag does, and the
+  only place that was written down was one dialog behind a "?" button - which
+  is nowhere near the hand that needs it. `step()` now records the modifiers on
+  the gesture and `paintHud` draws them at the bottom of the canvas while you
+  drag: "Shift keep the shape - Alt from the middle - Ctrl no snapping", with
+  the one you are holding lit. `restep()` already re-ran the step when a
+  modifier changed with the pointer still, so it lights up the moment you press
+  it, not at the next mouse move.
+- **The left panel's headings** went from 10.4 px in the dimmest token to
+  11.5 px a step lighter, and asset names from 10.9 px to 11.8 px.
+
+**The inspector's headings did not, on purpose.** P9 photographs that panel and
+compares it pixel for pixel, failing on any size difference at all; taller
+headings change the clip height of all ten goldens at once. Rewriting ten
+reference images to land a font-size is the tail wagging the dog, and a global
+`update` blesses every image including any drift you did not mean. The
+inspector's type is its own change, with the goldens rewritten as the point of
+it. What was needed here instead was surgical: the capture inspector genuinely
+changed in the slice before this one (relabelled control, the native-mode hint
+now shown, picker labels no longer squeezed to 9.4 px), so *that one golden*
+was deleted and left to regenerate - `p9test.js` writes any golden it cannot
+find - while the other nine stayed under comparison and all nine still matched
+at 0.00%.
+
+**A regression this slice introduced, and what it nearly cost.** P9 came back
+71 of 72: "live indicator: gone once the camera is hidden". The cause was the
+slice before it. `holePreview` set `entry.media = img` for the editor's
+thumbnail, `SceneDebug.layers()` reports `media: !!e.media`, and
+`inspectors.js` counts *any* camera or capture layer with media as live - so a
+capture layer holding a still fetched over HTTP was being reported as an open
+source. The failing assertion was the small part: that badge is a privacy
+signal, a red dot that means something is watching you, and it was firing for a
+layer that was watching nothing. A badge like that being wrong in the direction
+of a false alarm is worse than it being ugly. The still lives on `entry.shot`
+now; `dropStream` clears it, and the fit line takes `entry.media || entry.shot`
+so "Fill the box" still applies to it. The indicator and the test were left
+alone - both were right.
+
+The near-miss is worth writing down. The regenerated `p9_screen.png` was
+captured *during* that failing run, with the false live state in force, and
+`HIDE_DYNAMIC` hides the live note with `visibility: hidden`, which keeps its
+layout. The bug would have been baked into the reference image and the next run
+would have failed against it. It was deleted and regenerated a second time,
+after the fix.
+
+Verified: P9 72 of 72, P8 56 of 56 (resizes land exactly at 200% and 30% zoom
+with the bigger handles; the knob still turns a clean quarter and steps by 15
+with Shift), and `tools/capture/pickertest.js` 19 of 19, which now drags a
+handle with Shift held and reads the hint back: "Shift keep the shape - Alt
+from the middle - Ctrl no snapping", lit: Shift, gone when the drag ends.
+
+Still open from the walk-through: the inspector's type (above), rotation that
+lands on 357.4 degrees with no easy way back to straight, resizing a text box
+stretching the box and not the letters, and the conventions listed at the top.
+(An earlier draft of this list ended "and the camera layer's black box in the
+editor". There is no such black box - see the withdrawal below.)
+
+## Words on the buttons, and a Save you can press (2026-09-12)
+
+The Canvas Builder was walked through as somebody who has not used a design
+tool before, and the write-up runs to about sixty separate complaints. This is
+the second slice of them: the controls that do not say what they are, and the
+saving nobody believes in. The spatial ones - handles, modifier keys, panning -
+are their own job and are not done here.
+
+**The emoji were against our own rule.** `icons.js` opens by saying emoji
+"render differently on every machine and font, and look by turns childish and
+broken", and then the layer list used a padlock emoji for locked, a filled
+circle for visible and a dotted circle for hidden. Nobody reads a dotted circle
+as "hidden", and the filled circle was also the camera's type icon two columns
+to the left. `ICONS` gained `eye`, `eyeOff`, `lock` and `unlock` - outlines, so
+they do not turn into blobs at 15 px - and `svgIcon` learned a set of stroked
+names instead of testing for `close` alone. `canvas.html` did not load
+`icons.js` at all; it does now, checked first for an identifier clash, since a
+second top-level `const ICONS` in any of its ten scripts would have blanked the
+whole editor.
+
+**A type icon whose tooltip said "capture".** The row's little glyph explained
+itself with our internal type name - "capture", "reactive", "component". It
+says "Screen or window", "Reactive image", "A window from the deck" now.
+
+**Saving.** There is no File menu, saving is a 60 ms debounce, and the only
+confirmation was the word "Saved" at 12 px in grey in a corner - which reads,
+to somebody who has lost work before, as something to distrust rather than
+rely on. The indicator is a button now: same class, same box, same text, so the
+top bar cannot wrap where it did not before (it did, at 1440-1600 px, and that
+was a real regression once) and P9's goldens, which hide `.cb-save` with
+`visibility: hidden` and therefore keep its layout, are unmoved. Pressing it
+flushes and says "Saved. Your work is kept as you go." Its tooltip is in the
+HTML as well as in `setSaveState`, because that function only runs when the
+state *changes* and an editor nobody has touched never changes - the first
+paint would have had no tooltip at all.
+
+**Two things the walk-through got wrong, corrected here rather than "fixed".**
+
+- It said the row's eye and lock buttons are unreachable by keyboard because
+  they are `tabindex="-1"`. They are, and that is correct: roving tabindex is
+  how a tree is supposed to work, `canvas.js` really does implement `H` and `L`
+  (1168-1169), and `canvastools.js` offers Show/Hide and Lock/Unlock in the
+  right-click menu with those keys printed next to them. The fault was that
+  nothing on the button said so; the tooltips name the key now.
+- It called the inspector's reset control an unlabeled circle. It lives in
+  `deck.html`, carries `title="Reset to theme"` and draws a return arrow. It
+  wants an `aria-label`, not a rescue.
+
+Verified headless on the rig, 17 of 17 (`tools/capture/pickertest.js`, which
+now covers this slice too): the save indicator is a BUTTON with words in its
+tooltip before anything is touched, the row's buttons are two drawn glyphs with
+no characters left in them and a tooltip each, pressing Saved says so out loud,
+and nothing is thrown - which is also the runtime proof that adding `icons.js`
+to that page collides with nothing.
+
+Left for the next slice: the 9 px resize handles and the rotate knob that looks
+like them, the modifier keys nobody can see (Shift, Alt and Ctrl change what
+dragging does), Space-to-pan and wheel-to-zoom, and the 10.4 px uppercase
+headings in `--dim` that carry the inspector's structure. (This paragraph also
+listed "the camera layer's black box in the editor, same cause as the capture
+one". That was wrong and is withdrawn below: the camera previews in the editor
+and always did.)
+
+## The window that would not show itself (2026-09-12)
+
+The user added a window to a scene and got a black rectangle that never became
+anything, and read the app as broken. It was two faults on top of each other,
+and only one of them was the one everybody could see.
+
+**The one you could see.** A capture layer in native mode is a *hole*: the page
+paints it black and the server's compositor keys the real picture into that
+shape while LIVE (P5). Nothing fills it in the editor, so the box was black for
+good, and the only thing saying why was a 12 px `.source-note` living inside the
+zoomed preview iframe - about 6 px at Fit zoom, unreadable. The escape hatch was
+a segmented control reading "Drawn: By the app / In the page", which names the
+mechanism and not the consequence.
+
+So the editor now shows the real thing: `scene.js holePreview()` asks the server
+for the same one-shot thumbnail the picker uses, every 1.5 s, only when PREVIEW,
+and fades it in over the hole. A scene going out is untouched - the hole stays a
+hole for the compositor. A window that has since closed says so in red instead
+of showing a stale picture.
+
+**The one underneath, which was the real fault.** WinRT is initialized per
+thread, `server.py` answers every request on a thread of its own
+(`ThreadingHTTPServer`), and `capture.py` called `RoInitialize` in exactly one
+place: `D3D.__init__`, which runs once per process because `_shared["d3d"]`
+caches the device. So the thread that happened to build the device could
+capture, and every later request thread failed at `RoGetActivationFactory` with
+`0x800401f0`, CO_E_NOTINITIALIZED. **Every window thumbnail after the first one
+in the life of the process was failing**, and had been all along.
+
+It hid well. A browser keeps connections alive, and requests sharing a
+connection share a server thread, so some pictures arrived and some did not -
+which reads as flaky, not broken. It even made two of our own probes disagree:
+PowerShell pools connections and said 200, 200; Python opens a new one each time
+and said 200 then 404 forever. `factory()` now calls `RoInitialize(1)` itself,
+unchecked, the way `D3D` already did - S_FALSE means the thread had it,
+RPC_E_CHANGED_MODE means the thread chose its own apartment.
+
+| Fresh connection per call | Before | After |
+|---|---|---|
+| 12 thumbnails, monitor / hwnd / title | 1 then `0x800401f0` for ever | 12 of 12 |
+| Every open window, one at a time | - | 11 of 11, dialogs included |
+
+**A third thing, claimed here and then withdrawn.** This section first said the
+editor's preview iframe carries no `allow=` attribute, so Permissions Policy
+blocked `getDisplayMedia` and `getUserMedia` inside it, and that a camera layer
+therefore could not preview in the editor either. **That was wrong.** `camera`
+and `display-capture` default to an allowlist of `self`, which a *same-origin*
+iframe satisfies with no `allow=` attribute, and the scene preview is
+same-origin with the editor. Cross-origin reasoning, applied to a frame that is
+not cross-origin.
+
+P9 proves it: "live indicator: the camera open in the editor shows in the top
+bar, the list and the inspector" passes, and that badge only lights when a
+camera layer has `entry.media`, which only `getUserMedia` sets
+(`scene.js TYPES.camera.start`). **The camera previews in the editor. There is
+no camera black box.**
+
+What is true about "In the page" capture is duller and was already written down
+in P3: Chrome's auto-select flag names one capture source per launch of the
+shared Chrome, so a layer switched to that mode inside the editor has no source
+named for it and `browser()` falls through to `native()`. The box is not empty
+either - the fallback is the hole, which now carries the thumbnail. The
+inspector's hint said "Chrome is not allowed to do that inside the editor, so
+this box stays empty here", which was wrong twice over and shipped; it now says
+Chrome has to be told which window as it starts, so this usually cannot begin
+in the editor and the box falls back to the app's own picture.
+
+**The picker.** One button, "Choose a window or screen...", opens a gallery of
+everything open: cards about 210 px wide with their own picture refreshed every
+2 s, the program's name underneath, our own windows marked "this app". Clicking
+one adds it **at the shape the window really is** (it used to arrive in a fixed
+70 %-of-scene box, so a wide window was squashed before you touched it) and
+switches to the Layers list, so you can see what appeared. It replaces two
+different pickers that did the same job differently - a 72x44 list that never
+refreshed, and the inspector's grid that refreshed every 3 s.
+
+Smaller things settled with it:
+
+- `/api/capture/thumb` takes `title=` now. A scene names its window by title,
+  because a handle is a different number every time that program starts; the
+  editor asks the way the compositor looks it up, and gets a 404 saying the
+  window is not open when it is not.
+- Cards keep `loading="lazy"`: only what you can see is fetched, and every
+  thumbnail is a real GPU capture. Checked before leaving it alone - all 11
+  windows thumbnail fine on demand, so a blank card is "not scrolled to", not
+  "cannot be captured".
+- `TYPE_DEFAULTS` claimed capture layers default to `auto` while the code made
+  them `native`. They agree now.
+- The dead `.capture-list` / `.src` rules went with the old list. They were also
+  cascading into the inspector's picker, where `.src span` computed to about
+  9.4 px; those labels are now ~10.6 px.
+
+Kept for next time: `tools/capture/thumbprobe.py` (does the endpoint answer more
+than once, on a new connection each time) and `tools/capture/pickertest.js`
+(the canvas editor driven as a person drives it, in headless Chrome - 19 checks
+by the end of the slices below: the gallery has real pictures in it, a window
+can be chosen, the layer arrives at the right shape, the editor shows it rather
+than a black box, the row's eye and lock are drawn rather than typed, pressing
+Saved says so, a handle dragged with Shift held names the keys, and nothing is
+thrown). Launch Chrome as the P-suites do - `--headless=new
+--remote-debugging-port=9357 --user-data-dir=<.rig>\prof-picker` - then
+`node pickertest.js 9357 8799`. One monitor here, so headless is not optional.
+
+A note for whoever writes the next test: the first version of `pickertest.js`
+failed its own aspect-ratio check and it was the test's fault - it read the
+scene back over HTTP before the editor's 60 ms autosave had run. It waits for
+`saveState` to say Saved now. The app was right and the test was in a hurry.
+
+## The TikTok tab: where the Server URL and the key come from (2026-09-12)
+
+The LIVE panel has a second tab beside the pasted key: it asks Streamlabs for
+a TikTok live the way the Streamlabs desktop app does, and streams the deck to
+what comes back. What this entry records is where each half of that pair
+actually lives, because the two are not in the same place.
+
+- **The token kept on this PC holds no key.** Streamlabs' own local storage
+  (`%appdata%\slobs-client\Local Storage\leveldb\*.log`) carries `apiToken`
+  and nothing else of use to us: no Server URL, no stream key. So "Load from
+  this PC" cannot bring them along, however the button is worded. Both exist
+  only in the answer to `POST /api/v5/slobs/tiktok/stream/start` - one pair
+  per live, dead when that live ends.
+- **So the pair is kept for the life of the live, and no longer.**
+  `TikTokBridge` holds `url` and `_key` in memory from the moment the live
+  opens; `end()` and `forget()` wipe both, and the deck's Stop already closes
+  TikTok's side wherever it is pressed. Nothing new is written to disk:
+  `live.Vault` already keeps the key encrypted to this Windows user.
+- **The address rides the poll; the key does not.** `/api/tiktok/status`
+  carries `url` (TikTok's ingest address, no secret - `live.Vault` says as
+  much) and `has_session_key`, which is all the panel needs to decide what to
+  draw twice a second. The key itself comes from `POST /api/tiktok/reveal`,
+  asked for only when Show or Copy is pressed. That is also how Copy works
+  without ever putting the key on screen.
+- **What the panel shows.** A "This live" box, the way the standalone
+  generator showed it: the Server URL plain with Copy, the stream key behind
+  Show with Copy, and a line saying both are there for a second app (OBS,
+  LIVE Studio) and stop working when the live ends. It appears when Streamlabs
+  hands the pair over and goes when the live closes.
+- **Found on the way:** `.lp-group` and `.lp-health` set their own `display`,
+  which beats the browser's `[hidden]` rule - so the account box was never
+  actually hidden when it was meant to be. One rule fixes both.
+- **Inert on this account, and not because of us.** Streamlabs reports
+  `never_applied` and `can_be_live: false`, so Go LIVE stays disabled and the
+  box never appears. A Streamlabs token is not LIVE access. The hint now names
+  the status instead of saying "cannot go live yet", since applying is the one
+  thing the user can actually do about it.
+- **The risk this carries, written down once.** Asking Streamlabs for a key
+  means introducing ourselves as the Streamlabs desktop app
+  (`tiktok_live.UA_STREAM`). That is what makes a key appear at all, and it is
+  the user's own TikTok account that answers for it if either company
+  objects. The tab is a second way to reach a key, not a replacement for the
+  one LIVE Center hands out.
+
+Tests: `tests/test_tiktok.py` gained a `Session` class (5 tests) - the pair
+kept from the start payload, a status that carries the address but never the
+key, the wipe on ending the live and on forgetting the token, and nothing to
+reveal before a live opens. 18 of 18 pass; the session is put in by hand, so
+they need neither Windows nor the internet.
 
 ## After P12: the rig beside the repo (2026-09-12)
 

@@ -327,6 +327,13 @@ class TikTokBridge:
         self.error = ""
         self.live_id = None
         self.signing_in = False
+        # What this live is going out on. Streamlabs hands the address and the
+        # key back together when the live opens - the only place either exists,
+        # the token kept on this PC holding neither - so both are kept here for
+        # as long as the live is open, and go when it closes. Nothing new is
+        # written to disk: live.Vault already keeps the key encrypted.
+        self.url = ""
+        self._key = ""
 
     # -- the token ---------------------------------------------------------
 
@@ -385,6 +392,7 @@ class TikTokBridge:
             self._stream = None
         self.live_id = None
         self.error = ""
+        self._forget_session()
         return self.vault.forget()
 
     # -- the account -------------------------------------------------------
@@ -439,8 +447,10 @@ class TikTokBridge:
             self.error = str(exc)
             return {"ok": False, "error": str(exc)}
         self.live_id = s.id
+        self.url = url
+        self._key = key
         self.error = ""
-        self.log("tiktok: live session open")
+        self.log("tiktok: live session open")      # the pair itself is never logged
         return {"ok": True, "url": url, "key": key, "live_id": self.live_id}
 
     def end(self):
@@ -457,11 +467,33 @@ class TikTokBridge:
             return {"ok": False, "ended": False, "error": str(exc)}
         self.live_id = None
         s.id = None
+        self._forget_session()
         self.log("tiktok: live session closed")
         return {"ok": bool(ok), "ended": bool(ok)}
+
+    def _forget_session(self):
+        """The pair the live went out on, gone from memory with the live."""
+        self.url = ""
+        self._key = ""
+
+    def reveal(self):
+        """The Server URL and stream key this live is going out on, for the one
+        place that asks for them: Show and Copy on the panel.
+
+        Asked for by hand rather than carried on every poll. The address is
+        TikTok's ingest and no secret - live.Vault says as much - but the key is
+        one, and it has no business in a request the panel makes twice a second
+        while you are live."""
+        if not self._key:
+            return {"ok": False, "error": "No live is open, so there is no key yet."}
+        return {"ok": True, "url": self.url, "key": self._key}
 
     def status(self):
         return {"has_token": self.vault.has_token(),
                 "signing_in": self.signing_in,
                 "live_id": self.live_id,
+                # The address is safe to carry every poll; whether there is a
+                # key to show is all the panel needs to decide what to draw.
+                "url": self.url,
+                "has_session_key": bool(self._key),
                 "error": self.error}

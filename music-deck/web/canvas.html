@@ -42,7 +42,7 @@
   </div>
   <span class="spacer"></span>
   <span class="cb-media" id="mediaLive" role="status" hidden></span>
-  <span class="cb-save" id="saveState" data-state="saved">Saved</span>
+  <button type="button" class="cb-save" id="saveState" data-state="saved" title="Your work saves itself as you go. Press to save this moment.">Saved</button>
   <button type="button" class="cb-live" id="liveStatus" data-state="idle" aria-haspopup="dialog" title="The LIVE panel: stream key, quality, sound, Start and Stop (Ctrl+Shift+L)">Off air</button>
   <button type="button" class="btn sm tog" id="studioBtn" aria-pressed="false" title="Studio mode: edit here while another scene is on air, then Take (Ctrl+Shift+P)">Studio</button>
   <button type="button" class="btn sm" id="remoteBtn" title="A small scene remote window, to switch scenes while you stream">Remote</button>
@@ -72,8 +72,9 @@
     <section class="pane" id="paneSources" role="tabpanel" aria-labelledby="tabSources" hidden>
       <h3 class="pane-h">Add a layer</h3>
       <div id="addGrid" class="add-grid"></div>
-      <h3 class="pane-h">Capture a window or screen <button type="button" class="btn sm ghost" id="refreshSources">Refresh</button></h3>
-      <div id="captureList" class="capture-list"><p class="hint">Loading&hellip;</p></div>
+      <h3 class="pane-h">Show a window or screen</h3>
+      <button type="button" class="btn wide" id="pickSource">Choose a window or screen&hellip;</button>
+      <p class="hint">Opens a picker showing a picture of everything you have open.</p>
     </section>
 
     <section class="pane" id="paneAssets" role="tabpanel" aria-labelledby="tabAssets" hidden>
@@ -147,6 +148,19 @@
   </div>
 </div>
 
+<div class="modal" id="srcDialog" role="dialog" aria-modal="true" aria-labelledby="srcTitle" hidden>
+  <div class="modal-box sp-box">
+    <h2 id="srcTitle">Choose a window or screen to show</h2>
+    <p class="hint">Click the one you want. It is added to your scene, and you will see it here in the editor as well as on your stream.</p>
+    <div class="sp-grid" id="srcGrid"></div>
+    <div class="sp-foot">
+      <span class="hint" id="srcHint">Not the one you wanted? Bring it up on screen, then press Look again.</span>
+      <button type="button" class="btn" id="srcAgain">Look again</button>
+      <button type="button" class="btn" id="srcCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle" hidden>
   <div class="modal-box">
     <h2 id="shortcutsTitle">Keyboard shortcuts</h2>
@@ -186,6 +200,7 @@
   </div>
 </div>
 
+<script src="icons.js"></script>
 <script src="snap.js"></script>
 <script src="scenes.js"></script>
 <script src="decor.js"></script>

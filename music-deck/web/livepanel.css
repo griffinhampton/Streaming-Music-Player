@@ -25,6 +25,8 @@
 .lp-error { padding: 8px 10px; border-radius: 8px; font-size: .9em; background: color-mix(in srgb, var(--bad) 16%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); }
 .lp-error.rotated { background: color-mix(in srgb, #f5a524 16%, transparent); border-color: color-mix(in srgb, #f5a524 55%, transparent); }
 .lp-health { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0; }
+/* Both are laid out, so their own display would beat the browser's [hidden]. */
+.lp-health[hidden], .lp-group[hidden] { display: none !important; }
 .lp-health > div { padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .lp-health dt { font-size: .74em; color: var(--dim); }
 .lp-health dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }

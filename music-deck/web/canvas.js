@@ -174,7 +174,17 @@ function setSaveState(state, why) {
   el.dataset.state = state;
   el.textContent = { saved: 'Saved', saving: 'Saving…', pending: 'Saving…',
                      error: 'Not saved' + (why ? ': ' + why : ''), conflict: 'Reloaded a newer version' }[state] || state;
+  // Said out loud, because there is no File menu and nobody believes a small
+  // grey word in a corner. Pressing it saves now, which is mostly a way of
+  // being told that it is already saved.
+  el.title = state === 'error' ? 'This did not save. Press to try again.'
+    : state === 'saving' || state === 'pending' ? 'Saving your work now.'
+    : 'Your work saves itself as you go. Press to save this moment.';
 }
+$('saveState').addEventListener('click', async () => {
+  await flush();
+  toast(store.dirty ? 'That did not save - the app may not be answering' : 'Saved. Your work is kept as you go.');
+});
 
 /** Save now and wait for it (before switching scenes, and for tests). */
 async function flush() {
@@ -591,6 +601,13 @@ function renderAll() {
 
 const TYPE_ICON = { text: 'T', image: '▣', shape: '■', component: '♫', camera: '◉', capture: '▭',
                     reactive: '☺', background: '▤' };
+// What each kind is called in words. The icon's tooltip used to show the raw
+// type - "capture", "reactive", "component" - which are our words for these
+// things, not anybody else's.
+const TYPE_WORD = { text: 'Text', image: 'Picture or video', shape: 'Shape',
+                    component: 'A window from the deck', camera: 'Camera',
+                    capture: 'Screen or window', reactive: 'Reactive image',
+                    background: 'Background' };
 
 function renderTree() {
   const tree = $('layerTree');
@@ -617,8 +634,8 @@ function renderTree() {
         aria-selected="${sel}" tabindex="-1" data-key="g:${esc(l.group)}" data-group="${esc(l.group)}" draggable="true">
         <button type="button" class="row-btn caret" data-act="caret" aria-label="${open ? 'Collapse' : 'Expand'} group" tabindex="-1">${open ? '▾' : '▸'}</button>
         <span class="row-name">${esc((groups[l.group] || {}).name || 'Group')}</span>
-        <button type="button" class="row-btn${allHidden ? '' : ' on'}" data-act="eye" aria-label="${allHidden ? 'Show' : 'Hide'} group" tabindex="-1">${allHidden ? '◌' : '◉'}</button>
-        <button type="button" class="row-btn${allLocked ? ' on' : ''}" data-act="lock" aria-label="${allLocked ? 'Unlock' : 'Lock'} group" tabindex="-1">${allLocked ? '🔒' : '🔓'}</button>
+        <button type="button" class="row-btn${allHidden ? '' : ' on'}" data-act="eye" aria-label="${allHidden ? 'Show' : 'Hide'} group" tabindex="-1" title="${allHidden ? 'Show' : 'Hide'} this group (H)">${svgIcon(allHidden ? 'eyeOff' : 'eye')}</button>
+        <button type="button" class="row-btn${allLocked ? ' on' : ''}" data-act="lock" aria-label="${allLocked ? 'Unlock' : 'Lock'} group" tabindex="-1" title="${allLocked ? 'Unlock' : 'Lock'} this group (L)">${svgIcon(allLocked ? 'lock' : 'unlock')}</button>
       </div>`);
       if (open) for (const m of members) rows.push(layerRow(m, 2));
       continue;
@@ -638,10 +655,10 @@ function layerRow(l, level) {
   const warn = under.length ? `<span class="row-warn" role="img" title="Under TikTok's ${esc(under.join(' and '))}" aria-label="Under TikTok's ${esc(under.join(' and '))}">⚠</span>` : '';
   return `<div class="row${hidden ? ' is-hidden' : ''}${liveIds.has(l.id) ? ' live-src' : ''}" role="treeitem" aria-level="${level}" aria-selected="${store.sel.has(l.id)}"
     tabindex="-1" data-key="${esc(l.id)}" data-id="${esc(l.id)}" draggable="true" style="--indent:${(level - 1) * 18}px">
-    <span class="row-type" aria-hidden="true" title="${esc(l.type)}">${TYPE_ICON[l.type] || '□'}</span>
+    <span class="row-type" aria-hidden="true" title="${esc(TYPE_WORD[l.type] || l.type)}">${TYPE_ICON[l.type] || '□'}</span>
     <span class="row-name" title="Double-click or F2 to rename">${esc(l.name)}</span>${warn}
-    <button type="button" class="row-btn${hidden ? '' : ' on'}" data-act="eye" aria-label="${hidden ? 'Show' : 'Hide'} ${esc(l.name)}" aria-pressed="${!hidden}" tabindex="-1">${hidden ? '◌' : '◉'}</button>
-    <button type="button" class="row-btn${l.locked ? ' on' : ''}" data-act="lock" aria-label="${l.locked ? 'Unlock' : 'Lock'} ${esc(l.name)}" aria-pressed="${!!l.locked}" tabindex="-1">${l.locked ? '🔒' : '🔓'}</button>
+    <button type="button" class="row-btn${hidden ? '' : ' on'}" data-act="eye" aria-label="${hidden ? 'Show' : 'Hide'} ${esc(l.name)}" aria-pressed="${!hidden}" tabindex="-1" title="${hidden ? 'Show' : 'Hide'} this layer (H)">${svgIcon(hidden ? 'eyeOff' : 'eye')}</button>
+    <button type="button" class="row-btn${l.locked ? ' on' : ''}" data-act="lock" aria-label="${l.locked ? 'Unlock' : 'Lock'} ${esc(l.name)}" aria-pressed="${!!l.locked}" tabindex="-1" title="${l.locked ? 'Unlock' : 'Lock'} this layer (L)">${svgIcon(l.locked ? 'lock' : 'unlock')}</button>
   </div>`;
 }
 const rowIds = (row) => (row.dataset.group ? store.scene.layers.filter((l) => l.group === row.dataset.group).map((l) => l.id) : [row.dataset.id]);
@@ -971,31 +988,69 @@ $('addGrid').addEventListener('click', (e) => {
   addLayer(makeLayer(a.type, a.label, a.props, a.w, a.h));
 });
 
+/* The window and screen picker. One button opens a gallery of everything that
+   is open, each with its own picture, and one click puts it in the scene at
+   the shape it really is. */
+let srcItems = [], srcTimer = null;
+
 async function loadCaptureSources() {
-  const list = $('captureList');
-  list.innerHTML = '<p class="hint">Loading&hellip;</p>';
+  const grid = $('srcGrid');
+  if (!srcItems.length) grid.innerHTML = '<p class="hint">Looking&hellip;</p>';
   let d;
   try { d = await (await fetch('/api/capture/sources', { cache: 'no-store' })).json(); } catch (_) { d = { windows: [], monitors: [] }; }
-  const mons = (d.monitors || []).map((m, i) => ({ kind: 'monitor', i, title: m.name || `Screen ${i + 1}`,
-    thumb: `/api/capture/thumb?monitor=${i}` }));
-  const wins = (d.windows || []).filter((w) => w.title).slice(0, 40).map((w) => ({ kind: 'window', title: w.title,
-    thumb: w.hwnd ? `/api/capture/thumb?hwnd=${w.hwnd}` : '' }));
-  const items = [...mons, ...wins];
-  list.innerHTML = items.length ? items.map((it, k) =>
-    `<button type="button" class="btn src" data-src="${k}" title="${esc(it.title)}">` +
-    (it.thumb ? `<img loading="lazy" alt="" src="${esc(it.thumb)}">` : '<span class="noimg"></span>') +
-    `<span>${esc(it.title)}</span></button>`).join('') : '<p class="hint">No windows to capture.</p>';
-  list.onclick = (e) => {
-    const b = e.target.closest('[data-src]');
-    if (!b || !store.scene) return;
-    const it = items[+b.dataset.src];
-    const source = it.kind === 'monitor' ? { kind: 'monitor', monitor: it.i } : { kind: 'window', title: it.title };
-    const full = it.kind === 'monitor';
-    addLayer(makeLayer('capture', it.title.slice(0, 60), { mode: 'native', source, fps: 30, fit: 'contain' },
-      full ? store.scene.width : Math.round(store.scene.width * 0.7), full ? store.scene.height : Math.round(store.scene.height * 0.7)));
-  };
+  srcItems = [
+    ...(d.monitors || []).map((m, i) => ({ kind: 'monitor', monitor: i, w: m.w, h: m.h,
+      title: `Screen ${i + 1}${m.primary ? ' (the main one)' : ''}`, sub: `${m.w} by ${m.h}`,
+      thumb: `/api/capture/thumb?monitor=${i}&w=480` })),
+    ...(d.windows || []).filter((w) => w.title).map((w) => ({ kind: 'window', title: w.title, w: w.w, h: w.h,
+      sub: w.ours ? 'this app' : (w.process || ''), thumb: `/api/capture/thumb?hwnd=${w.hwnd}&w=480` })),
+  ];
+  grid.innerHTML = srcItems.length ? srcItems.map((it, k) =>
+    `<button type="button" class="sp-card" data-src="${k}" title="${esc(it.title)}">` +
+    `<img loading="lazy" alt="" data-shot="${esc(it.thumb)}" src="${esc(it.thumb)}">` +
+    `<b>${esc(it.title)}</b><small>${esc(it.sub)}</small></button>`).join('')
+    : '<p class="hint">Nothing is open to show. Bring the program you want up on screen, then press Look again.</p>';
 }
-$('refreshSources').addEventListener('click', loadCaptureSources);
+
+function openSourcePicker() {
+  if (!store.scene) { toast('Make a scene first'); return; }
+  $('srcDialog').hidden = false;
+  loadCaptureSources();
+  // The pictures keep up with what the windows are doing while you choose.
+  clearInterval(srcTimer);
+  srcTimer = setInterval(() => {
+    if ($('srcDialog').hidden || document.hidden) return;
+    $('srcGrid').querySelectorAll('img[data-shot]').forEach((im) => { im.src = im.dataset.shot + '&t=' + Math.floor(performance.now()); });
+  }, 2000);
+  $('srcCancel').focus();
+}
+
+function closeSourcePicker() {
+  $('srcDialog').hidden = true;
+  clearInterval(srcTimer);
+  srcTimer = null;
+}
+
+$('pickSource').addEventListener('click', openSourcePicker);
+$('srcAgain').addEventListener('click', () => { srcItems = []; loadCaptureSources(); });
+$('srcCancel').addEventListener('click', closeSourcePicker);
+$('srcDialog').addEventListener('click', (e) => { if (e.target === $('srcDialog')) closeSourcePicker(); });
+$('srcDialog').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeSourcePicker(); } });
+$('srcGrid').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-src]');
+  if (!b || !store.scene) return;
+  const it = srcItems[+b.dataset.src];
+  const source = it.kind === 'monitor' ? { kind: 'monitor', monitor: it.monitor } : { kind: 'window', title: it.title };
+  // At the shape it really is: a wide window dropped into a 70-percent box
+  // came out squashed or letterboxed before you had touched anything.
+  const ratio = it.w && it.h ? it.w / it.h : 16 / 9;
+  let w = it.kind === 'monitor' ? store.scene.width : Math.round(store.scene.width * 0.7);
+  let h = Math.round(w / ratio);
+  if (h > store.scene.height) { h = store.scene.height; w = Math.round(h * ratio); }
+  addLayer(makeLayer('capture', it.title.slice(0, 60), { mode: 'native', source, fps: 30, fit: 'contain' }, w, h));
+  closeSourcePicker();
+  showTab('Layers');                       // so you can see what was just added
+});
 
 /* ------------------------------------------------------------- assets */
 
@@ -1045,7 +1100,6 @@ function showTab(name, focus) {
     $('pane' + t).hidden = !on;
     if (on && focus) tab.focus();
   }
-  if (name === 'Sources' && !$('captureList').dataset.loaded) { $('captureList').dataset.loaded = '1'; loadCaptureSources(); }
   if (name === 'Assets') loadAssets();
 }
 document.querySelector('.tabs').addEventListener('click', (e) => {

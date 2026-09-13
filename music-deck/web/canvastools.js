@@ -23,6 +23,14 @@
 const SNAP_PX = 6;          // snapping reach, in screen pixels
 const DRAG_PX = 3;          // a press becomes a drag past this
 const ROT_OFF = 26;         // the rotate knob, above the box, in screen pixels
+// The keys that change what a drag does. They were written down in one dialog
+// behind a "?" button, which is nowhere near the hand that needs them.
+const KEY_NAME = { shift: 'Shift', alt: 'Alt', ctrl: 'Ctrl' };
+const DRAG_KEYS = {
+  move: [['shift', 'straight across or down'], ['alt', 'no snapping']],
+  resize: [['shift', 'keep the shape'], ['alt', 'from the middle'], ['ctrl', 'no snapping']],
+  rotate: [['shift', '15° steps']],
+};
 const RULER = 20;           // ruler thickness
 const HANDLES = { nw: [0, 0], n: [0.5, 0], ne: [1, 0], e: [1, 0.5], se: [1, 1], s: [0.5, 1], sw: [0, 1], w: [0, 0.5] };
 const HANDLE_ANGLE = { n: 0, ne: 45, e: 90, se: 135, s: 180, sw: 225, w: 270, nw: 315 };
@@ -248,6 +256,7 @@ function step(e) {
   if (store.scene !== g.scene) { gesture = null; press = null; paintOverlay(); return; }    // replaced under us: a conflict, an undo
   const p = toScene(e.clientX, e.clientY);
   const m = { shift: !!e.shiftKey, alt: !!e.altKey, ctrl: !!(e.ctrlKey || e.metaKey) };
+  g.mods = m;                    // what the HUD says you are holding (paintHud)
   if (g.kind === 'marquee') { stepMarquee(g, p); return; }
   if (g.kind === 'move') stepMove(g, p, m);
   else if (g.kind === 'resize') stepResize(g, p, m);
@@ -543,6 +552,15 @@ function paintHud() {
   }
   if (g && g.kind === 'rotate' && g.pointer) out.push(label(g.pointer.x + 18, g.pointer.y + 14, `${g.angle}°`));
   if (g && g.kind === 'guide' && g.pointer) out.push(label(g.pointer.x + 16, g.pointer.y + 12, g.off ? 'Remove' : `${g.axis === 'h' ? 'y' : 'x'} ${g.value}`));
+  // What Shift, Alt and Ctrl would do - said while you are dragging, which is
+  // the one moment it matters and the one moment nobody opens a key list. The
+  // one being held lights up, and restep() repaints the moment you press it.
+  if (g && DRAG_KEYS[g.kind]) {
+    const held = g.mods || {};
+    out.push('<div class="hud-hint">' + DRAG_KEYS[g.kind]
+      .map(([k, what]) => `<b class="${held[k] ? 'on' : ''}">${KEY_NAME[k]}</b> ${esc(what)}`)
+      .join('<i>·</i>') + '</div>');
+  }
   hud.innerHTML = out.join('') + (svg.length ? `<svg class="hud-lines">${svg.join('')}</svg>` : '');
 }
 function outline(t, cls) {

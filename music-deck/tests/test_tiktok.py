@@ -14,6 +14,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 import urllib.error
 from unittest import mock
@@ -127,6 +128,55 @@ class Searching(unittest.TestCase):
         stream = tiktok_live.Stream("t")
         with mock.patch.object(stream, "_get", side_effect=AssertionError("should not ask")):
             self.assertEqual(stream.search(""), [])
+
+
+class Session(unittest.TestCase):
+    """The Server URL and key come back together when the live opens, and that
+    is the only place either exists - the token kept on this PC holds neither.
+    So: kept while the live is open, gone when it ends, never on a status poll.
+
+    The vault is not touched here; a session is put in by hand, which is what
+    lets this run anywhere rather than only on Windows."""
+
+    URL, KEY = "rtmp://ingest.tiktok/live", "SECRETKEY"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.bridge = tiktok_live.TikTokBridge(tmp.name)
+        stream = tiktok_live.Stream("t")
+        stream.start = lambda *_a, **_k: (self.URL, self.KEY)
+        stream.end = lambda: True
+        stream.id = "42"
+        self.bridge._stream = stream
+        self.bridge.category_id = lambda _name: ""
+
+    def test_start_keeps_both_halves_of_the_payload(self):
+        res = self.bridge.start("My stream", "")
+        self.assertEqual((res["url"], res["key"]), (self.URL, self.KEY))
+        self.assertEqual(self.bridge.reveal(), {"ok": True, "url": self.URL, "key": self.KEY})
+
+    def test_status_carries_the_address_but_never_the_key(self):
+        self.bridge.start("My stream", "")
+        status = self.bridge.status()
+        self.assertEqual(status["url"], self.URL)
+        self.assertTrue(status["has_session_key"])
+        self.assertNotIn(self.KEY, json.dumps(status))
+
+    def test_ending_the_live_wipes_the_pair(self):
+        self.bridge.start("My stream", "")
+        self.bridge.end()
+        self.assertFalse(self.bridge.reveal()["ok"])
+        self.assertEqual(self.bridge.status()["url"], "")
+        self.assertFalse(self.bridge.status()["has_session_key"])
+
+    def test_forgetting_the_token_takes_the_pair_with_it(self):
+        self.bridge.start("My stream", "")
+        self.bridge.forget()
+        self.assertFalse(self.bridge.reveal()["ok"])
+
+    def test_nothing_to_reveal_before_a_live_opens(self):
+        self.assertFalse(self.bridge.reveal()["ok"])
 
 
 if __name__ == "__main__":

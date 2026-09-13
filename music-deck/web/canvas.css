@@ -73,7 +73,15 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .cb-group { display: inline-flex; align-items: center; gap: 4px; }
 .zoom-label { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--label); font-size: .9em; }
 .spacer { flex: 1 1 auto; }
-.cb-save { font-size: .85em; color: var(--dim); white-space: nowrap; }
+/* A button that keeps the exact box of the label it replaced: the bar cannot
+   wrap where it did not before, and the shot the P9 goldens hide is the same
+   size - but it can now be pressed and reached by keyboard, because the first
+   thing anyone looks for is a File menu that is not there. */
+.cb-save {
+  font-size: .85em; color: var(--dim); white-space: nowrap;
+  background: transparent; border: 0; padding: 0; font-family: inherit; cursor: pointer;
+}
+.cb-save:hover, .cb-save:focus-visible { color: var(--fg); }
 .cb-save[data-state="saving"], .cb-save[data-state="pending"] { color: var(--label); }
 .cb-save[data-state="error"], .cb-save[data-state="conflict"] { color: var(--bad); }
 .cb-live {
@@ -100,7 +108,10 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .tabs [role="tab"][aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 .pane { padding: 8px; }
 .pane-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.pane-h { font-size: .74em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 12px 2px 8px; display: flex; align-items: center; justify-content: space-between; }
+/* The headings that carry the structure were 10.4 px, uppercase, letter-spaced
+   and in the dimmest token the theme has - the smallest, faintest text in the
+   editor doing the most explaining. Bigger, and a step lighter. */
+.pane-h { font-size: .82em; letter-spacing: .06em; text-transform: uppercase; color: var(--label); margin: 12px 2px 8px; display: flex; align-items: center; justify-content: space-between; }
 
 /* layers tree */
 .tree { display: flex; flex-direction: column; gap: 2px; outline: none; }
@@ -125,6 +136,8 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
   background: transparent; border: 0; border-radius: 6px; color: var(--dim); cursor: pointer; font-size: 13px;
 }
 .row-btn:hover { color: var(--fg); background: var(--panel-2); }
+/* Sized by the button, the way deck.css sizes .icon and .icon-btn glyphs. */
+.row-btn .glyph { width: 15px; height: 15px; display: block; margin: 0 auto; }
 .row-btn.on { color: var(--fg); }
 .caret { width: 18px; }
 
@@ -132,17 +145,30 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .add-grid .btn { height: auto; min-height: 44px; flex-direction: column; gap: 2px; padding: 6px; white-space: normal; text-align: center; }
 .add-grid .btn small { color: var(--dim); font-size: .78em; }
-.capture-list { display: grid; gap: 6px; }
-.src {
-  display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 8px;
-  padding: 5px; text-align: left; height: auto;
+.btn.wide { width: 100%; }
+/* The window and screen picker: big pictures, because a title on its own does
+   not tell you which of nine open windows is the one you meant. */
+.sp-box { width: min(1040px, 94vw); }
+.sp-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px;
+  max-height: 62vh; overflow: auto; padding: 2px;
 }
-.src img, .src .noimg { width: 72px; height: 44px; object-fit: cover; border-radius: 6px; background: #111; display: block; }
-.src span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88em; }
+.sp-card {
+  display: flex; flex-direction: column; gap: 4px; padding: 6px; height: auto; text-align: left; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line-strong);
+  border-radius: calc(var(--radius) * .7); color: var(--fg); min-width: 0;
+}
+.sp-card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; background: #111; display: block; }
+.sp-card b, .sp-card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sp-card b { font-size: .92em; }
+.sp-card small { color: var(--dim); font-size: .82em; }
+.sp-card:hover, .sp-card:focus-visible { border-color: var(--accent); }
+.sp-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.sp-foot .hint { flex: 1 1 auto; margin: 0; }
 .asset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .asset { padding: 4px; height: auto; flex-direction: column; align-items: stretch; }
 .asset img, .asset video { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; background: #111; display: block; }
-.asset span { font-size: .78em; color: var(--label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset span { font-size: .84em; color: var(--label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- canvas */
 
@@ -198,12 +224,18 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .hud .ol.locked { outline-style: dashed; }
 .hud .ol.marquee { outline: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .handle {
-  position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
-  background: #fff; border: 1.5px solid var(--accent); border-radius: 2px;
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  background: #fff; border: 1.5px solid var(--accent); border-radius: 3px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); pointer-events: auto;
 }
-.handle::before { content: ""; position: absolute; inset: -7px; }            /* a bigger target than it looks */
-.handle.rot { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; cursor: grab; }
+.handle::before { content: ""; position: absolute; inset: -8px; }            /* the target is 28px, not 12 */
+/* The rotate knob is not one of the resize handles. It used to say so with
+   2 px and a border radius, which is not saying it: it is filled with the
+   accent and ringed in white, so it reads as a different control entirely. */
+.handle.rot {
+  width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+  background: var(--accent); border-color: #fff; cursor: grab;
+}
 .hud-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .hud-lines line { stroke-width: 1; shape-rendering: crispEdges; }
 .hud-lines .snap { stroke: var(--snap); }
@@ -217,6 +249,20 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
   font: 600 11px/1.3 var(--font); font-variant-numeric: tabular-nums;
 }
 .hud-label.spacing, .hud-label.dist { background: var(--snap); color: #fff; transform: translate(-50%, -50%); }
+/* While you drag: what the modifier keys would do, and which one you hold. */
+.hud-hint {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 5px 10px; border-radius: 999px; font-size: .84em;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line-strong); color: var(--label);
+}
+.hud-hint b {
+  font-weight: 600; color: var(--fg); padding: 1px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.hud-hint b.on { background: var(--accent); color: var(--on-accent); }
+.hud-hint i { color: var(--dim); font-style: normal; }
 .guide { position: absolute; pointer-events: auto; }
 .guide.h { left: 0; right: 0; height: 7px; margin-top: -3px; cursor: row-resize; }
 .guide.v { top: 0; bottom: 0; width: 7px; margin-left: -3px; cursor: col-resize; }
@@ -275,6 +321,10 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 /* ---------------------------------------------------------------- inspector */
 
 .insp h2 { font-size: .95em; margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Still 10.4 px and dim, on purpose for now: the P9 goldens photograph this
+   panel, and growing its headings changes the height of all ten of them. The
+   inspector's type is its own change, with the goldens rewritten as the point
+   of it rather than as a side effect. The left panel's headings are done. */
 .insp h3 { font-size: .74em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 16px 0 8px; }
 .insp .f { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
 .insp .f > span { color: var(--label); font-size: .88em; }

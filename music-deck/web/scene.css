@@ -48,6 +48,12 @@ body.see-through { background: transparent; }
 }
 .mask-circle { border-radius: 50% !important; }
 .mask-rounded { border-radius: 28px !important; }
+/* The editor's own picture of a native source (scene.js holePreview): it fades
+   in over the black hole once the first thumbnail lands, and never exists in a
+   scene going out. Its size and fit come from .layer > .media above and from
+   the layer's own fit, set inline - nothing to repeat here. */
+.hole-shot { opacity: 0; transition: opacity .25s linear; }
+.hole-shot.on { opacity: 1; }
 .source-note {
   position: absolute; left: 8px; bottom: 8px;
   font: 12px/1.4 "Segoe UI", system-ui, sans-serif; color: #fff;

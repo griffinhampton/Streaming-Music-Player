@@ -59,6 +59,15 @@ def closable_close(obj):
 
 
 def factory(cls, iid):
+    # WinRT is initialized per thread, not per process, and the server answers
+    # every request on a thread of its own. Only the thread that happened to
+    # build the D3D device below was ever initialized, so the second thumbnail
+    # asked for over a new connection failed with 0x800401f0
+    # (CO_E_NOTINITIALIZED) - and a browser hid it, because requests sharing a
+    # kept-alive connection share a thread, so some pictures arrived and some
+    # did not. Unchecked on purpose, as in D3D below: S_FALSE means this thread
+    # already had it, RPC_E_CHANGED_MODE that it is in an apartment of its own.
+    combase.RoInitialize(1)
     hs = c_void_p()
     combase.WindowsCreateString(ctypes.c_wchar_p(cls), len(cls), byref(hs))
     out = c_void_p()

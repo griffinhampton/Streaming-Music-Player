@@ -2060,12 +2060,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"windows": [], "monitors": [], "error": str(exc)})
         if path == "/api/capture/thumb":
             hwnd = int((query.get("hwnd") or ["0"])[0] or 0)
+            title = (query.get("title") or [""])[0]
             mon = (query.get("monitor") or [""])[0]
             try:
                 hmon = None
                 if mon != "":
                     mons = capture.list_monitors()
                     hmon = mons[int(mon)]["hmon"] if 0 <= int(mon) < len(mons) else None
+                if not hwnd and not hmon and title:
+                    # A scene names its window by title: a handle is a different
+                    # number every time that program is started, so the editor
+                    # asks for the picture the same way the compositor finds it.
+                    hit = next((w for w in capture.list_windows() if w["title"] == title), None)
+                    if not hit:
+                        return self._send(404, "that window is not open", "text/plain")
+                    hwnd = hit["hwnd"]
                 png, _w, _h = capture.thumbnail(hwnd=hwnd or None, monitor=hmon,
                                                 max_w=int((query.get("w") or ["320"])[0]))
             except Exception as exc:
@@ -2484,6 +2493,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(TIKTOK.use_token(data.get("token", "")))
         if path == "/api/tiktok/token/forget":
             return self._json(TIKTOK.forget())
+        if path == "/api/tiktok/reveal":
+            # Show and Copy on the panel: the pair the open live goes out on,
+            # handed over when asked for rather than on every status poll.
+            return self._json(TIKTOK.reveal())
         if path == "/api/tiktok/start":
             return self._json(tiktok_go_live(data))
         if path == "/api/tiktok/end":

@@ -61,7 +61,7 @@ const DEFAULTS = {
 };
 const TYPE_DEFAULTS = {
   image: { 'props.fit': 'cover' }, camera: { 'props.fit': 'cover', 'props.mode': '' },
-  capture: { 'props.fit': 'contain', 'props.mode': 'auto' }, reactive: { 'props.fit': 'contain' },
+  capture: { 'props.fit': 'contain', 'props.mode': 'native' }, reactive: { 'props.fit': 'contain' },
   shape: { 'props.stroke.color': '#ffffff' },
 };
 function defaultOf(l, path) {
@@ -267,10 +267,13 @@ const TYPE_SECTIONS = {
       <div class="field"><span>What to show</span>
         <div class="srcgrid" data-srcgrid role="group" aria-label="Screens and windows"><p class="hint">Loading…</p></div>
         <button type="button" class="btn btn-ghost btn-sm" data-src-refresh>Look again</button></div>
-      ${cSeg('Drawn', 'props.mode', [['native', 'By the app'], ['auto', 'In the page']])}
+      ${cSeg('How it is captured', 'props.mode', [['native', 'By the app (best)'], ['auto', 'By the browser']])}
       <div data-show="props.mode=native"><div class="checks">${cCheck('Show the mouse pointer', 'props.cursor')}</div>
-        <p class="hint">Captured by the app itself, like OBS: no picker, and nothing extra for Chrome to do.
-          The page leaves a hole the stream fills while LIVE.</p></div>
+        <p class="hint">The app captures it itself, the way OBS does - the lightest way, and what your viewers see.
+          Here in the editor you get a picture of it that refreshes every second or two.</p></div>
+      <p class="hint" data-show="props.mode=auto">The browser captures it instead, the way a web page does. Chrome has to
+        be told which window at the moment it starts, so this usually cannot begin inside the editor and the box falls
+        back to the app's own picture - keep "By the app" unless it gives you trouble.</p>
       ${cSeg('Fit', 'props.fit', [['contain', 'Whole picture'], ['cover', 'Fill the box']])}
       ${cSeg('Frame rate', 'props.fps', [['15', '15'], ['30', '30'], ['60', '60']], true)}`),
 
