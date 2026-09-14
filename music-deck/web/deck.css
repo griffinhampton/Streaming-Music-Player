@@ -1053,18 +1053,42 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 }
 .wincard.live .wc-dot { background: var(--good); box-shadow: 0 0 8px var(--good); }
 .wc-name { font-size: .97em; font-weight: 600; }
+/* A state, drawn as one: bare gray capitals in a corner read as a label for
+   something rather than the thing itself. */
 .wc-state {
-  margin-left: auto; font-size: .72em; letter-spacing: .07em;
+  margin-left: auto; font-size: .68em; letter-spacing: .07em;
   text-transform: uppercase; color: var(--dim);
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
 }
-.wincard.live .wc-state { color: var(--good); }
+.wincard.live .wc-state {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 45%, transparent);
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+}
 .wc-sub { font-size: .8em; color: var(--label); }
+/* Pushed to the bottom of the card, so a description that wraps to two lines
+   does not leave this card's buttons sitting higher than its neighbours' -
+   which is what put six Open buttons at four different heights along the bar. */
 .wc-foot {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-top: calc(4px * var(--d));
+  gap: 8px; margin-top: auto; padding-top: calc(6px * var(--d));
 }
 .wc-size { font-size: .78em; color: var(--dim); font-variant-numeric: tabular-nums; }
 
+/* Inside a card the main action is accent-tinted rather than solid with a
+   glow. One primary is a call to action; eighteen of them along a strip are
+   wallpaper, and none of them stands out. The solid .btn-primary is untouched
+   everywhere else in the deck. */
+.wincard .wc-foot .btn-primary {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--fg); box-shadow: none;
+}
+.wincard .wc-foot .btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border-color: var(--accent);
+}
 /* Once a window is live the button is a way out, not a call to action. */
 .wincard.live .wc-foot .btn-primary {
   background: transparent; box-shadow: none; color: var(--fg);
@@ -1074,10 +1098,28 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   background: color-mix(in srgb, var(--bad) 16%, transparent);
 }
 
-/* A scene card: open its output, make it the live scene, edit it. */
+/* A scene card: open its output, make it the live scene, edit it.
+
+   Three buttons do not fit one 226 px row, so as a wrapping flex they broke
+   2 + 1 and left Edit alone beside a block of dead space, each button a
+   different width. As a two-column grid the main action takes the full width
+   and the other two share the row under it: same markup, same paint hooks,
+   no ragged tail. */
 .wincard.scene { cursor: default; }
-.wincard.scene .wc-foot { flex-wrap: wrap; justify-content: flex-start; }
-.wincard.scene .wc-size { flex: 1 0 100%; }
+.wincard.scene .wc-foot {
+  display: grid; grid-template-columns: 1fr 1fr; gap: calc(6px * var(--d));
+  align-items: stretch; justify-content: stretch;
+  /* Not pushed to the bottom, unlike a component card's. Every card in the
+     strip stretches to the tallest one, and a scene card has no description to
+     fill the difference - bottom-pinning it opened a hole between the name and
+     the buttons on all twelve. Component cards need the pinning because their
+     descriptions wrap to different heights; these all share one shape, so they
+     line up with each other anyway. */
+  margin-top: 0;
+}
+.wincard.scene .wc-size { grid-column: 1 / -1; }
+.wincard.scene [data-act="scene-open"] { grid-column: 1 / -1; }
+.wincard.scene .wc-foot .btn { width: 100%; }
 .wincard.onair { border-left-color: var(--bad); }
 .wincard.onair .wc-dot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
 .wincard.onair .wc-state { color: var(--bad); }

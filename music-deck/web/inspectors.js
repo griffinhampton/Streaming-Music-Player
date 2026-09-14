@@ -16,7 +16,8 @@
 let feedState = null;                          // the latest snapshot: designs, fonts
 const openSecs = new Set(['type', 'scene-bg', 'scene-format']); // which sections are open - a view choice
 const TYPE_NAME = { text: 'Text', image: 'Picture or video', background: 'Background', shape: 'Shape',
-  component: 'Window', camera: 'Camera', capture: 'Screen or window', reactive: 'Reactive image' };
+  component: 'Window', camera: 'Camera', capture: 'Screen or window', reactive: 'You, talking',
+  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll' };
 const COMP_NAME = { np: 'Now Playing', lyrics: 'Lyrics', queue: 'Queue', captions: 'Captions' };
 // Where each component's design lives in the snapshot (as embedhost.js reads it), and its scope in the deck.
 const DESIGN_KEY = { np: 'nowplaying', lyrics: 'lyrics_cfg', queue: 'queue_cfg', captions: 'captions_cfg' };
@@ -63,6 +64,8 @@ const TYPE_DEFAULTS = {
   image: { 'props.fit': 'cover' }, camera: { 'props.fit': 'cover', 'props.mode': '' },
   capture: { 'props.fit': 'contain', 'props.mode': 'native' }, reactive: { 'props.fit': 'contain' },
   shape: { 'props.stroke.color': '#ffffff' },
+  // What commands.py's layer_command() assumes when these are unset.
+  effect: { 'props.role': 'everyone', 'props.cooldown': 0, 'props.user_cooldown': 0 },
 };
 function defaultOf(l, path) {
   const t = TYPE_DEFAULTS[l.type];
@@ -145,8 +148,12 @@ function scopeFor(el) {
 
 const A = (path) => `data-lx="${path}"`;
 const escA = (v) => esc(v);
-function section(key, title, body) {
-  return `<details class="sec" data-sec="${key}"${openSecs.has(key) ? ' open' : ''}><summary>${title}</summary><div class="sec-body">${body}</div></details>`;
+/* `attrs` rides on the <details> itself, so a whole section can carry a
+   data-show and come and go with a setting - syncShows sets hidden on anything
+   that has one, and it runs on the sync pass, so the section appears the
+   moment the setting changes rather than waiting for a rebuild. */
+function section(key, title, body, attrs = '') {
+  return `<details class="sec" data-sec="${key}"${openSecs.has(key) ? ' open' : ''}${attrs ? ' ' + attrs : ''}><summary>${title}</summary><div class="sec-body">${body}</div></details>`;
 }
 function cRange(label, path, min, max, o = {}) {
   const { div = 1, dp = 0, unit = '', step = '', pct = false } = o;
@@ -177,6 +184,41 @@ function typeSections(l) {
   return f ? f(l) : '';
 }
 const TYPE_SECTIONS = {
+  poll: (l) => section('type', 'Poll', `
+      <p class="hint">Shows the poll that is running and the bars filling up. Start one from the Live
+        view, or with a command. Nothing is shown while no poll is open.</p>
+      ${fontField('props.font', 'Default (Segoe UI)')}
+      <div class="field two">${cNum('Size', 'props.size', l.id, 'data-min="8" data-max="200"')}
+        ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
+      ${cColor('Words', 'props.color')}
+      ${cColor('Behind', 'props.bg')}
+      ${cColor('Bars', 'props.bar')}
+      ${cNum('Keep the result up for (seconds)', 'props.linger', l.id, 'data-min="0" data-max="600"')}`),
+  alert: (l) => section('type', 'Alert', `
+      <p class="hint">Shows nothing until something happens - a command someone ran, a song that went
+        into the queue. Leave the kinds empty to show all of them.</p>
+      <label class="field"><span>Only these kinds</span>
+        <input class="input" ${A('props.kinds')} data-kind="str" placeholder="command request poll" spellcheck="false"></label>
+      <div class="field two">${cNum('Seconds on screen', 'props.seconds', l.id, 'data-min="1" data-max="60"')}
+        ${cNum('Most waiting', 'props.max', l.id, 'data-min="1" data-max="20"')}</div>
+      ${fontField('props.font', 'Default (Segoe UI)')}
+      <div class="field two">${cNum('Size', 'props.size', l.id, 'data-min="8" data-max="200"')}
+        ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
+      ${cColor('Words', 'props.color')}
+      ${cColor('Behind', 'props.bg')}`),
+  effect: (l) => section('type', 'Effect', `
+      <p class="hint">Shows a picture or a clip when something happens, then hides again. Pick the
+        picture from Assets. Leave the kinds empty to show it for everything.</p>
+      ${assetField('Picture or clip', 'props.src', 'image gif video', true)}
+      <label class="field"><span>Only these kinds</span>
+        <input class="input" ${A('props.kinds')} data-kind="str" placeholder="command request poll" spellcheck="false"></label>
+      <div class="field two">${cNum('Seconds on screen', 'props.seconds', l.id, 'data-min="1" data-max="60"')}
+        ${cNum('Most waiting', 'props.max', l.id, 'data-min="1" data-max="20"')}</div>
+      ${cSeg('Fit', 'props.fit', [['cover', 'Cover'], ['contain', 'Contain'], ['stretch', 'Stretch']])}
+      ${assetField('Sound', 'props.sound', 'audio', true)}
+      ${cRange('Volume', 'props.volume', 0, 100, { div: 100, dp: 2 })}
+      <p class="hint">A sound command names its own clip; this one plays when the event does not
+        bring one. A layer with a sound and no picture shows nothing and just plays.</p>`) + layerCommandSection(l),
   text: (l) => section('type', 'Text', `
       <label class="field"><span>Words</span><textarea class="input" rows="3" ${A('props.text')} data-kind="str"></textarea></label>
       <div class="vars" role="group" aria-label="Insert live text">${['title', 'artist', 'album', 'source', 'elapsed', 'duration', 'time', 'date', 'caption', 'caption_live']
@@ -210,7 +252,7 @@ const TYPE_SECTIONS = {
         ${cRange('Padding', 'props.pill.pad', 0, 80, { unit: 'px' })}${cRange('Roundness', 'props.pill.radius', 0, 200, { unit: 'px' })}</div>`),
 
   image: () => section('type', 'Picture or video', `
-      ${assetField('Picture or video', 'props.src', 'image video')}
+      ${assetField('Picture or video', 'props.src', 'image gif video')}
       ${cSeg('Fit', 'props.fit', [['cover', 'Cover'], ['contain', 'Contain'], ['stretch', 'Stretch'], ['tile', 'Tile']])}
       <div data-show="props.fit=tile">${cRange('Tile size', 'props.tile_size', 16, 1024, { unit: 'px' })}</div>
       <div class="checks">${cCheck('Flip across', 'props.flip_h')}${cCheck('Flip upside down', 'props.flip_v')}</div>
@@ -228,8 +270,26 @@ const TYPE_SECTIONS = {
         ${cRange('Outline', 'props.stroke.w', 0, 40, { unit: 'px' })}${cColor('Outline color', 'props.stroke.color')}</div>
       <div data-show="props.kind=line">${cRange('Thickness', 'props.stroke.w', 1, 60, { unit: 'px' })}${cColor('Color', 'props.stroke.color')}</div>
       <div data-show="props.kind=frame">${cRange('Frame width', 'props.pad', 0, 300, { unit: 'px' })}
-        ${cRange('Hole corners', 'props.hole_radius', 0, 300, { unit: 'px' })}
-        <p class="hint">What sits under this layer shows through the hole: a game, your camera, the key color.</p></div>`),
+        ${cSeg('Hole shape', 'props.shape', [['rect', 'Square'], ['rounded', 'Rounded'], ['circle', 'Circle']])}
+        <div data-show="props.shape=rounded">${cRange('Hole corners', 'props.hole_radius', 0, 300, { unit: 'px' })}</div>
+        ${cSeg('Through the hole', 'props.hole', [['clear', 'See-through'], ['key', 'A key color']])}
+        <div data-show="props.hole=key">${cColor('Key color', 'props.key_color')}</div>
+        <p class="hint">What sits under this layer shows through the hole: a game, your camera, the key color.</p></div>`)
+    + section('frame-edge', 'The frame around it', `
+      ${cSeg('Edge', 'props.border.style', [['solid', 'Solid'], ['double', 'Double'], ['dashed', 'Dashed'], ['glow', 'Glow'], ['none', 'None']])}
+      <div data-show="!props.border.style=none">
+        ${cRange('Edge width', 'props.border.width', 0, 60, { unit: 'px' })}${cColor('Edge color', 'props.border.color')}</div>
+      <div class="divider"></div>
+      ${cText('Title', 'props.title.text')}
+      <div data-show="props.title.text">
+        ${cSeg('Title at the', 'props.title.place', [['top', 'Top'], ['bottom', 'Bottom']])}
+        ${cRange('Title size', 'props.title.size', 40, 300, { div: 100, dp: 2 })}${cColor('Title color', 'props.title.color')}</div>
+      <div class="divider"></div>
+      <div class="field two">${cText('Top left', 'props.badges.tl')}${cText('Top right', 'props.badges.tr')}</div>
+      <div class="field two">${cText('Bottom left', 'props.badges.bl')}${cText('Bottom right', 'props.badges.br')}</div>
+      ${cRange('Badge size', 'props.badges.size', 40, 300, { div: 100, dp: 2 })}${cColor('Badge color', 'props.badges.color')}
+      <p class="hint">The same frame the Screen frame and Camera frame windows draw, in the scene itself.
+        A border loop goes on under Decor, like any layer.</p>`, 'data-show="props.kind=frame"'),
 
   component: (l) => {
     const comp = (l.props && l.props.component) || 'np';
@@ -263,6 +323,18 @@ const TYPE_SECTIONS = {
       ${cSeg('Fit', 'props.fit', [['cover', 'Fill the box'], ['contain', 'Whole picture']])}
       <div class="checks">${cCheck('Mirror', 'props.mirror')}</div>`),
 
+  mic: () => section('type', 'Microphone', `
+      <p class="hint">Your own voice, drawn on the scene. This page listens to the
+        microphone itself - nothing is recorded and nothing is sent anywhere.</p>
+      ${cSelect('Microphone', 'props.device', [['', 'Windows default microphone']], false, 'data-mics')}
+      ${cSeg('Drawn as', 'props.style', [['bars', 'Bars'], ['level', 'One bar'], ['wave', 'Waveform']])}
+      <div data-show="props.style=bars">${cRange('How many bars', 'props.bars', 4, 64)}</div>
+      ${cColor('Color', 'props.color')}
+      ${cRange('Sensitivity', 'props.gain', 20, 400, { div: 100, dp: 2, unit: '×' })}
+      ${cRange('Smoothing', 'props.smooth', 0, 95, { div: 100, dp: 2 })}
+      <p class="hint">Which microphone the stream uses, how loud it is, and what counts as
+        talking are all in the Sound panel; this is only how it looks here.</p>`),
+
   capture: () => section('type', 'Screen or window', `
       <div class="field"><span>What to show</span>
         <div class="srcgrid" data-srcgrid role="group" aria-label="Screens and windows"><p class="hint">Loading…</p></div>
@@ -277,17 +349,20 @@ const TYPE_SECTIONS = {
       ${cSeg('Fit', 'props.fit', [['contain', 'Whole picture'], ['cover', 'Fill the box']])}
       ${cSeg('Frame rate', 'props.fps', [['15', '15'], ['30', '30'], ['60', '60']], true)}`),
 
-  reactive: () => section('type', 'Reactive image', `
-      ${assetField('While quiet', 'props.idle', 'image')}
-      ${assetField('While talking', 'props.talking', 'image')}
-      ${assetField('Blink (optional)', 'props.blink', 'image', true)}
+  reactive: () => section('type', 'You, talking', `
+      <p class="hint">A PNGtuber: two pictures of you, swapped over as your
+        microphone hears you start and stop talking. Everything it needs is on
+        this one screen.</p>
+      ${assetField('While quiet', 'props.idle', 'image gif')}
+      ${assetField('While talking', 'props.talking', 'image gif')}
+      ${assetField('Blink (optional)', 'props.blink', 'image gif', true)}
       <div data-show="props.blink">${cRange('Blink every', 'props.blink_every', 800, 10000, { step: 100, unit: ' ms' })}</div>
       ${cRange('Bounce while talking', 'props.bounce', 0, 60, { unit: 'px' })}
       ${cSeg('Fit', 'props.fit', [['contain', 'Whole picture'], ['cover', 'Fill the box']])}
       <div class="field voice"><span>Counts as talking above <b class="mono" data-thr-out></b></span>
         <div class="meter" data-meter role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100"><i></i><s data-thr-mark></s></div>
         <input class="range" type="range" min="1" max="60" data-threshold aria-label="How loud counts as talking">
-        <span class="hint" data-voice-note>For every reactive image and trigger. While captions are on, they decide instead.</span></div>
+        <span class="hint" data-voice-note>For every "You, talking" layer and every trigger. While captions are on, they decide instead.</span></div>
       <button type="button" class="btn btn-ghost btn-sm" data-try-talk>Try it: act as if I'm talking</button>`),
 };
 
@@ -332,20 +407,77 @@ function commonSections(l) {
         Ultra optimized keeps everything still.</p>`) +
     triggerSection(l);
 }
-const TRIG_ON = [['speaking', 'While I talk'], ['silent', "While I'm quiet"], ['speech_start', 'When I start talking']];
-const TRIG_DO = [['show', 'show it'], ['hide', 'hide it'], ['bounce', 'bounce'], ['pop', 'pop'], ['class', 'add a style']];
+/* Two moments and four things to do, and the two fields no longer have to be
+   kept in step with each other - see applyTriggers in scene.js. "While I'm
+   quiet" was the same sentence inverted, "pop" was an action welded to one
+   moment, and "add a style" asked for the name of a CSS rule that had to exist
+   somewhere else. */
+const TRIG_ON = [['speaking', 'While I talk'], ['speech_start', 'When I start talking']];
+const TRIG_DO = [['show', 'show it'], ['hide', 'hide it'], ['bounce', 'bounce'], ['glow', 'glow']];
 function triggerSection(l) {
   const list = l.triggers || [];
   const opts = (arr) => arr.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('');
   const rows = list.map((t, i) => `<div class="trig" data-trig="${i}">
       <select class="input" data-tf="on" aria-label="When, trigger ${i + 1}">${opts(TRIG_ON)}</select>
       <select class="input" data-tf="do" aria-label="Do, trigger ${i + 1}">${opts(TRIG_DO)}</select>
-      <input class="input" data-tf="value" placeholder="style name" aria-label="Style name, trigger ${i + 1}">
+      <input class="color wide" type="color" data-tf="value" aria-label="Glow color, trigger ${i + 1}" title="The glow's color">
       <button type="button" class="btn icon sm" data-trig-del aria-label="Remove trigger ${i + 1}">×</button></div>`).join('');
   return section('trig', `Triggers${list.length ? ` <span class="count">${list.length}</span>` : ''}`,
     `${rows || '<p class="hint">Nothing here reacts to your voice yet.</p>'}
      <button type="button" class="btn btn-ghost btn-sm" data-trig-add>Add a trigger</button>
-     <p class="hint">Show a layer only while you talk, bounce it, pop it when you start.</p>`);
+     <p class="hint">Your voice, and one thing it does: show a layer only while you talk, bounce it,
+       or light it up - a glow follows the layer's own shape, so a round camera or a frame's ring
+       lights up rather than a rectangle around it. "When I start talking" does it once.
+       To swap a picture while you talk, add a <b>You, talking</b> layer.</p>`);
+}
+/* T11: the chat command a layer answers to. The layer is the setup - the
+   command lives in its props, so deleting the layer deletes the command, and
+   there is no second form somewhere else to keep in step with it.
+   commands.py's layer_command() reads these four props and nothing else. */
+const CMD_ROLES = [['everyone', 'Anyone'], ['subscriber', 'Subscribers and up'], ['vip', 'VIPs and up'],
+  ['mod', 'Moderators and me'], ['broadcaster', 'Only me']];
+const CMD_WAITS = [[0, 'No wait'], [5, '5 s'], [10, '10 s'], [30, '30 s'], [60, '1 min'], [300, '5 min'], [900, '15 min']];
+const LAYER_CMD_TYPES = ['effect'];          // commands.py LAYER_TYPES
+const cmdName = (v) => String(v || '').trim().toLowerCase().replace(/^[^a-z0-9_]+/, '');
+function layerCommandSection() {
+  return section('cmd', 'Chat command', `
+      ${cText('Command', 'props.command', 'placeholder="airhorn" spellcheck="false" maxlength="33" autocomplete="off"')}
+      ${cSelect('Who may run it', 'props.role', CMD_ROLES)}
+      <div class="field two">${cSelect('Wait, for anyone', 'props.cooldown', CMD_WAITS, true)}
+        ${cSelect('Wait, per person', 'props.user_cooldown', CMD_WAITS, true)}</div>
+      <p class="hint" data-cmd-note aria-live="polite"></p>`);
+}
+/* /api/commands, for the note: the symbol in force and the list's names. Read
+   each time an effect layer's inspector is built, so a command added to the
+   list a minute ago is a conflict here now. */
+let cmdInfo = null;
+async function loadCmdInfo(root) {
+  try { cmdInfo = await (await fetch('/api/commands', { cache: 'no-store' })).json(); } catch (_) { cmdInfo = null; }
+  if (root.isConnected) paintCmdNote(root);
+}
+/* What the name will do, in words - and the reasons it might not: not a
+   usable name, the Commands list has it (the list answers), another layer on
+   this scene took it first, or the layer is hidden. Then whether anything
+   answers yet at all, because only the scene on air listens. */
+function paintCmdNote(root) {
+  const n = root.querySelector('[data-cmd-note]');
+  const l = oneLayer();
+  if (!n || !l) return;
+  const raw = cmdName((l.props || {}).command);
+  const sym = ((cmdInfo && cmdInfo.symbol) || '!')[0];
+  const say = (t, warn) => { n.textContent = t; n.classList.toggle('warn', !!warn); };
+  if (!raw) return say('Give it a name and chat can set this layer off - it shows its own picture and plays its own sound. The Commands list in the Live view is for everything else.');
+  if (!/^[a-z0-9_][a-z0-9_-]{0,31}$/.test(raw)) return say('A command name is letters, numbers, _ or -, with no spaces. This one will not answer.', true);
+  if (cmdInfo && (cmdInfo.commands || []).some((c) => c.name === raw)) {
+    return say(`${sym}${raw} is also in the Commands list, and that one answers. Rename one of them.`, true);
+  }
+  const first = store.scene.layers.find((x) => LAYER_CMD_TYPES.includes(x.type) && x.visible !== false
+    && cmdName((x.props || {}).command) === raw);
+  if (first && first.id !== l.id) return say(`${sym}${raw} already belongs to ${first.name || 'another layer'} on this scene, which answers first.`, true);
+  if (l.visible === false) return say('This layer is hidden, so it answers to nothing.', true);
+  const live = ((feedState && feedState.canvas) || {}).live === store.scene.id;
+  say(live ? `Chat can type ${sym}${raw} to set this layer off.`
+    : `Chat can type ${sym}${raw} to set this layer off, once this scene is on air.`);
 }
 function sceneBackgroundSection() {
   return section('scene-bg', 'Background',
@@ -366,8 +498,10 @@ function mountInspector(root) {
   renderPickers(root);
   if (l && l.type === 'component') buildDeckDesign(root.querySelector('[data-deck-design]'), l);
   if (l && l.type === 'camera') fillCameras(root);
+  if (l && l.type === 'mic') fillMics(root);
   if (l && l.type === 'capture') renderSources(root);
   if (l && l.type === 'reactive') startMeter(root);
+  if (l && LAYER_CMD_TYPES.includes(l.type)) loadCmdInfo(root);
   syncInspector(root);
 }
 
@@ -385,11 +519,16 @@ function syncInspector(root) {
   if (box && box._scope) { syncDesign(box, box._scope); syncBgWhen(box, box._scope, DECK_BG[box._scope.comp].prefix); }
   if (!l) return;
   paintLiveNote(root);
+  if (LAYER_CMD_TYPES.includes(l.type)) paintCmdNote(root);
   root.querySelectorAll('[data-hide-part]').forEach((n) => { n.checked = ((l.props.options || {}).hide || []).includes(n.dataset.hidePart); });
   root.querySelectorAll('[data-trig]').forEach((row) => {
     const t = (l.triggers || [])[Number(row.dataset.trig)] || {};
-    for (const f of ['on', 'do', 'value']) { const n = row.querySelector(`[data-tf="${f}"]`); if (n && n !== document.activeElement) n.value = t[f] || (f === 'value' ? '' : n.options[0].value); }
-    row.querySelector('[data-tf="value"]').hidden = t.do !== 'class';
+    for (const f of ['on', 'do', 'value']) {
+      const n = row.querySelector(`[data-tf="${f}"]`);
+      // A color input with no value shows black; white is the glow's default.
+      if (n && n !== document.activeElement) n.value = t[f] || (f === 'value' ? '#ffffff' : n.options[0].value);
+    }
+    row.querySelector('[data-tf="value"]').hidden = t.do !== 'glow';
   });
   root.querySelectorAll('[data-res] button').forEach((b) => b.classList.toggle('on',
     Number(b.dataset.w) === Number(l.props.width || 1280) && Number(b.dataset.h) === Number(l.props.height || 720)));
@@ -486,8 +625,14 @@ function syncPickers(root) {
     el.querySelectorAll('[data-scene-id]').forEach((b) => { const on = b.dataset.sceneId === cur; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
   });
 }
-const assetThumb = (a) => (a.kind === 'video' && !a.thumb
-  ? `<video muted preload="metadata" src="${esc(a.url)}"></video>` : `<img loading="lazy" alt="" src="${esc(a.thumb || a.url)}">`);
+// Sound has no picture of itself, so it gets a name and a mark rather than an
+// <img> pointed at an .mp3 - which draws the browser's broken-image icon and
+// looks like the file is damaged.
+const assetThumb = (a) => (a.kind === 'audio'
+  ? '<span class="ap-audio" aria-hidden="true">&#9835;</span>'
+  : a.kind === 'video' && !a.thumb
+    ? `<video muted preload="metadata" src="${esc(a.url)}"></video>`
+    : `<img loading="lazy" alt="" src="${esc(a.thumb || a.url)}">`);
 function renderAssetGrid(el) {
   const kinds = (el.dataset.kinds || 'image video').split(' ');
   const list = assets.filter((a) => kinds.includes(a.kind || 'image'));
@@ -554,6 +699,16 @@ function cleanPane(pane, comp) {
   pane.querySelectorAll(`select[data-${attr}="decor.border"]`).forEach((s) => { s.dataset.decorOptions = '1'; });
   pane.querySelectorAll(`select[data-${attr}="decor.kaomoji"]`).forEach((s) => { s.dataset.kaoOptions = '1'; });
   pane.querySelectorAll('button:not([type])').forEach((b) => { b.type = 'button'; });
+  // The deck hides this button's text and paints the arrow with a mask
+  // (deck.css). canvas.html does not load deck.css, so these clones were
+  // showing the raw U+21BB character at 12 px inside a 26 px ring - the
+  // walk-through's "unlabeled empty circle", which an earlier pass cleared
+  // after photographing the deck's own dots rather than these. Measured in the
+  // editor: 8 of them, text "U+21BB", no ::before at all, no accessible name.
+  pane.querySelectorAll('.reset-dot').forEach((b) => {
+    b.innerHTML = svgIcon('reset');
+    if (!b.getAttribute('aria-label')) b.setAttribute('aria-label', b.getAttribute('title') || 'Reset to theme');
+  });
   return pane;
 }
 async function buildDeckDesign(box, l) {
@@ -599,6 +754,21 @@ async function fillCameras(root) {
   }
   if (!sel.isConnected) return;
   sel.innerHTML = '<option value="">Windows default camera</option>' + cameraNames.map((n) => `<option value="${escHTML(n)}">${escHTML(n)}</option>`).join('');
+  writeControl(sel, 'str', LX.get('props.device') || '');
+}
+
+/* The microphone layer's device list, the same way. The names come from the
+   audio route the LIVE panel already uses (WASAPI's own friendly names), not
+   from enumerateDevices, so the editor and the Sound panel offer one list. */
+let micNames = null;
+async function fillMics(root) {
+  const sel = root.querySelector('select[data-mics]');
+  if (!sel) return;
+  if (!micNames) {
+    try { micNames = (await (await fetch('/api/live/devices', { cache: 'no-store' })).json()).capture || []; } catch (_) { micNames = []; }
+  }
+  if (!sel.isConnected) return;
+  sel.innerHTML = '<option value="">Windows default microphone</option>' + micNames.map((n) => `<option value="${escHTML(n)}">${escHTML(n)}</option>`).join('');
   writeControl(sel, 'str', LX.get('props.device') || '');
 }
 
@@ -650,7 +820,7 @@ function startMeter(root) {
     first = false;
     note.textContent = d.source === 'captions' ? 'Captions are listening, so their own speech detector decides right now.'
       : d.source === 'off' ? 'The microphone opens while a scene uses your voice.'
-      : 'For every reactive image and trigger.';
+      : 'For every "You, talking" layer and every trigger.';
   };
   clearTimeout(meterTimer);
   const tick = () => {
@@ -788,11 +958,10 @@ ins.addEventListener('change', (e) => {
       const x = s.layers.find((y) => y.id === l.id);
       const tr = x.triggers[i];
       tr[t.dataset.tf] = t.value;
-      // A pop happens when talking starts, and that moment only pops.
-      if (t.dataset.tf === 'do' && t.value === 'pop') tr.on = 'speech_start';
-      if (t.dataset.tf === 'on' && t.value === 'speech_start') tr.do = 'pop';
-      if (t.dataset.tf === 'on' && t.value !== 'speech_start' && tr.do === 'pop') tr.do = 'show';
-      if (tr.do !== 'class') delete tr.value;
+      // Nothing to keep in step any more: either moment takes any action. The
+      // old pair moved each other about - picking "pop" changed the when, and
+      // changing the when put the action back to "show it".
+      if (tr.do !== 'glow') delete tr.value;
     }, 'trig:' + l.id + ':' + i);
   }
 });
@@ -801,7 +970,9 @@ ins.addEventListener('input', (e) => {
   const l = oneLayer();
   if (!l || t.dataset.tf !== 'value') return;
   const i = Number(t.closest('[data-trig]').dataset.trig);
-  const v = t.value.replace(/[^a-z0-9_-]/gi, '').slice(0, 30);
+  // The only thing this field carries now is the glow's color, so the old
+  // [^a-z0-9_-] scrub for a CSS class name would have eaten the leading #.
+  const v = /^#[0-9a-f]{6}$/i.test(t.value) ? t.value.toLowerCase() : '';
   exec('trigger', (s) => { s.layers.find((y) => y.id === l.id).triggers[i].value = v; }, 'trigv:' + l.id + ':' + i);
 });
 
@@ -889,7 +1060,11 @@ document.addEventListener('visibilitychange', pollLiveMedia);
 
 /* For tests. */
 Object.assign(window.Editor, {
-  inspector: () => ({ secs: [...ins.querySelectorAll('details.sec')].map((d) => d.dataset.sec), open: [...openSecs] }),
+  /* Only the sections on screen: a section with a data-show (the frame panel)
+     is in the DOM for every shape and shown for a Frame, so counting the DOM
+     would report a panel the user cannot see - and would go on passing if the
+     data-show broke and it showed for everything. */
+  inspector: () => ({ secs: [...ins.querySelectorAll('details.sec')].filter((d) => !d.hidden).map((d) => d.dataset.sec), open: [...openSecs] }),
   openSection: (key, on = true) => { if (on) openSecs.add(key); else openSecs.delete(key); const d = ins.querySelector(`details.sec[data-sec="${key}"]`); if (d) d.open = on; },
   liveMedia: () => ({ shown: !$('mediaLive').hidden, text: $('mediaLive').textContent, ids: [...liveIds] }),
   design: (id) => { const l = layerById(id); return l ? clone(l.props.custom || {}) : null; },

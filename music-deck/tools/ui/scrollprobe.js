@@ -18,7 +18,7 @@ const check = (name, ok, detail = '') => { results.push([name, !!ok]); console.l
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function open(url) {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT' })).json();
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   const page = { ws, id: 0, pending: new Map(), errors: [] };

@@ -3,8 +3,9 @@
 // Real pointer drags (CDP mouse events) on the editor's canvas: select, box
 // select, move, snapping (edges, centers, equal spacing, guides, grid, the
 // Alt override, a modifier pressed mid-drag), resize (corner, Shift, Alt,
-// snapped, rotated), rotate, several layers at once, nudging, guides from the
-// rulers, inspector math, align and space out, arrange, the right-click menu,
+// snapped, rotated), rotate, straighten, several layers at once, nudging,
+// guides from the rulers, inspector math, align and space out, arrange, the
+// right-click menu,
 // copy and paste between scenes - each checked for where things end up and
 // for being exactly one undo step - then the same pointer math at 200% and 30%
 // zoom with the screen at 150%, an open output following a drag, undo all the
@@ -23,7 +24,9 @@ const VK = { Enter: 13, Escape: 27, Tab: 9, ArrowLeft: 37, ArrowUp: 38, ArrowRig
 const ALT = 1, CTRL = 2, SHIFT = 8;
 
 async function open(url) {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT' })).json();
+  // encodeURIComponent, not encodeURI: encodeURI leaves `&` alone, so a page
+  // URL with two parameters loses the second to /json/new itself (S17b).
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   const page = { ws, id: 0, pending: new Map(), errors: [] };
@@ -109,6 +112,17 @@ async function click(p, mods = 0) {
   await mouse('mousePressed', p, mods, 'left', true);
   await mouse('mouseReleased', p, mods, 'left', false);
   await sleep(80);
+}
+/* A real double-click: the second press carries clickCount 2, which is what
+   makes Chrome send dblclick at all. */
+async function dbl(p) {
+  await mouse('mouseMoved', p);
+  for (const n of [1, 2]) {
+    await ed.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: n });
+    await ed.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', buttons: 0, clickCount: n });
+    await sleep(30);
+  }
+  await sleep(90);
 }
 async function shot(name) {
   const r = await ed.send('Page.captureScreenshot', { format: 'png' });
@@ -257,6 +271,97 @@ const fmtT = (t) => `x ${t.x} y ${t.y} w ${t.w} h ${t.h}${t.rotation ? ' r ' + t
     const rr = Math.hypot(k.x - c.x, k.y - c.y); const a = -Math.PI / 2 + 37 * Math.PI / 180;
     await drag(k, { x: Math.round(c.x + rr * Math.cos(a)), y: Math.round(c.y + rr * Math.sin(a)) }, { mods: SHIFT });
   }, async (b, a) => { const t = byName(a, 'B').transform; return [t.rotation === 30, `r ${t.rotation}`]; });
+
+  /* Straightening. B is sitting at 30 degrees from the step above, which is
+     the state a free rotate leaves you in and the one there was no way out of
+     short of typing 0 into the inspector. */
+  await oneStep('straighten: a double-click on the knob goes back to straight, about the center', async () => dbl(await hB('rot')),
+    async (b, a) => { const t0 = byName(b, 'B').transform, t = byName(a, 'B').transform;
+      const c0 = centerOf(t0), c1 = centerOf(t);
+      return [t.rotation === 0 && Math.hypot(c1.x - c0.x, c1.y - c0.y) < 0.6,
+        `r ${t0.rotation} -> ${t.rotation}, center moved ${Math.hypot(c1.x - c0.x, c1.y - c0.y).toFixed(2)} px`]; });
+  {
+    // Nothing is crooked now, so the menu still offers it and holds it off.
+    await ed.key('F10', 'F10', SHIFT);
+    await sleep(80);
+    const items = await ed.ev('Editor.menu()');
+    const enabled = await ed.ev(`[...document.querySelectorAll('.ctx [data-i]:not([aria-disabled="true"])')].map((b) => b.getAttribute('aria-label') || b.querySelector('span').textContent)`);
+    await ed.key('Escape', 'Escape');
+    await sleep(60);
+    // The rule, not a snapshot: offered always, enabled exactly when the
+    // selection has something to straighten. That holds whatever B is at, so
+    // a failure here is the `off:` rule breaking rather than a knock-on.
+    const tB = await T('B');
+    check('the menu offers Straighten, and enables it only when something is turned',
+      !!items && items.includes('Straighten') && enabled.includes('Straighten') === !!(tB.rotation || 0),
+      `B r ${tB.rotation}, ${(items || []).length} items, Straighten ${(enabled || []).includes('Straighten') ? 'enabled' : 'off'}`);
+  }
+
+  /* Several at once. The single-layer branch snaps the layer's own angle; a
+     selection has no one angle, so what has to snap is the turn itself. */
+  await sel('A', 'B');
+  /* The selection box is the union of rotation-aware bounds (what Snap.boundsOf
+     gives startTransform), not of the raw x/y/w/h: a turned layer's box is
+     wider than its own w, so the naive union puts the center - and with it the
+     knob's radius and angle - in the wrong place. */
+  const aabb = (t) => {
+    const r = ((t.rotation || 0) * Math.PI) / 180, ac = Math.abs(Math.cos(r)), as = Math.abs(Math.sin(r));
+    const w = t.w * ac + t.h * as, h = t.w * as + t.h * ac, c = centerOf(t);
+    return { x: c.x - w / 2, y: c.y - h / 2, w, h };
+  };
+  /* How far a layer turned, 0..359 - the thing the feature actually promises.
+     Asserting absolute angles couples each check to the one before it. */
+  const d360 = (b0, a0) => (((((a0 || 0) - (b0 || 0)) % 360) + 360) % 360);
+  const uCenter = async () => {
+    const s2 = await S(), pa = aabb(byName(s2, 'A').transform), pb = aabb(byName(s2, 'B').transform);
+    const x0 = Math.min(pa.x, pb.x), y0 = Math.min(pa.y, pb.y);
+    return C((x0 + Math.max(pa.x + pa.w, pb.x + pb.w)) / 2, (y0 + Math.max(pa.y + pa.h, pb.y + pb.h)) / 2);
+  };
+  /* Returns the gesture kind seen mid-drag. Two degrees at this zoom moves the
+     pointer about two pixels, so "nothing turned" reads the same whether the
+     snap did its job or the knob was never taken hold of at all - the wobble
+     check passed once for that second reason. This makes the difference
+     visible instead of assuming it. */
+  const turn = async (deg) => {
+    const c = await uCenter(), k = await hB('rot');
+    const rr = Math.hypot(k.x - c.x, k.y - c.y), a2 = -Math.PI / 2 + (deg * Math.PI) / 180;
+    const to = { x: Math.round(c.x + rr * Math.cos(a2)), y: Math.round(c.y + rr * Math.sin(a2)) };
+    await drag(k, to, { hold: true });
+    const g = await ed.ev('Editor.gesture()');
+    await release(to);
+    return g && g.kind;
+  };
+  {
+    const b3 = await S(), h0 = (await ed.ev('Editor.history()')).undo;
+    const kind = await turn(2);
+    const a3 = await S(), h1 = (await ed.ev('Editor.history()')).undo;
+    const dA = d360(byName(b3, 'A').transform.rotation, byName(a3, 'A').transform.rotation);
+    const dB = d360(byName(b3, 'B').transform.rotation, byName(a3, 'B').transform.rotation);
+    check('rotate several: a two degree wobble snaps back to no turn, and costs no step',
+      kind === 'rotate' && dA === 0 && dB === 0 && h1 === h0,
+      `gesture ${kind}, turned A ${dA}, B ${dB}, ${h1 - h0} steps, snapping ${(await ed.ev('Editor.prefs()')).snap}`);
+  }
+  await oneStep('rotate several: a turn near a quarter lands on exactly a quarter', async () => turn(88),
+    async (b, a) => {
+      const dA = d360(byName(b, 'A').transform.rotation, byName(a, 'A').transform.rotation);
+      const dB = d360(byName(b, 'B').transform.rotation, byName(a, 'B').transform.rotation);
+      return [dA === 90 && dB === 90, `turned A ${dA}, B ${dB}`];
+    });
+  await oneStep('the menu straightens everything selected, and closes', async () => {
+    await ed.key('F10', 'F10', SHIFT);
+    await sleep(80);
+    const enabled = await ed.ev(`[...document.querySelectorAll('.ctx [data-i]:not([aria-disabled="true"])')].map((b) => b.getAttribute('aria-label') || b.querySelector('span').textContent)`);
+    // Never Enter on an unknown item: indexOf -1 arrows nowhere and fires
+    // whatever happens to be focused, which in this menu can be Delete - it
+    // did, and took both layers with it. Throwing is no good either, since
+    // oneStep does not wrap act(), so a throw would end the whole suite.
+    const at = enabled.indexOf('Straighten');
+    if (at < 0) { await ed.key('Escape', 'Escape'); return; }
+    for (let i = 0; i < at; i++) await ed.key('ArrowDown', 'ArrowDown');
+    await ed.key('Enter', 'Enter', 0, '\r');
+  }, async (b, a) => { const la = byName(a, 'A'), lb = byName(a, 'B');
+    const rA = la ? (la.transform.rotation || 0) : 'gone', rB = lb ? (lb.transform.rotation || 0) : 'gone';
+    return [rA === 0 && rB === 0 && !(await ed.ev('Editor.menu()')), `A r ${rA}, B r ${rB}`]; });
 
   {
     const h = await ed.ev('Editor.history()');

@@ -75,3 +75,152 @@
 .lp-foot { display: flex; align-items: center; gap: 10px; }
 .lp-foot[hidden] { display: none !important; }
 .lp-foot .lp-btn { min-width: 96px; }
+
+/* The chat panel (S11): the same box again, reusing every .lp- control above.
+   What it adds is a log that scrolls, and the marks that let you pick a line
+   out of a moving list without reading it. */
+/* Polls (S14): the two faces - setting one up, and watching it fill in. */
+.poll .pl-choice { flex-wrap: nowrap; }
+.poll .pl-choice .lp-input { flex: 1 1 auto; min-width: 0; }
+.pl-n { width: 1.4em; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.pl-row { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; gap: 6px; align-items: baseline; margin: 4px 0; }
+.pl-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-count { font-variant-numeric: tabular-nums; color: var(--dim); font-size: .86em; }
+.pl-track { grid-column: 1 / -1; position: relative; height: 8px; border-radius: 4px; overflow: hidden;
+  background: color-mix(in srgb, var(--fg) 12%, transparent); }
+.pl-track > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); transition: width 240ms ease; }
+:root.ultra .pl-track > i { transition: none; }
+.pl-past { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: .88em; }
+.pl-past + .pl-past { border-top: 1px solid color-mix(in srgb, var(--fg) 7%, transparent); }
+.pl-past > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-by { color: var(--dim); white-space: nowrap; }
+
+/* Song requests (S13): the pending list, the rules, and what has happened. */
+.req-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 8px 6px; }
+.req-row + .req-row { border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
+.req-what { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.req-what b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-by, .req-who { font-size: .82em; color: var(--dim); }
+.req-cap { display: flex; align-items: center; gap: 6px; font-size: .88em; color: var(--dim); }
+.req-num { width: 64px; height: 26px; }
+.req-log { max-height: 180px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.req-past { display: grid; grid-template-columns: auto auto 1fr auto; gap: 8px; align-items: baseline; padding: 3px 4px; font-size: .86em; }
+.req-past + .req-past { border-top: 1px solid color-mix(in srgb, var(--fg) 7%, transparent); }
+.req-when { color: var(--dim); font-variant-numeric: tabular-nums; font-size: .9em; }
+/* Five things in a four-column grid: the reason was falling to a second line
+   under the timestamp, reading as a stray fragment. It belongs on its own
+   line - so say that, aligned under the title it explains. */
+.req-why { grid-column: 3 / -1; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Queued, skipped and refused are three different things and the list is only
+   useful if they can be told apart without reading. */
+.req-state { font-size: .78em; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--dim); }
+.req-past[data-state="queued"] .req-state { color: #04160c; background: var(--good); border-color: var(--good); }
+.req-past[data-state="refused"] .req-state { color: #fff; background: var(--bad); border-color: var(--bad); }
+.req-past[data-state="skipped"] .req-state { color: #1a1200; background: #f5a524; border-color: #f5a524; }
+
+/* The command editor (S12): the same box again, wider because a command is a
+   row of small fields and wrapping them would hide what belongs together. */
+.cmd .cmd-row legend { text-transform: none; letter-spacing: 0; font-size: .8em; color: var(--fg); }
+.cmd .cmd-name { flex: 1 1 120px; min-width: 90px; }
+.cmd .cmd-sm { width: auto; flex: 0 0 auto; }
+.cmd .cmd-num { width: 68px; height: 26px; }
+.cmd .cmd-cool { display: flex; align-items: center; gap: 6px; font-size: .84em; color: var(--dim); }
+.cmd .cmd-del { margin-left: auto; }
+.cmd-log { max-height: 190px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.cmd-fired {
+  display: grid; grid-template-columns: auto auto auto auto 1fr; gap: 8px; align-items: baseline;
+  padding: 3px 4px; font-size: .86em; overflow-wrap: anywhere;
+}
+.cmd-fired + .cmd-fired { border-top: 1px solid color-mix(in srgb, var(--fg) 7%, transparent); }
+.cmd-when { color: var(--dim); font-variant-numeric: tabular-nums; font-size: .9em; }
+.cmd-who { color: var(--dim); }
+/* Ran, refused and cooling have to be told apart at a glance - the whole point
+   of the log is seeing what did not happen as well as what did. "held" (the
+   effects budget) is not "cooling" on purpose: a streamer who reads one for
+   the other raises the wrong limit. "paused" is the quiet one - you did that. */
+.cmd-out { font-size: .78em; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--dim); }
+.cmd-fired[data-outcome="ran"] .cmd-out { color: #04160c; background: var(--good); border-color: var(--good); }
+.cmd-fired[data-outcome="denied"] .cmd-out { color: #fff; background: var(--bad); border-color: var(--bad); }
+.cmd-fired[data-outcome="cooling"] .cmd-out { color: #1a1200; background: #f5a524; border-color: #f5a524; }
+.cmd-fired[data-outcome="held"] .cmd-out { color: #fff; background: #8b5cf6; border-color: #8b5cf6; }
+.cmd-fired[data-outcome="paused"] .cmd-out { color: var(--fg); background: color-mix(in srgb, var(--fg) 12%, transparent); }
+.cmd .cmd-paused { color: #f5a524; font-weight: 600; }
+/* T11: the commands that belong to layers, read-only, one line each. */
+.cmd-layer { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline; padding: 3px 4px; font-size: .86em; overflow-wrap: anywhere; }
+.cmd-layer[data-conflict="list"] .cmd-resp, .cmd-layer[data-conflict="layer"] .cmd-resp { color: #f5a524; }
+.cmd-resp { color: var(--dim); }
+
+/* Docked (S9): the same panel sitting in a page instead of floating over one,
+   so the Live view shows the S7 and S11 panels themselves and there is one of
+   each to keep right. No box of its own - the page it sits in draws that. */
+.lp.docked {
+  position: static; width: auto; max-height: none; min-height: 0;
+  border: 0; border-radius: 0; box-shadow: none; padding: 10px 12px 12px;
+}
+.lp.docked .lp-x { display: none; }
+/* Docked, the page has already named the section, so the panel's own title
+   reads twice: "SOUND" over "Sound". The Sound panel's head holds nothing else
+   once the x is gone, so it goes; chat keeps its head for the channel pill. */
+.ap.docked .lp-head { display: none; }
+.cp.docked .lp-head h2 { display: none; }
+/* The h2 that just went was also the spacer: .lp-head is a flex row and the
+   title carried flex:1, which is what held the channel pill against the right
+   edge. Take the title out and the pill falls to the left, so say outright
+   where it belongs rather than leaving it to whatever else is in the row. */
+.cp.docked .lp-head { justify-content: flex-end; }
+/* Docked, the log should take the column it is given rather than 46vh of the
+   window, which in a tall pane leaves it floating in the middle. */
+.cp.docked { flex: 1 1 auto; }
+.cp.docked .cp-logwrap { flex: 1 1 auto; min-height: 0; }
+.cp.docked .cp-log { max-height: none; flex: 1 1 auto; }
+
+/* Reading a channel is not "you are on air". The LIVE panel's red pill means
+   the internet can see you; chat borrowing it said the wrong thing loudly. */
+.cp .lp-pill[data-state="joined"] { color: #04160c; background: var(--good); border-color: var(--good); font-weight: 600; }
+.cp-logwrap { position: relative; display: flex; flex-direction: column; min-height: 0; }
+.cp-log {
+  overflow-y: auto; overflow-x: hidden; min-height: 150px; max-height: 46vh;
+  padding: 4px; border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .5);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  overscroll-behavior: contain;
+}
+.cp-msg { padding: 3px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.cp-msg + .cp-msg { border-top: 1px solid color-mix(in srgb, var(--fg) 7%, transparent); }
+/* A command is what S12 will act on, so it is the one that stands out most. */
+.cp-msg.cmd { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.cp-msg.mention { background: color-mix(in srgb, #f5a524 15%, transparent); }
+.cp-msg.act .cp-text { font-style: italic; color: var(--dim); }
+.cp-svc { font-size: .66em; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin-right: 5px; }
+.cp-badge { font-size: .66em; padding: 0 4px; margin-right: 3px; border-radius: 4px; border: 1px solid var(--line-strong); color: var(--dim); }
+.cp-who { margin-right: 5px; }
+.cp-who::after { content: ':'; color: var(--dim); font-weight: 400; }
+/* Reachable by keyboard even while invisible: they are focusable, and
+   :focus-within brings them up. Opacity, not display, for that reason. */
+.cp-acts { float: right; margin-left: 8px; }
+.cp-act { opacity: 0; height: 20px; padding: 0 6px; margin-left: 4px; cursor: pointer; font: inherit; font-size: .76em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line-strong); border-radius: 5px; }
+.cp-msg:hover .cp-act, .cp-msg:focus-within .cp-act { opacity: 1; }
+.cp-act:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); }
+.cp-new {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px;
+  height: 26px; padding: 0 12px; cursor: pointer; font: inherit; font-size: .84em;
+  background: var(--accent); color: var(--on-accent, #fff); border: 0; border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+}
+.cp-new[hidden] { display: none !important; }
+.cp-empty { margin: 0; padding: 12px 6px; color: var(--dim); font-size: .9em; }
+.cp-unblock { height: 24px; padding: 0 8px; cursor: pointer; font: inherit; font-size: .82em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line-strong); border-radius: 999px; }
+.cp-unblock:hover { color: var(--fg); }
+
+/* The Sound panel (S7): the same box as the LIVE panel, its own contents. It
+   reuses every .lp- control above; only the meter differs, because this one
+   carries the talking threshold's mark and says whether it hears you. */
+.ap .lp-meter { height: 10px; }
+.ap .lp-meter i { transition: width 90ms linear; }
+/* Where "counts as talking" sits, on the scale the level is drawn against. */
+.ap .lp-meter s { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--fg); }
+/* Under the threshold the bar is quiet; over it, the app calls it talking. */
+.ap .lp-meter i { background: color-mix(in srgb, var(--good) 50%, transparent); }
+.ap .lp-meter.talking i { background: var(--good); }
+.ap .lp-meter.muted i { background: var(--dim); }

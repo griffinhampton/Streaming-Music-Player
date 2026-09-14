@@ -37,9 +37,9 @@ MAX_MEMBERS = 500
 MAX_JSON = 4 * MB
 MAX_THUMB = 512 * 1024
 
-ASSET_ID = re.compile(r"^[0-9a-f]{16}\.(?:png|jpe?g|gif|webp|svg|webm|mp4)$")
-ASSET_FILE = re.compile(r"^assets/([0-9a-f]{16}\.(?:png|jpe?g|gif|webp|svg|webm|mp4))$")
-THUMB_FILE = re.compile(r"^assets/[0-9a-f]{16}\.(?:png|jpe?g|gif|webp|svg|webm|mp4)\.thumb\.jpg$")
+ASSET_ID = re.compile(r"^[0-9a-f]{16}\.(?:png|jpe?g|gif|webp|svg|webm|mp4|mp3|ogg|wav|m4a)$")
+ASSET_FILE = re.compile(r"^assets/([0-9a-f]{16}\.(?:png|jpe?g|gif|webp|svg|webm|mp4|mp3|ogg|wav|m4a))$")
+THUMB_FILE = re.compile(r"^assets/[0-9a-f]{16}\.(?:png|jpe?g|gif|webp|svg|webm|mp4|mp3|ogg|wav|m4a)\.thumb\.jpg$")
 FONT_FILE = re.compile(r"^fonts/([0-9a-f]{16}\.(?:ttf|otf|woff2?))$")
 
 # How each kind of file starts. A "picture" that does not start like one is
@@ -54,6 +54,14 @@ MAGIC = {
     ".svg": lambda b: b"<svg" in b[:65536].lower(),
     ".webm": lambda b: b.startswith(b"\x1a\x45\xdf\xa3"),
     ".mp4": lambda b: b[4:8] == b"ftyp",
+    # Sound. An mp3 either carries an ID3 tag or opens on a frame sync, which
+    # is eleven set bits; the length guard matters because a truncated upload
+    # would otherwise index past the end and read as "not an mp3" by accident
+    # rather than on purpose.
+    ".mp3": lambda b: b[:3] == b"ID3" or (len(b) > 1 and b[0] == 0xFF and (b[1] & 0xE0) == 0xE0),
+    ".ogg": lambda b: b[:4] == b"OggS",
+    ".wav": lambda b: b[:4] == b"RIFF" and b[8:12] == b"WAVE",
+    ".m4a": lambda b: b[4:8] == b"ftyp",
     ".ttf": lambda b: b[:4] in _SFNT,
     ".otf": lambda b: b[:4] in _SFNT,
     ".woff": lambda b: b[:4] == b"wOFF",

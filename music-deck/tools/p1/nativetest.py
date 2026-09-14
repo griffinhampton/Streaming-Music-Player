@@ -5,7 +5,7 @@ all on the GPU, from this Python process. Writes raw Annex B and reports CPU.
 """
 import ctypes, os, struct, sys, time
 from ctypes import wintypes, byref
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import capture, mfenc
 
 title, w, h, fps, kbps, seconds, out = sys.argv[1], *map(int, sys.argv[2:6]), float(sys.argv[6]), sys.argv[7]

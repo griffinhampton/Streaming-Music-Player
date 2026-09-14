@@ -43,9 +43,28 @@ $sw = [Diagnostics.Stopwatch]::StartNew()
 Write-Host ("BUILD EXIT {0} after {1:n0}s" -f $LASTEXITCODE, $sw.Elapsed.TotalSeconds)
 if (-not (Test-Path (Join-Path $built 'Awesome Streaming Deck.exe'))) { throw 'no exe was built - the app was left as it was' }
 
-# 2. what went in
-foreach ($p in 'web\canvas.html', 'web\livepanel.js', 'web\remote.html', 'web\studio.js', 'web\newscene.js', 'web\scene.js',
-               'smtc.ps1', 'captions.ps1', 'ctranslate2\ctranslate2.dll', 'faster_whisper\assets\silero_vad_v6.onnx', 'builtin') {
+# 2. what went in. The web half is no longer a hand-written list: that named six
+#    files while the pages load forty-eight, and had already fallen behind
+#    audiopanel.js (S7), chatpanel.js (S11), liveview (S9) and the command,
+#    request and poll panels. Read the pages that shipped and check everything
+#    they actually ask for. This throws rather than printing, because the
+#    try-out below cannot catch it: /deck.html answers 200 perfectly well while
+#    the page throws on a script that is not there.
+#    Only static src=/href= to .js and .css - not url() inside a stylesheet, and
+#    not /fonts.css, which the server makes rather than ships.
+$webDir = Join-Path $built '_internal\web'
+$pages = @(Get-ChildItem $webDir -Filter *.html -ErrorAction SilentlyContinue)
+$want = @{}
+foreach ($pg in $pages) {
+    foreach ($m in [regex]::Matches((Get-Content $pg.FullName -Raw), '(?:src|href)="([^"#?:]+\.(?:js|css))"')) {
+        $want[$m.Groups[1].Value] = $true
+    }
+}
+$gone = @($want.Keys | Where-Object { -not (Test-Path (Join-Path $webDir $_)) } | Sort-Object)
+Write-Host ("  {0,-44} {1} pages, {2} js/css, {3} missing" -f 'web\ (read from the pages themselves)', $pages.Count, $want.Count, $gone.Count)
+if (-not $pages.Count) { throw 'no pages in the build - web\ did not ship at all' }
+if ($gone.Count) { throw ('a page asks for these and they did not ship: ' + ($gone -join ', ')) }
+foreach ($p in 'smtc.ps1', 'captions.ps1', 'ctranslate2\ctranslate2.dll', 'faster_whisper\assets\silero_vad_v6.onnx', 'builtin') {
     Write-Host ("  {0,-44} {1}" -f $p, (Test-Path (Join-Path $built "_internal\$p")))
 }
 
@@ -144,3 +163,11 @@ foreach ($w in $openWins) {
     try { Invoke-RestMethod -Method Post "http://127.0.0.1:8713/api/$w/open" -ContentType 'application/json' -Body '{}' -TimeoutSec 5 | Out-Null; Write-Host "reopened $w" }
     catch { Write-Host "reopen $w failed: $($_.Exception.Message)" }
 }
+
+# Getting here means it worked, and saying so is the whole point of this line.
+# robocopy sets $LASTEXITCODE to 1 for an ordinary copy that did copy something,
+# and a script that falls off its end can hand that back to whoever called it as
+# a failure - which is how a good build came to report one six times running.
+# The -CheckOnly and -NoLaunch paths already exit 0 explicitly; this is the one
+# that did not. Every real failure above throws long before this.
+exit 0

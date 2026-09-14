@@ -8,7 +8,9 @@ const RIG = `http://127.0.0.1:${rigPort}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 setTimeout(() => { console.log('TIMEOUT'); process.exit(3); }, 90000).unref();
 (async () => {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(RIG + '/scene.html?id=' + SID)}`, { method: 'PUT' })).json();
+  // encodeURIComponent, not encodeURI: encodeURI leaves `&` alone, so a page
+  // URL with two parameters loses the second to /json/new itself (S17b).
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(RIG + '/scene.html?id=' + SID)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   let id = 0; const pending = new Map();

@@ -1,7 +1,7 @@
 ﻿"""Drive live.RtmpClient straight at an ffmpeg RTMP listener with fake media,
 no browser involved. Prints every command the server sends and ffmpeg's log."""
 import os, struct, subprocess, sys, time
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import live
 
 FF = r"C:\Users\ghamp\Downloads\ffmpeg-8.0-essentials_build\bin\ffmpeg.exe"

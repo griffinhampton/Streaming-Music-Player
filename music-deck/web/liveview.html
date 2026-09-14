@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Awesome Streaming Deck - Live view</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="liveview.css">
+<link rel="stylesheet" href="livepanel.css">
+<!-- motion.js and nothing else: it is what defines window.isUltra(), which the
+     docked Sound panel asks before deciding how often to poll. fonts.js is for
+     pages with font pickers; this one has none. -->
+<script src="motion.js"></script>
+</head>
+<body>
+
+<header class="lv-top" role="toolbar" aria-label="Live view">
+  <div class="lv-brand"><span class="dot" aria-hidden="true"></span><b>Live view</b></div>
+  <span class="lp-pill" id="lvState" aria-live="polite">Off air</span>
+  <button type="button" class="lv-btn primary" id="lvGo">Start</button>
+  <span class="lv-spacer"></span>
+  <!-- T10's one control. First in the row on purpose: it is the button you
+       reach for without looking. liveview.js labels it from the state feed. -->
+  <button type="button" class="lv-btn" id="lvStopFx" title="Take every picture, sound and alert off the stream now, and pause chat commands until you resume them. Polls keep counting.">Stop effects</button>
+  <button type="button" class="lv-btn" id="lvPoll" aria-haspopup="dialog" title="Ask chat something and watch the bars fill up. People vote by typing !1, !2 and so on.">Poll</button>
+  <button type="button" class="lv-btn" id="lvReqs" aria-haspopup="dialog" title="Songs chat has asked for, waiting to be let through or turned down">Requests</button>
+  <button type="button" class="lv-btn" id="lvCmds" aria-haspopup="dialog" title="What !something in chat is allowed to do: who may run it, how often, and what happens">Commands&hellip;</button>
+  <button type="button" class="lv-btn" id="lvMore" aria-haspopup="dialog" title="The stream key, quality and how to go LIVE (Ctrl+Shift+L)">LIVE&hellip;</button>
+</header>
+
+<main class="lv-body">
+
+  <!-- What is on air, and how it is going out. -->
+  <section class="lv-col" aria-labelledby="lvOnAirH">
+    <h2 class="lv-h" id="lvOnAirH">On air</h2>
+    <div class="lv-monitor">
+      <img id="pgImg" alt="What the stream is showing now" hidden>
+      <div class="lv-none" id="pgNone">
+        <p>The live output window is not open, so there is nothing to show here.</p>
+        <button type="button" class="lv-btn" id="pgOpen">Open the output window</button>
+      </div>
+    </div>
+    <p class="lv-cap"><span id="pgScene">nothing yet</span></p>
+
+    <!-- The same six the LIVE panel shows, drawn by the same rules: one set of
+         numbers, so the two can never disagree about how you are doing. -->
+    <dl class="lp-health" id="lvHealth">
+      <div><dt>On air</dt><dd data-lv="uptime">0:00</dd></div>
+      <div><dt>Bitrate</dt><dd data-lv="kbps">-</dd></div>
+      <div><dt>Frame rate</dt><dd data-lv="fps">-</dd></div>
+      <div><dt>Dropped</dt><dd data-lv="dropped">0</dd></div>
+      <div><dt>Reconnects</dt><dd data-lv="reconnects">0</dd></div>
+      <div><dt>Delay</dt><dd data-lv="delay">-</dd></div>
+    </dl>
+    <p class="lp-error" id="lvError" role="alert" hidden></p>
+
+    <h2 class="lv-h">Sound</h2>
+    <div class="lv-dock" id="lvSound"></div>
+  </section>
+
+  <!-- The switcher. -->
+  <section class="lv-col lv-scenes" aria-labelledby="lvScenesH">
+    <h2 class="lv-h" id="lvScenesH">Scenes</h2>
+    <div class="lv-row">
+      <div class="lv-seg" id="lvTrans" role="radiogroup" aria-label="Transition">
+        <button type="button" role="radio" data-t="cut" aria-checked="false">Cut</button>
+        <button type="button" role="radio" data-t="fade" aria-checked="true">Fade</button>
+      </div>
+      <label class="lv-dur">Over
+        <select class="lp-input" id="lvDur" aria-label="How long the fade takes">
+          <option value="150">150 ms</option><option value="300" selected>300 ms</option>
+          <option value="600">600 ms</option><option value="1000">1 s</option>
+        </select>
+      </label>
+    </div>
+    <div class="lv-list" id="lvScenes" role="group" aria-label="Scenes - press one to put it on air"></div>
+    <p class="lv-hint" id="lvHint">1&ndash;9 put a scene on air &middot; &larr; &rarr; the one before or after</p>
+  </section>
+
+  <!-- Chat: the S11 panel itself, docked, not a copy of it. -->
+  <section class="lv-col lv-chat" aria-labelledby="lvChatH">
+    <h2 class="lv-h" id="lvChatH">Chat</h2>
+    <div class="lv-dock grow" id="lvChat"></div>
+  </section>
+
+</main>
+
+<div id="lvAnnounce" class="sr-only" aria-live="polite"></div>
+
+<script src="livepanel.js"></script>
+<script src="audiopanel.js"></script>
+<script src="chatpanel.js"></script>
+<script src="cmdpanel.js"></script>
+<script src="reqpanel.js"></script>
+<script src="pollpanel.js"></script>
+<script src="liveview.js"></script>
+</body>
+</html>

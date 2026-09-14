@@ -9,6 +9,10 @@ import json, os, subprocess, sys, time, urllib.request
 
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
+# cdp.js is in tools/p0; cpuby.ps1 sits here beside the P5 scripts on purpose.
+# Chrome's throwaway profile belongs in <repo>/.rig with the rest of them.
+P0 = os.path.abspath(os.path.join(S, "..", "p0"))
+O = os.path.abspath(os.path.join(S, "..", "..", "..", ".rig"))
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 results = []
 
@@ -38,10 +42,10 @@ def ps(script, timeout=120):
 
 
 def ev(expr):
-    return subprocess.run(["node", os.path.join(S, "cdp.js"), "9448", "Canvas", expr], capture_output=True, text=True).stdout.strip()
+    return subprocess.run(["node", os.path.join(P0, "cdp.js"), "9448", "Canvas", expr], capture_output=True, text=True).stdout.strip()
 
 
-prof = os.path.join(S, "prof-p5")
+prof = os.path.join(O, "prof-p5")
 kill = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-p5*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 ps(kill)
 created = []

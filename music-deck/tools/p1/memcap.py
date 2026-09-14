@@ -1,8 +1,8 @@
 """Capture only, 30 Hz polling, no encoder: does the working set grow?
     python memcap.py <title part> <seconds>"""
-import ctypes, sys, time
+import ctypes, os, sys, time
 from ctypes import wintypes, byref
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import capture
 
 ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))

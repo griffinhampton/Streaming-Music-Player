@@ -732,6 +732,2510 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Commands set up on the layer they set off (2026-09-13)
+
+T11, asked for in the middle of T10: *"the tts, gift animations, and chat
+commands, should be able to be set up like the components on the canvas
+builder"*. Read as: the layer is the setup, not a layer plus a form somewhere
+else that has to be kept in step with it.
+
+**What it is.** An effect layer's inspector has a Chat command section - a
+name, who may run it, and its two waits (`inspectors.js:442`). Those four props
+are all the server reads (`commands.py:99`), and it reads them through
+`clean()` itself, so a layer's command obeys exactly the rules a list command
+does: one cleaner, not two to drift apart. Adding the layer makes the command
+and deleting it deletes the command. The action it runs, `effect` (`:73`), is
+deliberately not in `ACTIONS` - that tuple is what the Commands panel offers,
+and a list entry pointing at a layer id would break the day the layer went, so
+`clean()` refuses one from config.
+
+**Only the scene on air listens.** A layer on a scene nobody is watching can
+show nothing and play nothing, so it answers to nothing - which is also the
+simplest "off" there is: switch to a scene without the layer. "On air" is
+`canvas.live`, the scene the Canvas (live) source shows (`scene.html?follow=1`,
+components.py:174). The event carries the layer's id and the scene
+(`server.py:1397`), and an effect layer answers only when both are its own
+(`scene.js:911`) - whatever kinds it listens for, because the command is part
+of its own setup. Every other effect layer ignores it, including one listening
+for everything.
+
+**Read on every command, not rebuilt on events.** `live_layer_commands()`
+(`server.py:1377`) is asked on each command. A scene changes in more ways than
+there are hooks - a switch, a save, an undo, a restore, an import over the
+live one - and a hook missed is a command still answering for a layer that is
+gone. It is cached on the live scene's id and revision, which every one of
+those moves, so a chat message costs a lookup. A source that throws is caught
+in the engine (`commands.py:271`): a scene the server cannot read must not take
+the chat reader down with it, nor the list's commands.
+
+**Conflicts are shown, not settled where nobody can see.** A name in the
+Commands list answers first - the layers are asked only after it
+(`commands.py:350`) - so a list command behaves as it did before the layer
+existed. Two layers on one scene with one name: the first answers and the
+second is marked `shadowed`. Both are said in the layer's note
+(`inspectors.js:462`), which puts in words what the name does or why it will
+not - not a usable name, the list has it, another layer took it, the layer is
+hidden, the scene is not on air yet - and in the Commands panel, which now
+lists the layers' commands read-only under "On the scene on air"
+(`cmdpanel.js:269`), so everything the stream answers to can be seen in one
+place.
+
+**What T10 gives it for free.** `effect` is one of `EFFECTS`, so a layer's
+command is counted by the budget, refused while paused and cleared by Stop
+effects exactly as a list command is.
+
+**The probe's one false failure.** `layercmd.js` first asserted that a layer
+stayed dark when the Commands list answered its name, and failed. That layer
+listens for every kind, so the list command's answer - a `command` card -
+rightly lit it, as any command would. What must not happen is the layer's own
+command firing, and that is what it checks now: no event addressed to it.
+
+Not changed: the gif and sound actions in the list stay, so a streamer with
+them set up keeps them. T7's voice and T8's gift layers join `LAYER_TYPES`
+when they exist.
+
+Checked by 15 new unit tests (323 to 338) and `tools/ui/layercmd.js`, 27 of 27:
+a command named in the real Canvas Builder's inspector - typed, saved by the
+editor's own debounce - and fired through a fake IRC server; the owner
+answering past a kinds filter that would never let the event in; a layer
+listening for everything staying dark (the control); the same layer id on a
+scene off air, open in its own page, staying still; a rename moving the
+command, and the old name ceasing to be one; the list winning a shared name,
+with the conflict shown by the inspector, the server and the panel; and with
+nothing on air, no command at all until the scene goes back.
+
+Rerun on the changed code: `fxgif` 11, `fxsound` 13, `addpalette` 12, `onair`
+40 - and `fxflood` 37 of 38. Its failure was "the button resumes as well":
+after a moderator's `!hush`, a click on the Live view left the label reading
+"Resume commands". It had passed on four runs before and passed on the three
+that followed, so it is intermittent, and the run that failed recorded nothing
+that could say why - the label alone cannot tell a click that sent the wrong
+thing from a stale snapshot arriving after the right one. The feed itself has
+no throttle (`HUB.broadcast()` sends at once, the pump within 0.4 s), and the
+one staleness I can find by reading - the pump building a snapshot just before
+a change and sending it just after - corrects itself at the pump's next tick,
+well inside the probe's wait. So rather than a guessed fix, the probe now
+records the Live view's side: every feed message's `paused`, every stop or
+resume the button posts, and the label at the moment of the click - and it
+checks that the Live view heard the moderator's stop *before* clicking, as a
+check of its own. On the two passing runs the pause reached the Live view 4 ms
+after the `!hush`, the click sent `resume`, and the feed said so 3 ms later. If
+it fails again, it will say which half.
+
+## Stop everything, and a limit over every command (2026-09-13)
+
+T10, the abuse pass: three limits that sit over every command, whichever
+service it came from. None of it needs TikTok.
+
+**A budget over all of them.** Cooldowns are per command, so ten picture
+commands with a ten-second wait each are still a picture a second between
+them. `commands.py:62` names the actions that put something in front of the
+audience with nobody checking it first - `gif` and `sound`, with T7's `speak`
+to join them - and at most five of those get through in any thirty seconds
+(`:68`), however many commands they come from. A place is claimed before the
+effect runs and handed back if it fails (`:228`), so two services reading chat
+at once cannot both slip in under the last slot. It is the last gate (`:294`):
+a command refused for any other reason never spends it, and a held effect
+starts none of its command's clocks. The log says `held`, not `cooling` - a
+streamer who reads one for the other raises the wrong limit. Seconds of 0
+turns it off, spelled that way rather than as a count of 0, which would read as
+"no effects ever". Five in thirty because an effect layer holds each for five
+seconds and keeps three waiting: the default costs a normal stream nothing and
+stops a flood at the door rather than in the layer's queue.
+
+**A pause, and a stop.** `stop_everything` (`server.py:1338`) does two things,
+because either alone fails at the moment it is needed. Clearing without
+pausing lasts until the next message of the flood; pausing without clearing
+leaves playing the clip that made you reach for the button. The clear is an
+alert of its own kind, `stop` (`alerts.py`, `KINDS`), which the scene page
+hands to every layer's `takeDown()` whatever kinds that layer listens for, and
+never to `alert()`, where a layer listening for everything would show a blank
+card. The effect layer drops its picture, its clip and - the part that matters
+most - its queue, or the next two events of the flood would walk straight on.
+Polls keep counting: a vote is not an effect.
+
+The pause refuses every command (`commands.py:276`) except those whose action
+is `stop`, which is how a moderator's `!resume` gets through. It still passes
+the role gate, so a viewer cannot resume what a mod stopped, and a stop command
+made in the editor starts at `mod` rather than `everyone` (`cmdpanel.js:207`).
+The pause is not saved: one that survived a restart would be commands silently
+doing nothing at the start of the next stream, with no memory of why.
+
+**Where the button is.** The plan said "on the deck". It is in the Live view's
+header (`liveview.js:219`), first in the row, because the commands and polls
+are run from there mid-stream and the deck's top bar is already full. No
+click-again-to-confirm, unlike the Stop beside it: stopping effects harms
+nothing and is wanted at once. Its label rides the state feed (`:126`), so a
+moderator stopping from chat changes it in every window with nobody pressing
+anything - which the rig checks, rather than assuming.
+
+**The bug this shipped with, for one run.** T10's hook was first called
+`stop()`, and `TYPES.mic` already had one, meaning "cancel my draw loop, close
+my AudioContext, release the microphone". Pressing Stop effects would have
+frozen a meter on stream until the page was reloaded. Thirty-six checks passed
+straight over it, because the probe's scene had no microphone layer on it. It
+was found by reading every `stop(entry)` in scene.js before writing this entry,
+not by a test. The hook is `takeDown` now, and guarded twice: `fxflood.js`
+carries a microphone layer that must be moving before the stop and after it -
+run once against the unfixed name to see it go red (six distinct readings of
+six before, one of six after: frozen), then green - and `tests/test_takedown.py`
+pins that only the alert and effect types define `takeDown`, with a floor on
+its own parse and the microphone's `stop()` kept as the control.
+
+**The probe's other lesson.** Its first run failed six checks on a feature
+that worked. Opening the Live view put the scene page in a background tab, and
+a hidden tab runs no transitions and defers media, so opacity read the reverse
+of the class and `play()` never resolved. The scene page is brought to the
+front now, as the output window is on a real stream. No check was loosened.
+
+**Asked for mid-step, and planned rather than built:** that text to speech,
+gift animations and chat commands be set up on the canvas like everything else
+there. Written into the plan as T11, ahead of T7 and T8, because it decides the
+shape they are built into.
+
+Not done: the text-to-speech controls (T7 ships its own, in the same step);
+a hotkey for the button; saving the pause (above, on purpose).
+
+Checked by 21 new unit tests (302 to 323) and `tools/ui/fxflood.js` on the rig,
+38 of 38: twelve viewers flooding three commands (3 ran, 9 held, 3 effects
+reached the stream), a stop from the button and one from a moderator in chat,
+a viewer's resume denied and a moderator's let through, the queue shown to be
+empty by what appears next, and the control - the same kind of flood with the
+budget off, where every one runs. `fxgif` 11, `fxsound` 13, `t1shot` 11 and
+`onair` 40 were rerun on the changed code and are green.
+
+## The probes that were only ever run once (2026-09-13)
+
+Five checks written during this run - `capcheck`, `t1shot`, `fxgif`,
+`fxsound`, `addpalette` - moved out of a scratch folder into `tools/ui` and
+registered in `uirun.sh` (`:56`, ports 9392-9396), which now knows 17. The
+runner exists for exactly this: its own header records that an eighteen-step
+plan went by without any of the probes running, because they had been driven
+once from a scratch folder and never again.
+
+Copying was the smallest part.
+
+**`capcheck` named this repo.** Its fixture string held
+`C:\Users\...\streaming stuff\music-deck\...`, and `tests/test_tools.py`
+forbids that in anything under `tools/` - a tool that writes the path out
+breaks the next time the folder moves and works on nobody else's machine. A
+stand-in path fixed it and immediately broke the probe's own negative control,
+which asked whether the leaked text was visible by looking for the username
+that no longer appeared. It went red rather than passing quietly, which is
+what a control is for. It now asserts against the fixture string itself
+(`capcheck.js:109`), so it cannot drift again the next time the fixture moves.
+
+**`fxsound` needed a flag the runner did not pass.**
+`--autoplay-policy=no-user-gesture-required` is in the shared launch now
+(`uirun.sh:89`), the same flag `overlay.py` gives the app's own windows -
+without it `play()` is rejected and that probe reports a broken feature that
+works. Confirmed in the runner rather than only under a hand-started Chrome:
+"the play was accepted, not refused by autoplay policy ([])".
+
+**`t1shot` exited 127 every time, after printing 11 of 11.** libuv's
+`UV_HANDLE_CLOSING` assertion, from `process.exit()` racing a socket that is
+still closing. `onstream.js` and `fxsound.js` have the same teardown and never
+trip it, so the pattern is not wrong - this script is. It sets
+`process.exitCode` and lets the loop drain instead (`t1shot.js:144`). The
+reason to bother: a registered probe that always exits non-zero makes
+`uirun.sh all` permanently red, and a suite that is always red stops being
+read.
+
+**`fxlayer` was not promoted.** It chose `assets[0]` and would have fallen
+back to the rig's 4x4 token, failing its own pixel checks the moment anyone
+ran it on a clean machine. Repairing it meant duplicating `fxgif`'s
+picture-building machinery for a probe that overlapped it anyway, so its one
+unique assertion moved instead: a second layer listening for a different kind,
+which hears the same event and must stay dark (`fxgif.js:152`, `:189`). One
+fewer probe to keep, nothing lost.
+
+56 checks across the five, every one green through the runner: capcheck 9,
+t1shot 11, fxgif 11, fxsound 13, addpalette 12.
+
+## Alert and poll layers you can actually add (2026-09-13)
+
+T9, and the smallest step in the plan: two entries in the Add palette
+(`canvas.js:1017`, `:1020`) and two keys in `TYPE_NAME` (`inspectors.js:20`).
+Both types have had a working runtime (`scene.js:791`, `:980`) and a full
+inspector (`inspectors.js:195`, `:185`) since the day they shipped, and no way
+at all to create one - the only route was the API, which is how the rig made
+them, and why nobody noticed for two whole steps.
+
+The defaults written into the palette are the values each layer's own code
+falls back to - `seconds` 6 and `max` 5 for an alert, `bar` and `linger` for a
+poll - so a layer added from the grid is the same as one the server would have
+built. That is the failure this could have had: addable but inert, because a
+prop was named something the runtime never reads. The probe checks the created
+layers' props rather than trusting the entries.
+
+**`ADD` is indexed by position in two places**, which is worth knowing before
+inserting anything into it: `canvastools.js` pastes text using `ADD[0]`, and
+`tools/p7/p7test.js` calls `Editor.add(0)`. Both mean index 0, so inserting
+before the last entry leaves them alone - and the probe carries a control that
+`ADD[0]` still yields a `reactive` layer afterwards.
+
+Checking that turned up a real bug in the pasting. `ADD[0]` is the PNGtuber
+entry, not the text one, so pasted text was built from `{idle, talking, blink,
+bounce, fit}` - props `TYPES.text` never reads - and without the text entry's
+own size. Honest about the size of it: `TYPES.text` falls back internally
+(`p.size || 48`, `p.weight || 700`, `p.color || '#ffffff'`), so pasted text
+looked reasonable; it drew at 48px where a palette-added one is 72, and it
+carried five meaningless props into the saved scene for ever. It looks the
+entry up by type now (`canvastools.js:966`), which also removes the positional
+fragility that caused it.
+
+**The `TYPE_NAME` half was polish, not a repair**, and the record should say
+so. Its only consumer is the type tag in the inspector header,
+`TYPE_NAME[l.type] || l.type` (`canvas.js:866`), so without the two keys the
+tag read "alert" and "poll" in lowercase - never "undefined".
+
+11 of 11 on the rig at first, on a scene created and deleted for it - and one
+of those passes was hollow, which is worth keeping in the record even though
+it has since been fixed. A check that the inspector "calls it something, not
+undefined" used guessed selectors and came back with "Position and size", a
+heading every layer type has: it would have passed with the `TYPE_NAME` edit
+reverted, so it proved nothing at all. Promoting the probe was the moment to
+deal with it rather than leave a check that prints PASS for ever without
+earning it. It now reads the one place `TYPE_NAME` is used - the type tag in
+the inspector header - and asserts the exact words (`addpalette.js:111`). 12
+of 12, with the tag reading "Alert" and "Poll", so the claim is measured now
+rather than argued from the picture.
+
+## Sound the app will play (2026-09-13)
+
+The rest of T3. A `sound` action beside `gif` (`commands.py:47`, the branch at
+`:244`, the injection at `:124`), its own alert kind (`alerts.py:41`), a
+handler that carries the clip in `detail` and answers with no text so one
+command stays one alert (`server.py:1322`), and an effect layer that plays
+what the event names (`scene.js:955`).
+
+**Its own action rather than a second field on `gif`.** "Show this" and "play
+this" are different things to a viewer, and a streamer setting up either
+should not have to think about the other. The cost is one more `_do()` branch;
+the benefit is that neither action has a half-used field on it.
+
+**One audio element per layer, reused** (`scene.js:913`). A new event stops
+whatever was playing rather than layering over it, which is the whole of "two
+clips do not talk over each other" - the queue the layer already had does the
+rest. `hush()` (`:930`) is called when the box hides and again in `destroy`,
+because a layer somebody deletes mid-clip must not keep playing to the stream.
+A layer with a sound and no picture is a legitimate thing to build: it shows
+nothing and just plays.
+
+An unset volume means 0.8, not silence. `Number(undefined)` is 0, and a
+feature that is silent by default looks exactly like a feature that is broken.
+
+**A batched edit left the code broken for a few minutes, which is worth
+recording.** Three edits went out together; one was refused because its anchor
+matched twice - the effect layer's `next()` opens with bytes identical to the
+alert layer's, having been modelled on it - while the other two applied. That
+left `this.sound(...)` being called with no such method: a TypeError on the
+first event. The tool refusing to guess is what surfaced it. The anchor that
+is unique turned out to be a single character: the effect layer caps its queue
+at `|| 3` where the alert layer uses `|| 5`.
+
+**The probe failed first, on a working feature.** It asked whether the element
+was paused, two seconds after firing a clip half a second long - by which time
+a perfectly successful play has finished and paused itself. That is the same
+error as measuring any state whose meaning depends on when you look. It asks
+two timing-independent questions now: did the play promise resolve (a
+rejection is what blocked autoplay looks like, and the app swallows it on
+purpose so the alert loop survives), and did `currentTime` advance. 13 of 13,
+with `refused: []` and `0.5s, ended=true`.
+
+Two things the probe had to solve rather than change the app to suit it. The
+element is detached - `new Audio()` never enters the document, so
+`querySelector` cannot find it - so a recorder is injected before the page
+loads, wrapping `Audio.prototype.play`. And the clip has to really decode: an
+ID3 header full of zeros uploads happily and then fails, so the probe builds
+an actual WAV, header and PCM samples, which any browser will play. Chrome is
+started with `--autoplay-policy=no-user-gesture-required`, the same flag
+`overlay.py:32` gives the app's own windows; without it the probe would report
+a broken feature that works.
+
+Four unit tests, 298 to 302, including a control that `gif` and `sound` do not
+answer for each other - both take an asset id in `target`, so a branch written
+into the wrong one would look right in every other test.
+
+## Sound the app will keep (2026-09-13)
+
+T3's blocker, cleared. The step wants a clip a command can play; there was no
+clip to point at, because `assets.py` accepted pictures and video only. Four
+extensions now join it - mp3, ogg, wav, m4a (`assets.py:31`) - with a cap of
+their own at 24 MB (`:37`). Neither existing cap fits: a minute of wav is
+about 10 MB, so the picture cap would refuse ordinary clips, while the video
+cap would let somebody park an album in the folder. `kind_of` answers "audio"
+(`:65`), which matters because `renderAssetGrid` filters on `kind` - an
+unlisted kind is a file the picker will not offer, which is exactly how every
+animated GIF became invisible earlier today.
+
+**Two different gates, and worth being precise about.** An upload is checked
+by extension and size only; `save_bytes` never looks inside the file, and that
+was already true of pictures. An *import* is checked byte by byte, because the
+.zip came from somebody else - so `sceneio.MAGIC` gained a validator per type
+(`sceneio.py:61`) and the id and file patterns gained the extensions (`:40`),
+without which a shared scene would arrive with its clips silently dropped.
+
+**The serving route was quietly wrong for anything new.** It took its type
+from `mimetypes.guess_type` with `image/png` as the fallback, and sets
+`X-Content-Type-Options: nosniff`. On Windows mimetypes reads the registry, so
+a machine without an `.ogg` association would serve a clip as a picture that
+the browser then refuses to sniff - a 200 that never plays, with nothing said
+anywhere. `OK_EXT` was already the authoritative map and the route ignored it;
+it asks the store first now (`server.py:2030`). It resolves correctly on this
+machine, which is the point: this ships as an .exe to other people's.
+
+**Three places would have drawn a broken picture, and one was expensive.**
+Both asset grids render `<img src=thumb||url>` for anything that is not
+video-without-thumb, so a clip drew the broken-image icon; they show a mark
+instead (`inspectors.js:576`, `canvas.js:1117`). The costly one is
+`deck.js:1684`: every asset is measured through `new Image()` when the deck
+loads, and an `<img>` pointed at a clip fetches the whole file - up to 24 MB -
+to fail at decoding it, with no `onerror` to notice. Video was already paying
+that.
+
+Two deck lists offered every asset there is: the picture themes, which are
+read out of an asset's colors, and the sticker picker, which draws an `<img>`
+on the overlay. Both are filtered to picture kinds now (`deck.js:700`,
+`:1638`). That also removes video from them - which was already broken there
+rather than newly so, and is worth saying plainly rather than letting an audio
+change look like it did more than it did.
+
+`tests/test_assets.py` is new, because the store had no tests at all: twelve,
+including a control that the audio branch of `kind_of` did not swallow the
+other kinds, the size class sitting between the other two, and every magic
+validator against an impostor wearing the wrong extension and against a
+truncated file that must read as "not that type" rather than throwing. On the
+rig, 8 of 8 on the wire: a clip uploads, lists as sound, and comes back as
+audio/mpeg with nosniff intact, beside a picture that is still image/png.
+
+What this does **not** do is play anything. The clip can be kept, served,
+imported and chosen; the `sound` action and the playing of it are the rest of
+T3.
+
+## A command that puts a picture on the canvas (2026-09-13)
+
+T2 of `docs/INTERACTIVITY_PLAN.md`, and only a third of it. The step promised
+`gif`, `sound` and `speak`; the panel's action list is built straight from
+`commands.ACTIONS`, so shipping the other two would put options in front of
+somebody that quietly do nothing. Sound has no asset class yet and speech has
+no bridge, so `gif` went in alone (`commands.py:47`, the branch at `:230`, the
+injection at `:122`).
+
+**The picture belongs to the command, not the layer.** It rides in the alert's
+`detail` (`server.py:1299`), which is why one effect layer can serve every gif
+command instead of needing one layer each - and a command with no picture is
+not a failure, because the layer falls back to whatever it was given.
+`scene.js:922` prefers `ev.detail.asset` and keeps `props.src` as the
+fallback.
+
+**A kind of its own, and that is not cosmetic.** `alerts.event()` turns an
+unknown kind into "note", so posting "gif" without listing it in `KINDS`
+(`alerts.py:41`) would fail *silently*: the alert still arrives and the layer
+waiting for it never fires. Riding "command" instead would have meant every
+!command with a response also firing the picture layers.
+
+**One command, one alert.** `_record` keeps whatever the handler returns as
+the command's response (`commands.py:249`), and `after_command` posts a second
+alert for any command that has one - so a chatty `command_gif` would put a
+picture on screen *and* an alert card beside it, off one command. It returns
+no text for that reason. That claim cannot be unit-tested here: injecting a
+double that returns "" and asserting it returned "" tests the double. It is
+pinned on the rig instead, where both halves exist - fire `!pic`, count the
+alerts, and there is exactly one, of kind "gif", carrying the asset in
+`detail`.
+
+Two smaller things, both the sort that fail quietly. `cmdpanel.js` asked the
+same question in two places - which field an action keeps its argument in -
+and a third answer was about to be added; it is one `fieldOf()` now
+(`:45`), because when `row()` and `readRows()` disagree a command saves its
+picture into a field nothing reads and the setting simply does not stick. And
+the effect layer decides its element type per source (`scene.js:883`) rather
+than once when the layer is made: a gif command can name an `.mp4`, and a clip
+arriving by event would otherwise land in an `<img>` and draw nothing.
+
+The rig said 10 of 10, on a layer deliberately given no picture of its own, so
+what appeared could only have come from the command. Four unit tests, 282 to
+286. One of them failed first, and usefully: it asserted the outcome "refused",
+which is the name of the engine's *counter* - the outcome is "denied". Reading
+the real words out of `commands.py` also showed the test only covered the role
+half of what its own docstring claimed mattered, so the cooldown is pinned now
+as well. For a picture command that is the half that matters: without it, one
+viewer can make a stream unwatchable.
+
+## A layer that shows something when something happens (2026-09-13)
+
+The display half of T3 and T8 in `docs/INTERACTIVITY_PLAN.md`: `TYPES.effect`
+(`scene.js:866`), a layer that shows a picture or a clip when an event
+arrives and hides again after its seconds.
+
+It needed no new transport. `Stage.alert()` hands each event to every layer
+whose type declares an `alert()` hook, and `needsAlerts()` opens the socket
+only when such a layer is visible - so declaring the hook (`scene.js:895`) was
+the whole of it. The queue rule is copied from the alert layer deliberately:
+keep the newest few, drop the rest. That matters more for pictures than for
+text, because a burst turning into a minute of backlog would leave the stream
+showing something that finished long ago.
+
+It ships with its palette entry (`canvas.js:1009`), its `TYPE_NAME`
+(`inspectors.js:20`) and its inspector (`:207`) in the same change, because
+the alert layer is the cautionary tale: it has a full inspector and no way to
+create it, so S15's layer can only be made through the API.
+
+**No sound, and that is a finding rather than a gap.** `assets.py`'s `OK_EXT`
+holds pictures and video only, so there is no `.mp3` to point at. Audio needs
+an extension, a magic-byte check and a size class of its own, plus the
+matching half in `sceneio.py`'s import - the validation hardened earlier
+today. `--autoplay-policy=no-user-gesture-required` is already set
+(`overlay.py:32`), so the browser side is ready and the asset side is not.
+
+**Every picture picker in the app was hiding animated GIFs.** `kind_of`
+(`assets.py:52`) returns "gif" for a multi-frame image, "image" for a still
+one and "video" for a clip, and `renderAssetGrid` filters
+`kinds.includes(a.kind)` (`inspectors.js:576`). Every call site asked for
+"image video" or "image", so a real GIF matched none of them. Found by
+looking rather than reading: the rig holds one asset and its kind is "gif", so
+the image layer's picker on this machine was empty while an asset existed.
+Fixed at all five sites (`inspectors.js:210, 250, 351, 352, 353`). The app
+plainly expects animated pictures in layers - `stillOf()` exists to freeze
+them for ultra mode - so this was an oversight, not a policy.
+
+**The probe passed 8 of 8 and photographed an empty stage.** It measured the
+classes and the computed opacity and never asked whether a pixel had been
+drawn, which is S7's microphone layer exactly - the one `onstream.js`'s header
+records as passing "24 bars above the floor" while every bar had flexed to
+zero width. Two things were wrong at once: the assertions, and the asset. The
+rig's only picture was a 4x4 token, which `object-fit: contain` blows up into
+four flat pixels that are indistinguishable from a dark background, so a layer
+working perfectly looked like a layer doing nothing. It now asks for
+`naturalWidth` (did it decode) and `getBoundingClientRect` (was it laid out
+with real size), points at a 240x240 fixture made for the purpose, and shoots
+at 1920x1080 rather than photographing a thumbnail of the scene. 11 of 11, and
+the picture shows a magenta square where the listening layer is and nothing
+where the control layer is.
+
+## The symbol that starts a command (2026-09-13)
+
+T1 of `docs/INTERACTIVITY_PLAN.md`. The ask was to let the streamer choose
+what starts a command - `!`, `/`, `@`, whatever suits - and the work turned
+out to be small in the parser and much larger everywhere the symbol is shown.
+
+**One parser, and that was worth establishing before touching anything.**
+`chat.py`'s `message()` fills `command` and `args` centrally, "so !queue means
+the same thing whichever service it arrived from", and `polls.py`'s own header
+says outright that a vote of "!1" is read as the command "1" and that it keeps
+no parser of its own. A grep for anything reading a leading `!` found exactly
+two places in the app: that line, and `commands.py:76` normalising a saved
+name. So one setting carries commands, song requests and poll votes together,
+and no adapter had to learn anything.
+
+**Five places said `!` out loud, though**, and a setting that changes parsing
+without changing them would look broken while working perfectly: the command
+editor's row legend and its fired-log, the poll panel's "vote by typing !1",
+and - the two that matter most, because they go on stream - the alert titles
+at `server.py` for a queued song and for any command that ran. All of them
+build the label from the symbol in force now. One was left alone deliberately:
+`scene.js`'s alert *sample*, which is an illustration in the builder rather
+than a label on anything real.
+
+**A letter or a digit is refused**, and that is the whole reason `set_symbols`
+validates rather than just storing a string. With `a` in force, "apple" runs
+the command "pple" and half of ordinary chat becomes commands. Whitespace goes
+the same way, duplicates are dropped, and nothing usable left falls back to
+`!` rather than to nothing - a chat where no command can ever fire looks like
+a broken app, and the setting that did it would be invisible. What the setter
+keeps is what it returns, and the caller saves *that*, so config cannot end up
+holding a symbol the app is not honoring.
+
+**Module state, where `songreq.py` and `captions.py` would take a
+`configure()` on an object.** Threading the symbol to each adapter instead
+would make a per-service symbol expressible, which is precisely the property
+`message()` exists to prevent. One setting, one place. `message()` takes an
+optional `symbols=` so tests can ask a parsing question without reaching into
+module state and changing what every later test in the run parses.
+
+`commands.py` no longer strips `"!"` from a saved name but the whole class of
+leading punctuation. `NAME_RE` wants a letter, digit or underscore first, so
+anything before that was somebody typing the symbol out of habit - and the
+change means every command saved under the old symbol survives the switch
+untouched, because the stored name never carried a symbol at all.
+
+Checked twice over. Eleven unit tests took the suite from 271 to 282: a table
+of awkward shapes pinned to their old answers (symbol alone, symbol-space, a
+doubled symbol reading as a name `NAME_RE` then refuses, a symbol inside a
+word), several symbols live at once, and the control that matters - with `/`
+in force, `!queue` has to become ordinary text. Then nine checks on the rig
+for the wiring the unit tests cannot see, one of them a risk that had only
+been read and not exercised: `_merge_into` is a deep merge, so writing the
+symbol through `/api/config` does not wipe `commands.list`. Had it been
+shallow, changing your command symbol would have deleted every command you
+had.
+
+## A scene that could call home (2026-09-13)
+
+Scenes can be shared - `/api/scenes/import` takes a .zip somebody else made,
+and `server.py:1982` says so in as many words: "A picture can come from someone
+else's scene now (an import)." The zip itself is well guarded: size caps, a
+member cap, password-protected files refused, names checked, `scene.json`
+required, and every asset re-stored locally after its magic bytes are read.
+
+What is not guarded is `props`. `scenes.py`'s `_layer()` coerces the transform
+and the style - `_num()` with ranges, enum whitelists, length caps - and then
+line 124 does `layer["props"] = dict(layer.get("props") or {})` and hands them
+through as they came. And `scene.js`'s `assetUrl` read
+
+    /^(\/|https?:|data:|blob:)/.test(src) ? src : '/asset/' + encodeURIComponent(src)
+
+so a layer whose `src` was `https://somewhere/beacon.png` was fetched from
+wherever it pointed, on this machine, while the scene was on stream. That is an
+IP address and the timing of a stream handed to whoever wrote the scene, and a
+picture they can change whenever they like, on somebody else's stream.
+
+Measured rather than argued. A scene holding one image layer pointed at
+`https://example.invalid/beacon.png` - a TLD that cannot resolve, so the test
+could not contact anybody even if it failed - imported into the rig and came
+back with the URL stored verbatim. The import reported `assets: 0, skipped: [],
+missing: [], builtin_missing: []`: a clean bill of health. It is clean because
+`used_assets()` only collects strings whose last segment matches `ASSET_ID`,
+`^[0-9a-f]{16}\.(png|jpe?g|...)$`, and "beacon.png" is not one - so the URL is
+never remapped, never stored, and never reported.
+
+Fixed in `assetUrl`, which is where a string becomes a request, and not at the
+import: an import is one way in and the API is another. Anything carrying a
+scheme is refused, `builtin:` excepted (assets.py:156 - this app's own name for
+shipped artwork). A leading `/` is not enough on its own, because `//host/x` is
+remote too; that one would have shipped if the rule had been written from
+memory instead of tested. Nothing legitimate is lost: the picker uploads a file
+and keeps the id it gets back (`canvas.js:1123`, `canvastools.js:928`), no
+layer type has a `url` or `link` prop, and `data:`/`blob:` only ever appear on
+the *upload* side. A refused src renders as empty, which is the state a layer
+with no picture chosen is already in.
+
+The neighbouring line went too: `url("${src}")`, now at scene.js:224, took a
+quote straight into CSS, so a src holding one could close the `url()` and
+write declarations of its own. It is `JSON.stringify`d now.
+
+Checked on the rig at the wire, not in the DOM, because the claim is about a
+request that must not happen: Network enabled on a blank target *before*
+navigating, since a page opened straight at the URL has already made its early
+requests. 7 of 7 - the layer was built, nothing was requested from the host the
+scene named, the layer did not adopt the URL, and the control fired, the same
+listener catching `https://example.invalid/control.png` when the page was told
+to ask for it deliberately.
+
+Two things left undone on purpose. The import still calls such a scene clean,
+which is a lie of omission worth fixing where the report is written rather than
+here; `tools/ui/scenebeacon.js` records it as a standing check so it cannot be
+forgotten. That probe is committed and registered in `uirun.sh` at port 9391
+rather than left in a scratch folder, which is the habit `uirun.sh` exists to
+end. And
+`props` are still unvalidated server-side - `validate()` keeps unknown fields
+deliberately, "so a newer editor's data survives an older server", and
+narrowing that is a bigger change than this finding justifies.
+
+## The overlay that would have read out a file path (2026-09-13)
+
+`captions.js` had a second fault, one branch below the one in the section
+below. That one carried an instruction; this one carried `c.error` - whatever
+the engine threw - and drew it on the overlay.
+
+What that can be was produced rather than guessed. Handed a model folder with
+no weights in it, faster-whisper says "Unable to open file 'model.bin' in
+model 'C:\Users\<name>\...\models\small.en'", and `captions_whisper.py:440`
+sends it on as "Whisper could not load: ..." - 130 characters against this
+machine's own store, 63 of them the absolute path to it. It reaches the
+window through `captions.py:234`, which keeps the engine's message as
+`_error`, and `:292`, which ships it in the snapshot the state feed
+broadcasts to every open page. The tamer thing the same branch
+carries is `captions.py:130`, fixed text and no better in front of an
+audience: "press Download on the Captions tab" is an instruction to whoever is
+holding a deck the audience has not got.
+
+Fixed at the overlay, and where is the whole decision. The deck draws the same
+`c.error` in full at `deck.js:3214`. That surface is private, and it is the
+one place the path is the useful part, because it is how somebody fixes their
+own setup. Capping the text where it is made - the `str(exc)[:80]` that
+`spotify_api.py` uses ten times and `songreq.py` twice - would blind the deck
+and still leak, since the path starts well inside the first 160 characters.
+`captions_whisper.py` does have `_gpu_reason()`, which caps at 160, but it is
+for graphics-card failures and strips no paths. The rule is about the
+audience, not the string: private surfaces may say anything, on-stream
+surfaces may not.
+
+Two claims were dropped rather than written up. The PowerShell spawn at
+`captions.py:163` puts `SCRIPT`, an absolute path, in its argv, and `:190`
+wraps a failure as "Could not start PowerShell: {exc}" - which looked like a
+second route until it was run. It produces "[WinError 2] The system cannot
+find the file specified", with no path in it at all, and a bogus `-File`
+raises nothing, because the script's own errors go to `DEVNULL`. The other
+dropped claim was the first plan for the fix - cap it at the source - which
+the paragraph above overturned.
+
+Checked on the rig, 9 of 9, on the plain page and never `?preview=1`: under
+preview `demoTick()` keeps the stage 'on', so the branch never runs there,
+which is the same trap the other one set. The probe carries its own control -
+it is shown finding the path when that text is written into the very node the
+fix stopped writing to, and finding nothing once it is put back.
+
+`tests/test_onstream.py` holds the line, and takes its scope from
+`components.py` instead of a list kept in the test, so a seventh overlay is
+policed the day it is added - today 7 components, 6 pages, 16 modules, 4,997
+lines. `scene.js` is the one allowed exception, its error banner being a
+weighed decision ("a black window that looks fine from the outside is the
+worst way to find out"), and it doubles as the positive control: it has to
+keep matching, or the rule has broken rather than the code having got
+cleaner. That control earned itself immediately - the rule's first version
+looked only for `.error`, matched nothing in any on-stream module, and would
+have passed forever.
+
+## Looking at the four screens, at the sizes they actually open (2026-09-13)
+
+A whole session of reading code and none of looking at it. So: headless shots
+of the deck, the Canvas Builder, the Live view and the remote, reviewed as a
+user would see them.
+
+The first set was worthless, and worth saying why. I shot all four at
+1500x1000, and `launch_deck` opens them at 1180x820, 1440x900, 1280x880 and
+340x640. The remote is a 340 px strip - at 1500 it is not a narrow layout, it
+is a narrow layout stranded in dead space. Worse, `canvas.css` has
+`@media (max-width: 1440px)`, and the builder opens at exactly 1440: shot at
+1500 it sits on the wrong side of its own breakpoint, showing a layout nobody
+gets. Review these at their launch sizes or not at all.
+
+Then the surfaces that actually go on stream, at their configured sizes:
+nowplaying 880x230, lyrics 560x320, queue 420x320, captions 900x200, camframe
+480x480, and a composed scene at 1920x1080. One thing there is worth more than
+the shots. `?preview=1` does not show what goes on stream: `lyrics.js:29` keeps
+sample lines, `:268` substitutes a demo track "Neon Highway - The Static
+Waves", and `captions.js:242` runs a demo tick. Shot in preview, the lyrics
+overlay reads "Headlights on the wet road" while the server holds the real
+synced words from lrclib. I chose preview to dodge `windowctl`'s 4 s first-open
+hint, which `shotpage`'s 3500 ms wait would have photographed, and traded a
+cosmetic artefact for a fabricated one. Shoot these plain, and wait past 4 s.
+
+One thing found, and fixed. `captions.js:114` set "Captions are off - press
+Start in the deck" as its whole off-state status. `queue.js` says something
+similar and has weighed it in writing - "the real reason is worth the two extra
+words on stream" - but that is a reason, and this was an instruction.
+
+Reading it made the fault sharper than "preview text reaching the stream". The
+branch only ever renders on stream: under PREVIEW, `demoTick()` calls
+`render({ on: true })` from the first tick and every 2.2 s after, so the stage
+is never 'off' there and the line is never reached. It could only ever be read
+by an audience with no deck to press Start in.
+
+The status now says "Captions are off" and nothing else. A first attempt gated
+the sentence on PREVIEW, which was worse - a branch that cannot execute, under
+a comment claiming the hint "stays in the preview" where it had never been.
+Checked on the rig both ways: on stream 'off' with the instruction gone from
+the document, in preview 'on' with the status hidden throughout.
+
+Nothing else was wrong. Every candidate dissolved on inspection: the CANVAS card
+clipped at the deck's right edge is `overflow-x: auto` at `deck.css:988`, a
+scroller doing its job; the remote's sliced card is the same with a fixed
+footer; the wall of "Loop 53 / Shape 52" layers is the rig's P5 stress scene,
+not a naming problem; and "step 3 is below the fold" was simply false - body is
+`overflow: hidden` at `deck.css:48` with the scrolling in `.col` and `.rail`,
+and step 3's heading measures at y=773 in an 820 viewport. What is good is
+worth naming too: the Live view's empty state says the output window is not
+open and offers the button that opens it, and the inspector's says which
+settings it is showing and how to change them.
+
+## The token that already got out, and the road it took (2026-09-13)
+
+**A credential has already left this repository once, so the question worth
+answering is not whether the code looks careful but whether the same road is
+still open.** Revoking the token in 62e2105 is the user's to do at Spotify's
+end - it is in git history for good. Shutting the road is this.
+
+The road was not the one I expected. That commit added no config file and no
+token file: it added `dist/Music Deck.exe` and nine `__pycache__/*.pyc`, one
+of them `spotify_api.cpython-313.pyc`. The credential rode out inside a build
+artifact. Every pattern that would have stopped it is in `.gitignore` now -
+`dist/` at 27, `dist-staging/` at 28, `__pycache__/` at 33, `*.pyc` at 34 -
+alongside `cache/`, `config.json`, `*.token.json`, `spotify_token.json`,
+`.env`, `*.pem`, `*.key`, `.rig/` and `.build-env/`. Nothing binary is tracked
+today, and `.gitignore` is itself tracked, so the guards travel with the repo
+rather than living on one machine.
+
+The cargo does not escape either, on any path checked. `CONFIG` is served raw
+by `GET /api/config`, which is fine because it holds no secret: the whole
+`spotify` block is `client_id` - public by design under PKCE - and
+`use_account`. `_post_token` reads a response body only on success; its
+`HTTPError` branch never calls `exc.read()`, and on a 400 or 401 it clears the
+token, deletes the file and sets one fixed sentence. The five Spotify keys on
+the state broadcast carry derived values only, and `client_id_set` is a
+boolean on purpose: it says whether an id is set, never what it is.
+
+Measured as well as read, because reading shows intent and only the bytes show
+what is there: 41 leaf fields across the spotify, now and local keys of a live
+payload, one credential-shaped *name* - that boolean - and no long opaque
+string anywhere. The scan printed names, lengths and counts, never values.
+
+`tests/test_secrets.py` keeps both halves, and the second could not follow the
+house pattern. `alerts.py`, `commands.py`, `polls.py` and `songreq.py` each
+carry a `test_the_module_holds_no_credential` that greps their own source for
+`access_token`. `spotify_api.py` is the OAuth client; that string is in it
+because that is its job, and weakening the test until it passed would be worse
+than not having one. For a module that is supposed to hold a secret the
+question is whether the secret can get out, so this seeds a fake token and
+looks for it in everything the module hands to anyone else.
+
+Both halves were checked by breaking them. Removing `dist/` from `.gitignore`
+fails naming the pattern and the reason it is there; making `peek_queue()`
+return the token fails naming `peek_queue()` and `queue()` - two surfaces,
+because one delegates to the other. Both files were restored byte for byte.
+
+That second run found a fault in the test itself. `assertNotIn` prints the
+needle and the haystack, so the day it caught a real token it would paste that
+token into the terminal and into any log the run was kept in - a test against
+exposure being the thing that exposes. It collects the names of the offending
+surfaces now and asserts on that list; the value is never quoted.
+
+What it does not cover is written into it: git history, which no test can
+change, and whatever a build tool decides to bundle. It guards the road and
+the cargo, not the whole journey. 266 tests pass, one skipped.
+
+## Every endpoint the pages and tools call (2026-09-13)
+
+**The pages and the tools both reach the app over HTTP, and nothing had ever
+checked that the paths they name lead anywhere.** `test_tools.py` checks how
+tools find each other; `test_harness_urls.py` checks how they encode a URL.
+Neither asks whether the URL is served. The pages matter more than the tools
+here: a tool that breaks wastes a debugging session, a page that breaks is the
+app.
+
+The question came out of reading `framenative.py` line by line before handing
+it back: it was written against S5's server and S9 to S18 moved a great deal of
+that. It was fine, but reading one tool by hand does not scale to forty, and a
+tool that calls a renamed route fails only when somebody runs it - usually
+mid-debugging, which is the worst moment to find the instrument broken.
+
+The answer is that nothing is broken: of 185 distinct paths - 113 under `web/`
+and 72 under `tools/` - every one is served, by one of 101 literal routes, one
+of four regex routers, or the `/api/spotify/` prefix. That is now
+`tests/test_endpoints.py`, and the suite is 266.
+
+The path check itself failed three times first, and each is the reason it is
+worth keeping. It passed everything on its first run: `server.py` has
+`if not path.startswith("/api/")` as a guard against static files, the scan
+collected that as a route prefix, and every path in the world matched it - a
+green that could not go red. Then it could not read fourteen paths: an
+f-string like `f"/api/scenes/{ALL[0]['id']}"` carries quotes inside its braces
+and the extractor stopped at the first one, so interpolations are collapsed
+before paths are pulled out rather than after. Then, pointed at `web/`, it
+reported seven faults that were not faults: the tools write their paths whole,
+the pages build them. `windowctl.js` is handed `/api/window` and appends
+`/close` itself; `reqpanel.js` posts to `/api/requests/${which}`.
+
+Hence two weaker rules - a path some route continues (a base), and a path
+whose interpolated segment stands for a real one (a wildcard) - and hence
+`test_the_scan_can_actually_fail` carrying one control per rule: a bogus path,
+a bogus base and a bogus wildcard must all still come back unserved.
+
+Checked by adding a bogus endpoint to a shipped page rather than a tool, and
+watching it name the page and the line, then restoring it byte for byte.
+
+Then the method, which the first version left out and said so. A wrong verb is
+not a loud failure: both handlers end in `self._send(404, "not found")`, at
+2344 for GET and 2857 for POST, so a GET at a POST route looks exactly like a
+route that is not there. Splitting the routes by the handler they live in
+gives 39 GET-only, 58 POST-only and four served by both, and every call site
+is classified by the verb it actually uses - `fetch` without options, a
+`post(...)` helper, `sendBeacon`, `new EventSource`, `urlopen`. Of 651 calls
+classified, none uses the wrong one.
+
+That check reported a fault too, and it was mine again: `canvas.js` calls
+fetch('/api/components/' + id + '/open'), and stripping the trailing slash off
+that base leaves `/api/components`, which really is GET-only. A literal ending
+in "/" is a base, and is counted apart from the paths now. Checked the same
+way, by putting `fetch("/api/live/start")` - a GET at a POST route - into a
+page and watching it name the line.
+
+What it does not see is written into it: under the two weaker rules, a renamed
+sibling. If `/api/requests/approve` became `/api/requests/allow`,
+`reqpanel.js` would still match through `/api/requests/recent`. And the
+classifier knows only the verbs in use today; a new helper name would leave
+its calls unclassified rather than wrong, which is why the floor counts
+classified calls and not just paths. Nothing builds a path from a variable
+today: the `BASE + path` in the runners and the `fetch(url, ...)` helpers in
+the panels both receive a literal from their call site.
+
+## A counter nobody reads, sending the whole state five times over (2026-09-13)
+
+**The state feed sends only when something a window shows has changed - and a
+counter that climbs on its own quietly turns that off.** `_change_key` is the
+whole snapshot minus the few things that move by themselves, and `chat.py`'s
+snapshot carried `total`, a count of every message ever received, which ticks
+on every line of chat.
+
+Measured on the rig rather than argued, in three timed windows:
+
+| phase | sends in 10 s | rate |
+|---|---|---|
+| idle, no chat | 5 | one per 2.00 s |
+| connected, a message every 250 ms | 25 | one per 0.41 s |
+| connected, joined but silent | 5 | one per 2.00 s |
+
+Five times the traffic, and the third row is what makes it an answer rather
+than a coincidence: connected-but-quiet returns to the heartbeat, so it is the
+messages and not the connection. Every one of them made the server serialize
+the entire state - components, scenes, captions, fonts, all of it - and push it
+to every open window, for a number no page draws. It is the flood the gate was
+built to stop: "Sending the whole state 2.5 times a second regardless had every
+window parsing and re-checking it for nothing."
+
+`alerts.total`, `alerts.dropped`, `commands.ran` and `commands.refused` are the
+same shape. `requests.queued` and `requests.refused` are too, though that path
+already calls `HUB.broadcast()` outright at server.py:1285, so they cost nothing
+today - they are dropped with the rest so that a later tidy-up of that explicit
+call cannot bring the fault back.
+
+The fix follows a precedent already inside the function: `captions.level` and
+`spotify_queue.age` are stripped from the key and still sent. These are now
+too, so the numbers stay on `/api/state` for anyone debugging and simply stop
+being a reason to send. After: one per 2.04 s while busy against 2.00 s idle,
+5.0x down to 1.0x, with the same 39 messages going through.
+
+Why nothing caught it: no test touches `_change_key`, and none cheaply can -
+importing `server.py` runs `load_config()` and builds a SceneStore over the
+user's real data directory. It is a rate rather than a value, so it belongs on
+the rig: `tools/ui/keyleak.js`, registered in `uirun.sh`, 7 of 7, no browser
+needed. It counts `HUB.sends` from `/api/debug/mem` across the three windows
+above, and before them it samples `/api/state` every two seconds with the app
+sitting still and insists nothing moved. That wider check is the point: fixing
+`chat.total` fixed chat, and would have done nothing about the next counter
+added to any of the other thirty-four fields.
+
+Two details in it were worth getting right. It takes out exactly what
+`_change_key` takes out - the clock, the three playing positions, the caption
+meter, the queue's age - by field rather than by object: dropping all of
+`spotify` or all of `captions` would leave a sixth of the payload unguarded,
+which is where the next counter would land. And it samples rather than
+comparing two reads, because a field that goes A to B and back between them
+looks like it never moved. Measured by hand first at two seconds for thirty:
+across all 34 remaining fields, nothing moves at rest.
+
+What it does not cover, said plainly: Spotify's poller only runs while the
+queue window is open (`spotify_api.py:82`), and opening it would put real calls
+on the user's account, so drift under Spotify polling is untested.
+
+Four other fields were suspected and cleared, which is worth writing down so
+the next reader does not repeat the search. `live.snapshot_status()` carries
+only state, error, has_key, url, preset and reconnects - its own docstring
+promises "nothing that changes every second", and it keeps the promise.
+`VOICE.tick()` runs on every pump cycle but calls `on_change` only when
+`speaking` actually flips. `_lyrics_info` is recomputed but cached against the
+track key. And `windows[*].rect` does move whenever a window is dragged or
+resized - but the deck reads `rect.w` and `rect.h` to keep its size fields
+live (`deck.js:2650`, `deck.js:2900`), so that one is a broadcast something
+actually wants.
+
+Two of the seven exist only so the other five cannot pass for the wrong
+reason: one asserts the adapter really counted the messages (39 of 39), and
+the drift check refuses to pass on fewer than 25 fields, so a failed fetch
+reads as a failure rather than as "nothing moved". A probe that green-lights
+an empty run is this repo's most repeated failure.
+
+The three snapshot docstrings say so now as well. `chat.py`'s read "what changes
+rarely", which `total` had never done; the next counter added there will find
+the rule written beside it.
+
+## Forty-three controls that said the wrong thing, and a scan wrong twice (2026-09-13)
+
+**`title` is the last step of the accessible-name algorithm, not a fallback that
+always fires.** Text content outranks it. So a button with a glyph in it never
+reaches its title at all: the glyph wins and the title is thrown away.
+
+Twelve window buttons - the identical `minBtn`/`closeBtn` pair on captions,
+frame, lyrics, nowplaying, queue and scene - held `&minus;` and `&times;` over
+titles reading "Hide - find it on the taskbar" and "Close (also Alt+F4)", and
+spoke as "minus" and "times". Seventeen reset dots on the deck held `&#8635;`
+over "Reset to theme". That is worse than having no name, because every check
+that asks whether a label is *present* passes them. `windowctl.js` only binds
+the clicks at 99-101, so the markup was the only source of a name.
+
+Forty-three in all: seven transport buttons and five form controls on the deck,
+the twelve window buttons, the seventeen reset dots, and two buttons `deck.js`
+builds - the delete on an asset cell (1834) and the remove on a watched folder
+(2048). Eleven other generated sites already carried `aria-label` over their
+glyph, so those two were outliers against a settled house pattern rather than a
+judgement call. Both now take the item's own name.
+
+Nothing in the suite could have caught it. `tools/ui/inkcenter.js:131` records a
+mark's label as `aria-label || title` - the one probe that measures these very
+buttons treats the two as the same thing, which is the exact confusion at fault.
+
+**The scan written to find them was wrong twice, in opposite directions, and
+that is the part worth keeping.** It first reported 153 faults on `deck.html`:
+it had no `<label>` support, so every color input wrapped in its own label
+looked nameless, and its flat element list let text bleed from closed nodes into
+later ones. Rebuilt as a real tree, it then reported 0 - because it skipped
+anything with a `hidden` ancestor. But `hidden` on a container is just a panel
+waiting its turn, and the controls inside are reached the moment a script shows
+it. Only `hidden` on the control itself means inert. A page with 351 controls
+reporting zero faults deserved the same suspicion as one reporting 153.
+
+Three things it flagged are correct as they stand: four file inputs on
+`canvas.html` are `hidden` and fired by styled buttons, so a name on them would
+be dead weight; `chatpanel`'s `cp-new` is empty in the template and named by
+`paintNew()` at 109 on the same path that unhides it; and the swatch buttons
+whose title genuinely is the name (a color value, "Theme from X").
+
+It ships as `tests/test_accnames.py` rather than staying a scratch script,
+because the reason these rotted through the whole build is that nothing enforced
+them. Three rules: no control may be nameless or named by a glyph; a
+glyph-bodied button written by a script carries an `aria-label`; and the scan
+must still be examining at least 350 controls, so it cannot go green by seeing
+nothing. Checked by putting both defects back and watching it fail on each, then
+restoring - a regression test that has not been seen to fail is not one yet.
+
+266 Python tests pass, one skipped. `ctlgate` stays 11 of 11, so the window
+buttons still drag, resize, hint and close with the labels on them.
+
+One more shape was checked and left alone. Twenty-one bare `<span>` elements sit
+immediately before a form control on the deck, which looks like this same defect
+and is not: each sits inside a wrapping `<label>`, so the span's own text is the
+control's name. Measured rather than eyeballed - of 155 form controls on
+`deck.html`, 140 are named by a wrapping label, 13 by an `aria-label`, two by a
+title, and none are nameless. The two on titles are `savedThemes`, announcing
+"Apply one of your saved looks" beside a visible "Looks" - the visible word is
+contained in the name, so a speech-input user saying it still matches - and
+`spDevice`, "Where Spotify is playing", which has no visible label to disagree
+with. Nothing in `tests/` or `tools/` touches either, and both stay.
+
+A spelling sweep rode along, against the project's US-spelling rule, and it
+took four passes because each pattern only ever found what it was shaped like.
+`colour`, `behaviour` and `centre` first, in comments across `icons.js`,
+`livepanel.js`, `liveview.css`, `liveview.js`, `reqpanel.js`, `chat.py`,
+`canvastools.js`, `scene.js`, `canvas.css`, `canvas.js`, `deck.css`,
+`spotify_api.py` and both docs. Then `grey`, `labelled` and `travelling`, which
+none of those patterns could match. Then `centring`, which does not contain
+`centre` and had therefore survived every pass so far. Then `tools/`, a whole
+directory the earlier passes were never pointed at: six more in
+`pickertest.js`, `p8test.js`, `chatui.js`, `onstream.js` and `voicetrig.js`.
+`analyser` stays - it names WebAudio's own `AnalyserNode` - as do
+`aria-labelledby` and the `_cancelled` identifiers. The substitutions had to
+run in order, `centred` before `centre`, or the first would have left "centerd"
+behind. One of them was user-facing rather than a comment:
+`announce('Cancelled')` in `canvastools.js`, which a screen reader says out
+loud.
+
+## S18 - the build's exit code, and a list that named six of forty-eight (2026-09-13)
+
+**The entry's own warning was half right, and the half it got wrong explains
+the whole thing.** It said `rebuild.ps1` "already exits 0" and might be stale.
+It does - on two of its three paths. `-CheckOnly` exits 0 at line 78 and
+`-NoLaunch` at line 134; the full run fell off the end at 146 with no `exit` at
+all, and `robocopy` sets `$LASTEXITCODE` to 1 for an ordinary copy that copied
+something. Since robocopy is step 7 and the `-NoLaunch` exit is step 9, a
+`-NoLaunch` run sees exactly what the entry describes - robocopy returning 1,
+the script still exiting 0 - while a full run hands that 1 back to whoever
+called it. That is almost certainly the six fake failures and the two clean
+observations, the same script, different flags. Inference from the control
+flow rather than proof of which flags were used, but it fits both halves.
+
+Fixed by saying so: `exit 0` at the end of the full path. Every real failure
+above throws, so reaching that line means it worked.
+
+**The "what went in" report named six files; the pages load forty-eight.** The
+entry flagged `audiopanel.js`. Measured, it is worse: also `chatpanel.js` from
+S11, `liveview.css` and `liveview.js` from S9, and `cmdpanel.js`, `reqpanel.js`
+and `pollpanel.js` from S12, S13 and S14 - none of which existed when that list
+was written. Adding them by hand would put it back in the same place by S19.
+
+So the check changed kind rather than contents: it now reads the pages that
+actually shipped, collects every `src=`/`href=` to a `.js` or `.css`, and
+**throws** on anything missing. Throwing is the point. The try-out below it
+cannot catch this at all - `/deck.html` answers 200 perfectly well while the
+page throws on a script that is not there, which is precisely the failure the
+old list looked like it was guarding against and was not.
+
+What it does not cover, stated so nobody assumes otherwise: `url()` inside a
+stylesheet, and `/fonts.css`, which the server makes rather than ships - the
+try-out already fetches that one over HTTP.
+
+**Tested in both directions, because a check that cannot fail is worth
+nothing** - S17 had one of those sitting green for a full cycle. Positive,
+against the repo's own `web/`: 12 pages, 48 distinct js/css, no dangling
+reference. Negative, against a fixture: with a referenced file absent it names
+it, with the file restored it clears, and it skips an absolute URL rather than
+looking for `https://...` on disk.
+
+Then the block itself rather than the idea of it: the exact code from step 2,
+run against a mock `_internal\web` holding the real pages - clean at 12 pages
+and 48 assets, throwing and naming `chatpanel.js` when that file is taken out,
+clean again when it is put back. What that still does not reach is a real build
+producing that layout, though `_internal\web\...` is the path the old
+hand-written list already used, which is evidence rather than proof.
+
+**Then run, with `-CheckOnly`** (2026-09-13), once the app was confirmed idle:
+it builds into staging, tries the result on port 8797 and exits at line 78
+without touching the install. `BUILD EXIT 0` in 48s; step 2 read the pages that
+shipped and reported **12 pages, 48 js/css, 0 missing**, the same figures as the
+repo; the five non-web essentials all present; every try-out URL 200, export and
+import included. So the guess above about `_internal\web` is not a guess any
+more - the real build puts them exactly there.
+
+Worth more than the check itself: **the app packages.** Everything else this
+plan did was verified against the rig, which runs `server.py` from source, so
+nothing until now could have caught a Group C module PyInstaller cannot trace -
+`chat.py`, `commands.py`, `songreq.py`, `alerts.py`, `polls.py`, `tiktok_live`.
+It traces them all.
+
+**Still not exercised, and not to be read as covered:** `-CheckOnly` exits
+before steps 4 to 9 - the safety copy, quitting the app, the robocopy swap, the
+model and cuBLAS seeding, the relaunch. The `exit 0` added at the end of the
+full path is in that untouched stretch, so the one fix this step made to the
+exit code is the one thing a `-CheckOnly` run cannot show working.
+
+A full run was then attempted, with the app confirmed idle and the build already
+through its try-out, and the permission classifier blocked it - reasonably, since
+it quits the running app and mirrors program files over the install. It was not
+retried by another route. So the exit code stays unverified until someone runs
+`rebuild.ps1` by hand, and that is the check to watch when they do: robocopy
+returns 1 on a normal copy, and the question is whether the script still hands
+back 0.
+
+The Spotify token in commit 62e2105 is still there, and is still yours to
+revoke.
+
+## S17 - a way back to straight, and five wrong ways to hear a double-click (2026-09-13)
+
+Three things were listed. One was a fault and is built; two turned out to be
+decisions, and are written down below rather than quietly settled.
+
+**The fault was narrower than the entry says.** Rotation already snaps: the
+single-layer branch of `stepRotate` puts the angle on the nearest quarter turn
+within 3 degrees whenever snapping is on. And 357.4 cannot be a stored value at
+all - `normDeg` maps to (-180, 180], so that reading is -2.6. What was actually
+missing was two things: the *multi-selection* branch had only Shift's 15 degree
+stepping and no cardinal snap, and nothing anywhere put a layer back to
+straight. `straighten(ids)` now does, turning each layer about its own center
+through the existing `pointOf`/`placeAt`, so the box does not walk across the
+canvas - which is exactly what typing 0 into the inspector's Rotation field
+does, and the reason that field was never the answer to "how do I get this
+straight again". It is on the layer menu (grayed out when nothing is turned), on
+a double-click of the knob, in the knob's tooltip and in the canvas's
+screen-reader description.
+
+**Then the double-click, which took five attempts, and the interesting part is
+why the first four were wrong.**
+
+1. A `dblclick` listener matching `e.target`. Wrong, and caught while writing
+   the test rather than by running it: the HUD is rebuilt on pointerdown, so
+   the two clicks land on different elements.
+2. The same listener using `elementFromPoint`, to survive that. Also wrong, and
+   this is the one worth keeping: a capture-phase listener on `window` saw
+   **zero click and zero dblclick events** while the same press-and-drag
+   rotated the layer perfectly well. The browser fires neither on a handle,
+   because the mousedown target is detached before the mouseup and a detached
+   target has no ancestor left in the document to carry a click. No way of
+   resolving the target could have worked - the event does not exist. The
+   existing "double-click into a group" handler survives only because a press
+   on the canvas surface lands on something that is not repainted underneath
+   it.
+3. Detection moved to pointerdown, on time and place. Worked on its own, and
+   P8 then caught it misfiring: two deliberate turns in quick succession at the
+   same spot read as one double-click and straightened instead of turning.
+4. Disarm inside `stepRotate`. This broke the double-click outright, because
+   `stepRotate` runs again on release, at the press point.
+5. Disarm gated on distance. Still wrong: two degrees at a fit zoom moves the
+   pointer about two pixels, under any threshold worth having - including
+   `DRAG_PX`, which was the tidier constant I had been about to reach for.
+
+What works is disarming when a **pointermove arrives while a rotate gesture is
+live**. Deliberately narrow: a real double-click jitters between its presses, so
+"any movement" would have broken it for every actual user while passing every
+test here.
+
+**The tests were wrong three times over, and hid the code's fault for a whole
+cycle.** The worst was a false pass: "a two degree wobble snaps back to no turn,
+and costs no step" reads identically whether the snap did its job or the knob
+was never taken hold of at all - and for one full run, both turns were doing
+nothing. `turn()` now samples `Editor.gesture()` mid-drag and the check demands
+`kind === 'rotate'`. Two more: assertions written against absolute angles turned
+one failure into four knock-ons, so they assert the *turn* now (`d360`); and
+`enabled.indexOf('Straighten')` returning -1 arrowed nowhere and pressed Enter
+on whatever had focus, which recorded `delete 2 layers`. A test that can blind
+Enter into a destructive menu item is wrong however green it is.
+
+**Two forks, and the calls made on them.** These were left open at first and
+handed back three times, which was the wrong instinct: the plan's own method is
+"where a step has a real fork in it I pick the one written here and say why".
+Both come out as leave it alone, which is a decision and not a dodge - and both
+are one edit to reverse.
+
+*Text that does not grow with its box.* `props.fit` is exposed already, as
+"Shrink to fit" (`inspectors.js` 219) - I claimed it was unreachable, from
+grepping `canvas.js`, which is not where the inspector lives. The name is
+honest: it shrinks from `props.size` and never grows past it, and `stepResize`
+only ever writes `w`/`h`/`x`/`y`, never `props`. Three ways to go: leave it,
+since the case that bites on stream is overflow; make fit two-way and rename it
+"Fit to box"; or scale the type on a corner drag, which is what a design tool
+does and the largest change - it has to write `props.size` from a gesture,
+survive the one-undo-step rule, and decide what multi-select scaling means.
+
+**Decided: leave it.** Two-way fit sounds like the cheap win and is not one -
+it would change every scene that has already opted in. Text sized deliberately,
+shrinking only when it overflows, would start growing to fill its box the next
+time the scene loaded. That is an edit to saved work dressed up as a setting.
+"Shrink to fit" says what it does and keeps doing it; if filling is wanted it
+belongs beside that box as its own option, named for what it is, which is a
+deliberate change and not one to slip in at the end of a plan.
+
+*The wheel.* The canvas is the only place in the app that hijacks it
+unconditionally: `deck.js` guards its one hijack on two conditions and falls
+through to native scrolling, `studio.js` only stops propagation, and everything
+else uses wheel passively. `canvas.js` 374 calls `preventDefault()` on every
+wheel event while 376 acts on `deltaY` alone, so a horizontal swipe is swallowed
+and does nothing. I first wrote that not swallowing what it does not
+act on was worth doing whatever else was decided. Retracted, on a second look:
+Chrome can turn horizontal overscroll into history navigation, so that blanket
+`preventDefault` is most likely what stops a sideways trackpad swipe from
+walking out of the editor mid-edit. Letting it through buys nothing - the canvas
+has nothing to scroll - and could cost that. Nothing to fix here after all.
+
+What is left is a real taste call and only that: whether plain wheel should zoom
+(mouse-friendly, and what it does now) or pan with Ctrl to zoom (better from a
+trackpad).
+
+**Decided: leave it.** This is a one-monitor desktop driven by a mouse - the
+trackpad case the Figma convention exists for does not arise here. Wheel-to-zoom
+is the convenient binding for the device actually in use, and retuning something
+touched every day to suit a device that is not in play would be a regression
+wearing the clothes of a convention. If this ever moves to a laptop the argument
+flips, and the change is four lines.
+
+**Seen once and unexplained:** `ReferenceError: paintHud is not defined`, in one
+probe run, never again in three later runs including one against a pristine
+`canvastools.js`. `canvas.html` loads `canvas.js` before `canvastools.js`, and
+`applyView()` ends in `paintHud()` while being bound to `resize` - so a resize
+landing between the two scripts would do it. That is a mechanism, not a proof.
+
+Chased at the end of the plan and narrowed, but still not caught. There are two
+resize listeners: `canvas.js` 1281 guards its call with `if (store.scene &&
+!pan)`, so it cannot fire in the boot window, while `canvas.js` 371 is
+`() => applyView()` with no guard at all - the only path that reaches
+`paintHud` before `canvastools.js` has run. Boot itself is clear: the IIFE's
+first statement awaits `fetch('/api/config')`, so everything after it happens
+long after both scripts. A probe then opened the page twelve times with the
+cache disabled and a device-metrics resize fired immediately, and got 0 of 12.
+
+Then caught, by stopping racing it. `Fetch.requestPaused` holds the
+`canvastools.js` response while boot carries on, and that throws every round -
+0 of 12 became 3 of 3. And the stack named a path that was not the one supposed:
+
+    ReferenceError: paintHud is not defined
+      at applyView (canvas.js:346)
+      at zoomFit   (canvas.js:355)
+      at loadScene (canvas.js:229)
+      at async     canvas.js:1275
+
+No resize in it anywhere. **Boot is the hazard**, and the paragraph above saying
+it was "clear" because the IIFE awaits `fetch('/api/config')` first was wrong:
+that only holds while a script tag beats a localhost fetch, and nothing
+guarantees it. Deleting the unguarded listener at 371 changed the count not at
+all, which is how the misdiagnosis came to light.
+
+Fixed where the race is. The boot IIFE waits for `DOMContentLoaded`, which no
+classic script tag can precede, so every file loaded after this one has run
+before `loadScene()` calls into any of them. That is worth more than guarding
+`paintHud`: `canvas.js` is loaded first and calls into all seven files below it,
+so the whole class is covered rather than the one function that happened to
+surface. (`deck.html` orders the other way - `deck.js` last - and never had it.)
+
+Line 371 stays deleted, but on its own merit as duplication of the guarded 1281,
+not as the cure.
+
+Then the same question asked of everything else, because finding one by accident
+is not a search. `canvas.js` calls exactly two functions defined in files loaded
+after it: `paintHud` (`canvastools.js` 550) and `openNewDialog` (`newscene.js`
+75). The second is reached only from a click and a `<select>`'s change, so it
+cannot run early. `renderTree`, `renderInspector`, `paintScenePick` and
+`paintLive` are all defined in `canvas.js` itself - I had suspected `renderAll()`
+was reaching across files as well, and it is not. Of the forty-odd listeners
+registered at the top level, three are not user-gated: the resize above,
+`beforeunload`, and the scene iframe's `load`, which calls `pushPreview` - local,
+and touching nothing but `postMessage`.
+
+So it is one crossing, now fixed, rather than a class wanting guards scattered
+through the file. Worth recording as a negative result: the next person to see
+this entry should not have to re-map it, or over-correct.
+
+Verified: 3 of 3 throwing before, 0 of 3 after with the script still held in
+every round - so the window was exercised, not merely missed. Then P8 61 of 61
+and P9 72 of 72 with the ten goldens at 0.00%, because deferring boot changes
+the timing of every page that loads `canvas.js`. And `chatui` 30 of 30 after
+that, which is the pointed one: it mounts the chat panel inside `canvas.html`
+and reports nothing thrown there - the page the fix is in, by the one path P8
+and P9 never take.
+
+Verified: P8 61 of 61, up from 57 at the low point, with the five new checks
+covering the knob double-click, the menu entry's rule, the wobble that must not
+turn, the near-quarter that must snap, and straightening several at once - each
+also held to exactly one undo step. Plus a probe A/B against the pristine file,
+where the same double-press leaves the layer at 30 degrees and mine puts it
+back to 0. And P9 afterwards, 72 of 72 with all ten goldens at 0.00% - read
+this time rather than inferred: the rotation work and the screen-reader line
+moved no pixels.
+
+## S17b - the harnesses that truncate their own URLs (2026-09-13)
+
+The step asks one thing: check the assumption before trusting it. The
+assumption was that `p7` through `p12` only ever open single-parameter URLs, so
+`encodeURI` leaving `&` alone cannot bite them.
+
+**The assumption holds.** Those suites open `scene.html?id=X`,
+`canvas.html?scene=X`, `deck.html` or `remote.html` - one parameter or none -
+and the values are `secrets.token_hex(4)`, eight lowercase hex characters, or a
+template key like `music_lyrics`. There is no `&`, `=`, `#` or space for
+`encodeURI` to pass through. Nothing in p7-p12 was loading a truncated URL.
+
+**The fault was live anyway, in a suite the plan's list does not name.**
+`tools/p6/shotpage.js` interpolated the URL with no encoder at all, and
+`p6run.sh` hands it `frame.html?kind=camera&preview=1`. Two parameters.
+
+Measured rather than argued, by opening the same page three ways and asking it
+what it received:
+
+| handed to `/json/new?` | the page saw | `preview` |
+|---|---|---|
+| raw (`shotpage.js`) | `?kind=camera` | false |
+| `encodeURI` (p7-p12) | `?kind=camera` | false |
+| `encodeURIComponent` | `?kind=camera&preview=1` | **true** |
+
+On a single-parameter URL the last two are identical, which is what made
+converting the other suites a no-op rather than a rewrite.
+
+**What it cost.** `frame.js` reads `STANDALONE = !PREVIEW && !EMBED`, so the
+lost parameter did not merely drop a CSS class - it flipped the page into
+standalone mode. That wired window controls, POSTed the headless 480x480
+viewport to `/api/components/camframe/metrics`, and drew the first-open "drag
+to move" hint pill. `frame_camera.png` - P6's reference picture of the deck's
+*preview* - was a standalone window with a hint banner across the top.
+
+I had reasoned the difference would be invisible: `.handles` sits at
+`opacity: 0` until `:hover`, and a headless capture never hovers. The
+photograph said otherwise. `windowctl.js` adds `show-hint` for 4000 ms on first
+open and `frame.css` lifts the pill for it, while `shotpage.js` waits 3500 ms
+before capturing. The fault is visible by five hundred milliseconds. Half a
+second the other way and it would have left no trace in the picture at all,
+leaving only the silent write - `report_metrics` is in-memory (`overlay.py` 84),
+never persisted, and `server.py` 2769 deliberately skips `HUB.broadcast()` for
+metrics, so nothing announces it. Worth saying plainly: reasoning said
+cosmetic-and-inert, the image said otherwise, and the image was right.
+
+**Fixed** in `shotpage.js`, with the other eight `encodeURI` sites converted
+alongside it now the probe has shown that safe. `encodeURI(` no longer appears
+anywhere in `tools/`.
+
+**`tests/test_harness_urls.py`** keeps it that way, with two rules: a `.js` file
+naming `/json/new` must use `encodeURIComponent`, and a shell harness, having
+nothing to encode with, must open a single-parameter URL. Its first run failed
+on its own documentation - the explanation in `shotpage.js` spells out the
+`/json/new?<url>` shape. Fixed by skipping comment lines rather than by
+narrowing the rule to `fetch(`, which would have let a call split over two lines
+through in silence.
+
+**The step's other claim also holds.** After S5's fix, "no other shell script in
+`tools/` hands non-ASCII to curl": the only non-ASCII in any `.sh` or `.ps1`
+under `tools/` is in `p6run.sh` - one comment, and the heredoc that goes over
+stdin. The rig's stored config read back `"bl": "✨"` intact, which is that fix
+working.
+
+Verified: the three-way probe on the rig; before and after photographs of the
+camera frame, the hint pill present in one and gone in the other; 5 of 5 unit
+tests; and P9 72 of 72 as a regression check. Only p8 and p9 had been
+re-run when this was written, so calling that a check on "the converted call
+sites" was generous about the other six. All eight were exercised afterwards, at
+the end of the plan: p7 17/17 (after fixing a stale check of its own), p8 61/61,
+p9 72/72, p10 24/24, p11 24/24, p12 30/30, p12live 7/7, and `latprobe.js`
+through `latrun.sh` - which `p7run.sh` does not invoke, and which asserts
+nothing, so all it shows is that the page opened and the measurements came out.
+And `shotpage.js`, the fix this step began with, through `p6run.sh` rather than
+the one-off re-shoot: 21 of 21 and 22 of 22, with the camera frame drawn in
+preview mode this time. Checked by looking at the picture, not the log - "shot
+written, no console errors" was exactly as true while it was photographing the
+wrong thing. That total is the whole of what I can claim from the last one - I
+piped the run through `tail -40` and discarded the ten per-image golden
+percentages, so "all ten matched" is an inference from the total, not
+something I read.
+
+## S16 - the inspector's type, and ten goldens rewritten (2026-09-13)
+
+The step exists because P9 photographs the inspector and compares it pixel for
+pixel, failing on any size difference at all - so growing its headings moves the
+clip height of all ten reference images at once. Deferred twice for that reason.
+Done here, where rewriting them is the point rather than a side effect.
+
+**The size was not mine to choose.** This file already records the left panel's
+headings going "from 10.4 px in the dimmest token to 11.5 px a step lighter", so
+the inspector's follow it exactly: `.74em` to `.82em` - 11.48 px, which is what
+`.pane-h` already is - and `--dim` to `--label`. Both halves. Reading that entry
+is the only reason the color changed at all: I had inferred the size from
+`.pane-h` and would have shipped the wrong half of a fix the project had already
+made next door.
+
+`.insp h3` and `.cb-right .sec > summary` moved together. They are the same role
+- plain section headings and folding ones - and moving one alone would have left
+the inspector with two heading sizes.
+
+**What made a global `update` safe.** The warning is in this file already: a
+global update "blesses every image including any drift you did not mean", and
+Group C had touched `inspectors.js` twice. So the order was a clean baseline
+first (72 of 72, all ten at 0.00%), proving there was nothing to absorb; then
+the change; then `update`; then a clean verification (72 of 72, all ten at
+0.00%). Worth saying plainly: the middle run's "72 of 72" counts ten *writes*,
+not ten comparisons, and proves nothing on its own. The pass that matters is the
+one after it.
+
+| The ten | before | after |  | | before | after |
+|---|---|---|---|---|---|---|
+| scene | 878 | 884 | | cam | 2524 | 2535 |
+| bg | 2252 | 2263 | | lyrics | 2590 | 2603 |
+| pic | 2278 | 2289 | | screen | 2686 | 2697 |
+| box | 2303 | 2314 | | face | 2722 | 2733 |
+| title | 3321 | 3333 | | np | 3620 | 3632 |
+
+Every width unchanged at 300. My estimate before the run was around 28 px of
+growth; it is 6 to 13, so these panels carry far fewer headings than I supposed.
+`np` at 3632 leaves 568 px under the 4200 viewport, so S6's blind-bottom fault
+does not come back.
+
+**The scrollbar suppression is insurance, and the step's premise had gone
+stale.** It is in `HIDE_DYNAMIC` as the plan asks and it is right to have - but
+it removed nothing visible. The clip is `min(panel height, content + 12)`, and
+np's came out at 3632, the *content* figure rather than a panel cap: at the
+capture viewport `#inspector` does not overflow, so there is no bar in frame to
+catch. S1 found one when the panel was shorter than its content; S6 then raised
+the viewport to 4200 to fix np's blind bottom and incidentally took the bar out
+of shot. The uniform deltas settle it - freeing ten pixels of content width
+would have rewrapped text and moved the heights irregularly, not by a flat
+1.1 px per heading. What the suppression buys is that lowering that viewport
+again can never silently break the suite.
+
+**Left alone, deliberately.** `.nd-group h3` (`canvas.css` 550) carries the
+identical declaration, but it belongs to the new-scene dialog rather than the
+inspector and no golden photographs it. Widening the step to catch it would have
+been scope the plan did not ask for; saying nothing would have been worse.
+
+**No *Checked by* clause**, which is consistent rather than an omission. Every
+clause in the plan belongs to a step that builds something, and S16's
+correctness *is* the golden comparison - a clause promising "the goldens match"
+would be circular. Group D carries none.
+
+**Against a standing rule, and flagged too late.** The plan's own rules say the
+goldens are "regenerated deliberately, one file at a time, never with a blanket
+`update`". This step used a blanket `update`. The order above - a clean run
+first proving there was no drift to bless, the change, the `update`, then a
+clean run - was built to remove exactly the risk that rule guards, and the
+result is verified on both sides. But the rule says never; the deviation was not
+raised when it was made; and read back, the paragraph above reads as though a
+global update were simply one of the options. Redoing the ten one at a time
+would change nothing: they are already correct, verified at 0.00% on both
+sides, and regenerating them individually would write identical bytes. So it
+is not outstanding work and is not offered as any - the rule's purpose was met
+by other means, its letter was not, and the deviation is recorded here rather
+than carried around as a pending fix. If the letter matters, the repair is not
+a re-run but a change to the rule, to say what the clean-baseline-first order
+buys and when it may stand in.
+
+Verified: P9 72 of 72 three times - clean before, writing during, clean after -
+with the ten at 0.00% on either side of the rewrite.
+
+## S14 - polls, and one vote each (2026-09-13)
+
+Group C's last step, and taken last on purpose: S15 first meant polls arrived on
+a bus that already existed rather than cutting a private path to the canvas for
+that step to replace.
+
+**Votes do not go through S12's engine.** Nobody is going to register `!1` to
+`!9` as commands, and the engine's model - a role gate and a cooldown - is the
+wrong shape for voting, where the rule is one each. So `polls.py` takes its own
+watcher on the chat hub, beside the command engine rather than behind it;
+`chat.py` already parses `!1` centrally as the command `1`, so there is no
+second parser anywhere. *Opening* and *closing* a poll do go through the engine,
+because those are the streamer's and the gate is exactly the point.
+
+**First vote wins.** Letting people change their mind sounds kinder and is worse
+on a stream: the total stops matching the number of people who voted, and "you
+can change it" is a rule nobody watching can see. Later votes are ignored, which
+is the rule that fits in one sentence said out loud.
+
+**The whole tally, never a delta.** What reaches the canvas is the entire count
+each time, so a page that joined halfway through is right at the very next vote
+instead of adding up what it missed. It is coalesced with a trailing timer, so a
+busy poll does not put an event on the bus per vote and the last vote of a burst
+still arrives.
+
+| Found while building | |
+|---|---|
+| `TYPES.poll` has to declare an `alert` hook | `needsAlerts()` only opens the socket for types that have one, so a scene holding nothing but a poll layer would have opened nothing and never heard a thing - S15's lazy socket working against me. |
+| `identity()` needed a poll case | The layer holds the tally it is drawing. Rebuilt on a scene switch it would blank in the middle of a poll and stay blank until the next vote. |
+| `motion.js` stops animations, not transitions | The bar eases on every tally, which is the endless redrawing Ultra exists to stop, so that transition is gated on `:root.ultra`. |
+| Two layers of one type share an identity key | It sounded like a collision - but S15's run had two alert layers in one scene, both drawing, so the Stage keys by id and uses identity only across scenes. Evidence from a passing test rather than a guess. |
+
+**The check that had to be written one particular way.** The bars are measured
+with `getBoundingClientRect()`: 884 and 436 pixels of a 1320-wide track, 67% and
+33%, matching a 2:1 split. Counting elements and watching transforms change is
+precisely how S7's microphone layer passed "24 bars", "30 different shapes" and
+"24 above the floor" while every bar had flexed to zero width.
+
+**Two things about my own work, recorded rather than tidied away.** The syntax
+gate caught `const label` declared twice in `onair.js` before either rig cycle
+ran - the `&&` chain short-circuited and the mistake cost nothing, which is the
+argument for the gate. And a gap found by re-reading rather than by any test:
+the `poll` action added to `commands.py` had no coverage at all at either level,
+because the probes open polls through the panel and the API and never through a
+chat `!poll`. Six tests cover it now.
+
+Verified: 20 unit tests for `polls.py`, 6 more for the engine's poll action, the
+full Python suite 251 of 251 (1 skipped, up from 225), `tools/ui/onstream.js` 13
+of 13 and `tools/ui/onair.js` 40 of 40.
+
+With this, **Group C is complete**: S9 through S15.
+
+## S15 - alerts, and the bus they arrive on (2026-09-13)
+
+Taken before S14, against the plan's own order. S15 *is* the bus, and it already
+had two producers waiting in S12's commands and S13's requests; built the other
+way round, S14's poll layer would have invented a private path to the canvas
+that this step then replaced.
+
+**An event is not state.** `/ws/events` fans out whole snapshots, so an alert
+carried on it would make every page in the app rebuild its model each time
+somebody typed - the reason the chat messages were kept off it, and the same
+reason here. `feeds.serve_ws_feed` is already generic over the hub, so a third
+feed cost one route and no new endpoint code. The state feed carries how many
+have fired and never the events themselves.
+
+**One socket per page, and none when nothing wants one.** The obvious wrong
+build gives a scene with three alert layers three sockets. The house already had
+the answer: `needsVoice()` asks whether any layer in the scene wants voice
+before taking the lease, so `needsAlerts()` mirrors it and the page opens
+`/ws/alerts` only when a scene has a layer listening. A scene that wants nothing
+costs nothing - checked outright, being exactly the sort of claim that quietly
+stops being true.
+
+| Found while building | |
+|---|---|
+| `applyBox` writes `el.style.opacity` inline on every layer | So the show and hide could not live on the layer box: an inline style beats a stylesheet rule, and the alert would simply have been on screen always. It lives on an inner card instead. |
+| `identity()` keys only layers whose media costs something to reopen | An alert layer holds no device - but it holds an alert part way through showing, and a queue of ones waiting. With no case of its own, a scene switch drops both silently. Added, and checked by switching scenes mid-alert. |
+| Chat's queue depth, carried forward before it could bite | S11 learned the hard way that a dropped event is gone rather than superseded, at 12 messages of 40. The bus took 256 from the start instead of the state feed's 8. |
+| **The card drew in serif** | Found by looking, a fourth time this run of steps. `props.font` was the only thing setting a face, so an alert with no font chosen fell through to the browser default. Comparing against how the text layer does it (`scene.js` 120) then turned up a second fault the picture could not have shown: the family was applied unquoted and without fallbacks, so a name with spaces in it would never have applied at all. |
+
+**Two limits, stated rather than left implied by a green run.** The kind filter
+is shown to *reject* - a request-only layer ignores a command - and is never
+shown to *accept*, though the accept path is the same code the unfiltered case
+exercises. And the font-quoting half of that last fix is verified by reading
+only: the probe uses no custom font, so nothing on the rig touches it.
+
+Verified: 16 unit tests for `alerts.py`, the full Python suite 225 of 225 (1
+skipped), and `tools/ui/onstream.js` 8 of 8 - a real scene page, with a
+`!command` off S10's fake IRC server traveling the whole way through the real
+parser, the real engine and the real bus to be drawn on the canvas.
+
+## S13 - !queue, and a one-way door (2026-09-13)
+
+The first thing hanging off S12's spine, and the first step whose testing could
+have touched a real account. It does not: Spotify is injected into the store the
+way the scene switcher is injected into the command engine, and the rig fakes it
+at a seam refused on the real port. Verifying my own code is not a reason to put
+songs in somebody's queue.
+
+**Two things the existing Spotify layer already knew.** I raised a worry that
+appending would force everyone to authorise again, and then withdrew it:
+`SCOPES` has held `user-modify-playback-state` all along, and search needs no
+user scope at all, so nobody reconnects. But `_fetch_queue`'s docstring has
+recorded since P0 that the Web API "can read this queue and append to it, but
+there is no endpoint to reorder or remove items". That is the shape of the whole
+step: **appending is a one-way door.** It is why the pending list is the app's
+own rather than a view of Spotify's, why approval is the irreversible press, and
+why moderation is on by default. Worth saying plainly as well: appending is
+Premium-only - `_explain` already answers a 403 with "Spotify allows this only
+on Premium accounts", so on a free account this step's whole point cannot work.
+
+**Where each decision is made.** Who may ask and how often stays in S12's
+engine; only the song is decided here. Asking the same question in two places is
+how the two answers drift apart - and a test pins it down: a viewer refused by
+the role gate costs no Spotify call at all, which is how an app avoids rate
+limiting itself on people it was never going to serve.
+
+| Guard rail | The case it is for |
+|---|---|
+| Length cap | Named in the refusal ("longer than the 7m 0s limit") rather than a bare no. |
+| Block list, checked against the request **and** against what came back | Someone asking for "never gonna give you up" walks past a list that only knows the artist. |
+| The blocked word is never repeated back | Echoing it puts the thing on screen that the list exists to keep off it. |
+| The parked list is bounded | A queue nobody drains must not grow without end. |
+| Spotify's own words survive | 404 means nothing is playing and 403 means not Premium; both are more use than "that did not work". |
+
+**A passing check that proved nothing, caught before it was believed.** The rig
+run set `moderated: true` through `/api/config` and watched a request park - but
+`true` is also the construction-time default, so every one of those 34 checks
+would have passed identically had the `REQUESTS.configure(...)` wiring never
+landed. The test that bites is the opposite direction: turn moderation **off**
+through config and show the next request goes straight through. It does, and the
+store's own rules now read `moderated: false` in the evidence. Said before the
+run rather than discovered after.
+
+Found by looking, a fourth time: the history rows put five children into a
+four-column grid, so the reason fell to a second line under the timestamp and
+read as a stray fragment. It is placed deliberately now, aligned under the title
+it explains.
+
+Verified: 23 unit tests for `songreq.py` and 6 more for the engine's `queue`
+action, the full Python suite 209 of 209 (1 skipped, up from 180),
+`tools/ui/onair.js` 35 of 35, and `tools/ui/chatui.js` 30 of 30. No test, on the
+rig or off it, reached a Spotify account.
+
+## S12 - the command engine (2026-09-13)
+
+Taken straight after S9 because S12's own text puts the editor in the Live
+view, so S9 blocked it exactly as S10 blocked S9's chat.
+
+**"What it says back" could not mean what it sounds like, and that was settled
+before any code.** This app cannot speak in chat. S10 signs in anonymously as
+`justinfan` so it holds no credential, and the adapter has no PRIVMSG-out in it
+at all - the only things it ever sends are the `CAP`/`NICK`/`JOIN` handshake and
+the `PONG`. Checked in the source, not assumed. So a response is recorded and
+shown: in the log the editor reads, and at S15 on the canvas, which is the step
+that exists for it. Posting a reply into Twitch needs an account and an OAuth
+token - the same class of decision as TikTok's connector, and the user's to
+take. The editor says so in its own footer, because a "what it says back" box
+that silently reaches nobody would be a lie told in a text field.
+
+**Roles are a ladder, not a set.** `everyone < subscriber < vip < mod <
+broadcaster`, and a gate of `mod` is passed by the broadcaster. Comparing badge
+strings would have been the easy wrong answer, so the ladder is what the tests
+push on: a broadcaster through a `mod` gate, a mod through a `subscriber` gate,
+a founder not left below a subscriber, an unknown badge ignored rather than
+promoted.
+
+**Two cooldowns, because they answer different questions.** The per-command one
+stops a command filling the stream however many people ask; the per-user one
+stops one person holding it. Separate clocks, proved separate by a second
+viewer running the command inside the first's window and getting it. And a
+refusal does not start either clock - being turned away must not also put you
+on cooldown for something you never got.
+
+**An unknown `!word` does nothing and is not logged.** Every stream has people
+typing `!` at things that do not exist; a log full of "no such command" is a log
+nobody reads.
+
+| Decision | Why |
+|---|---|
+| The registry is in config, not a store of its own | `scenes.py` exists for documents with revisions and backups. Commands are settings a person edits. |
+| Not under `chat` | S14 starts a poll "from the Live view or by a command from you" - a command is not chat's property. |
+| A watcher on `ChatHub`, not a subscriber | The engine is the app reacting to its own messages, not a feed to a browser. Pages are served first, then watchers, each guarded and none under the lock: a watcher that throws must not stop the fan-out, and one that took the lock would wedge the next message. |
+| A command names a scene, and `set_live_scene` wants an id | A config file full of ids is unusable by hand. Names are matched first, then the string is tried as an id. Names are **not** unique - the rig has two scenes called "P5 stress" - so the first in list order wins: predictable beats refusing to switch mid-show. |
+
+**A known limit, recorded rather than fixed.** The editor is not a live view of
+config: change the list elsewhere and its rows are stale until it is reopened -
+visible in the screenshot, where it says "1 command" while the server holds two.
+The only thing that edits commands is this panel, so staleness needs an
+out-of-band writer, and a refresh path would introduce a way to throw away what
+somebody is halfway through typing. That trade is worth naming, not papering
+over.
+
+Verified: 26 unit tests (`tests/test_commands.py`, all of it arithmetic over one
+message shape, with the clock injected rather than slept through), the full
+Python suite 180 of 180 (1 skipped, up from 154), `tools/ui/onair.js` 26 of 26
+including the one rig check the clause asked for - a message off S10's fake IRC
+server, through the real parser and the real hub, firing a command and appearing
+in the log the editor shows - and `tools/ui/chatui.js` 30 of 30 as the
+regression check for changing `ChatHub.post()`.
+
+Found by looking, twice more. The outcome pills are color-coded - `ran` green,
+`denied` red - and nothing asserts that; the log's whole purpose is seeing what
+did *not* happen as easily as what did. And the Live view's own shot caught S11
+and S12 joined in one frame: `!hello` and `!modonly` sitting in the chat dock
+with S11's command highlight on them, being the very messages S12 then ran and
+refused.
+
+## S9 - the desk you run it from (2026-09-13)
+
+Taken last of Group C rather than first, and the detour paid: S9's own text
+makes chat a constituent of the view rather than an addition, so building it
+before S10 and S11 would have meant assembling four things that already work
+around a hole. Done in this order it is assembly, and nothing had to be
+unpicked.
+
+**A window, not a component.** `components.py` registers neither the editor nor
+the remote; both are `launch_deck(url, w, h)` - a Chrome app window on the deck
+profile. The Live view is the same: components are overlays that go *on* the
+stream, and this is the desk you run it from. `/api/live/view/open`, opened
+from a button on the deck and on the Canvas Builder.
+
+**The panels are the panels, not copies.** `mount()` now takes a host element.
+Docked, a panel is always open, which makes `close()` a no-op - and since
+Escape, click-away and the x all go through `close()`, one guard there covers
+every way out instead of three patches. Docked, the Sound panel therefore holds
+the voice lease for as long as the window lives, which is right for a meter you
+are watching while you stream. So there is one chat panel and one Sound panel
+in the app to keep working, and S11's own probe is the regression test for
+having taught them to dock.
+
+**Two sources, and the split is the point.** The state feed carries the scenes,
+which one is on air, the stream's state and which windows are open: it costs
+nothing to listen to and arrives the moment anything changes in the deck, the
+editor or the remote. The health numbers are polled from `/api/live/status`,
+and only while the window is visible, because `LIVE.snapshot_status()` drops
+`stats` deliberately - its comment reads "nothing that changes every second".
+Putting kbps and frame rate on the feed would make the whole-state hub
+broadcast once a second to every page in the app. The six tiles use the LIVE
+panel's own formulas (Mb/s from `kbps`, `native.fps` before `vfps`, dropped
+summed across engine and native, `rtt_ms` before `delay_ms`) so the two places
+that show those numbers can never disagree about them.
+
+The program monitor asks for a picture only when the feed says the live output
+window is open: `/api/live/program.png` answers 404 until it exists, and a 404
+a second is a poor way to say "not open".
+
+**The clause was amended before the check was written, not after.** It promised
+the output window's own picture; proving that needs a real Win32 window, and
+this machine reports one monitor, where test windows do not go. So it proves
+the shut half outright - the message, the button asking the server, and *not
+one request made* for a picture that would 404 - and the open half by the
+request the page makes rather than by pixels. Narrowing a spec to fit a
+convenient test is only honest said out loud.
+
+| Found by looking, not by any assertion | |
+|---|---|
+| "SOUND" over "Sound", "CHAT" over "Chat" | Two components each assuming they were the only thing naming the section. The Sound dock's head holds nothing else once the x is hidden, so it goes; chat keeps its head for the channel pill. |
+| Then the channel pill fell to the left | Self-inflicted by that fix: `.lp-head` is a flex row and the `h2` carried `flex: 1 1 auto`, so the title had been doubling as the spacer holding the pill right. Predicted before the re-run, and it happened. |
+
+Verified: `tools/ui/onair.js` 20 of 20 (three times, across two fixes),
+`tools/ui/chatui.js` 30 of 30 twice as the regression check for docking, and
+the Python suite 154 of 154 (1 skipped). Run headless against the rig with
+S10's fake IRC server: `node tools/ui/onair.js <devtools port> 8799
+<.rig>/uishots`, the runner scratch as the other `tools/ui` probes' are.
+Every one of the three risks written down before the first run - that
+`/api/live/scene` might not be what writes `canvas.live`, that a remembered
+output window would both fail the no-404 check and put a window on the user's
+screen, and that the docked panels might not open through a re-entrant
+`mount()` - came back clean.
+
+## S11 - the chat panel (2026-09-13)
+
+The plan says "chat in the Live view". S9's Live view does not exist - and S9
+says it shows "the chat from S11". Rather than build half a page to hold this,
+it is a shared panel exactly as LivePanel and AudioPanel are: any page mounts it
+once and opens it from a button beside Sound. S9 will place it rather than own
+it, so nothing has to be unpicked when it arrives. Said before building it.
+
+**What it is.** One merged list with the service marked on every line, badges
+and the sender's color kept, commands and mentions marked, pause-on-scroll with
+a count of what arrived while you were reading back, Hide for a line and Block
+for a person. Read-only: there is no box to type in, because replying needs the
+account and the OAuth that S10 deliberately did without.
+
+Kept and not kept, on purpose. Hiding one message lasts as long as the panel is
+open - the hub keeps 300 and they age out, so a saved list of ids could only
+ever grow. Blocking goes into `chat.blocked` in config, so both pages agree and
+it survives a restart; it is local in the plan's sense, in that nothing is sent
+to the service and nobody is banned, they just stop appearing here. The socket
+is held only while the panel is open, and `feeds.serve_ws_feed` sends nothing at
+all on connect - which is what makes `/api/chat/recent` load-bearing rather than
+a nicety, and why the page names itself in the query (a WebSocket has no
+Referer).
+
+**Four things the first run found, and only one of them was the panel.**
+
+| Found | By | What it was |
+|---|---|---|
+| A burst of 40 lines reached the page as 12 | the probe, counting rows | `chat.py` had taken the state feed's `QUEUE_DEPTH = 8`. That hub fans out whole snapshots, where a dropped one is superseded by the next; a dropped chat message is simply gone, and a burst is exactly the busy moment when it matters. Now 512, still bounded. |
+| The log would not scroll, so pause-on-scroll had nothing to hold | the same run | Both were the first fault's shadow: twelve rows do not overflow. |
+| A shut page held its feed for up to 15 s | the probe, asking `/api/feeds` | `serve_ws_feed` waits in `q.get(timeout=15)`; the reader thread sets `gone`, but the sender does not look until the timeout. It now pushes a sentinel, so the release happens when the page hangs up. Shared with `/ws/events`, so every page gains it. |
+| **The connected pill was red** | the screenshot, and nothing else | `joined` was mapped onto the LIVE panel's `live` state, whose red means *the internet can see you*. Chat borrowing the on-air color said the wrong thing, loudly, and no assertion could see it. |
+
+**A claim wider than its check, caught before it shipped.** The first probe
+opened `deck.html` only, while the panel was being described as shared by both
+pages. It opens `canvas.html` too now - which, because `canvas.js` holds
+`/ws/events`, is also the real regression test for the sentinel above. P6 could
+not be: `deck.html` is on SSE, and the sentinel never touches that path.
+
+Verified: `tools/ui/chatui.js` 30 of 30 across both pages (21 of 25 first, then
+the four above), P6 21 of 21 and 22 of 22 after the feed change, and the Python
+suite 154 of 154 (1 skipped, 15 files). Run against a throwaway IRC server on
+localhost with the rig's own adapter aimed at it, so every message asserted on
+came off a socket through the real parser, the real hub and the real feed:
+`node tools/ui/chatui.js <devtools port> 8799 <.rig>/uishots`, with the rig
+restarted and a headless Chrome on that port. The runner is scratch, as the
+other `tools/ui` probes' runners are.
+
+Not changed, and noted rather than swept in: `_sse` has the same fifteen-second
+lag the WebSocket path just lost, and no reader thread at all - it learns a
+client is gone when it next writes. SSE writes fail fast on a dead socket, so it
+corrects itself on the next payload or ping. Two shared feed paths in one change
+is one too many.
+
+## The tools could not find each other (2026-09-13)
+
+Filed during S5 as two files with a wrong path. It was six files and thirteen
+references, with a second fault underneath and twelve more found by the check
+written for it.
+
+**What the runners do, and what the Python tools never learned.** Every runner
+`.sh` sets two anchors:
+
+    N="$(cd "$(dirname "$0")" && pwd)"        # the tool's own folder, in the repo
+    O="$(cd "$N/../../.." && pwd)/.rig"       # the rig and its scratch, beside the repo
+
+The Python rig tools have only `S = dirname(__file__)` and use it for both. So
+`wgc.py`, `windiag2.py`, `cdp.js` and `cpuby.ps1` were looked for beside the
+caller when they live in `tools/p0`, and `testrig/`, `live/`, `apps/`, `prof-*`
+and `rig.log` were looked for beside the caller when they live in `.rig`. Not a
+typo: the same idiom against a layout that moved under it. "After P12: the rig
+beside the repo" records the move - the runners were switched to the two
+anchors and `cpuby.ps1` and `wins.py` copied into `tools/p5` so the P5 scripts
+kept working; the Python tools were not looked at.
+
+**Why nothing said so.** Python against a file that is not there exits 2 and
+writes to stderr. Every one of these callers reads `.stdout` only, so it gets
+an empty string, and an empty string reads as "no frames" rather than "no such
+file". `p5rig.py` never got that far: it opens `live/p5rig.log` at import, so
+it died on line 14 before the capture path mattered.
+
+| Fixed | |
+|---|---|
+| `p2rig.py` | `windiag2.py`, `wgc.py` x2, `apps/`, `testrig/` |
+| `p3rig.py` | `windiag2.py`, `wgc.py` x2, `cdp.js`, `cpuby.ps1` x2, `apps/`, `prof-*` x2 |
+| `p5rig.py` | `wgc.py`, `live/` x3, `prof-*` x2, `rig.log` |
+| `p5switch.py` | `cdp.js`, `prof-p5` |
+| `p5min.py`, `p5park.py` | `wgc.py`, `live/` |
+
+`cpuby.ps1` stays on `S` in the P5 scripts: that copy is deliberate, and the
+two differ only in four comment lines.
+
+**The check that would have caught it** (`tests/test_tools.py`): every helper
+script a tool hands to python, node or powershell has to be a file that exists,
+and no tool may name this repo by absolute path. The last one found twelve I
+had not - eight `sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")`
+across p1/p4/p5, and `.build-env` written out in `p5recover.py` and
+`p12run.sh`. Each breaks the next time the repo moves, and it has moved once
+already. All twelve now work themselves out from the script; `p12run.sh`'s new
+value was checked to be identical to the literal it replaced, because
+`p12test.js` spawns it. The two path checks were then proved by breaking one
+Python and one shell reference on purpose and watching them go red - without
+that they had only ever seen green, which is also what a check that is not
+looking does.
+
+**Still open, and named rather than swept up.** About fourteen other tools
+(`p4/audiomem.py`, `p4/videomem.py`, `p4/p4soak.py`, `p5/comptest.py`,
+`p5/p5native.py`, `p5/p5nthreads.py`, `p5/p5onair.py`, `p5/p5recover.py`,
+`p5/p5stress.py`, `p5/p5threads.py`, `p5/tearcheck.py`, `p5/optrun.py`,
+`p5/framenative.py`) still write scratch to `S/live` or read `S/testrig`. The
+guard covers scripts, not directories. They need a rig, a GPU and ffmpeg to
+exercise, so they are listed for whoever next runs one rather than swept in
+blind.
+
+**Also found, not changed.** Eight runner scripts and `rigrestart.ps1` decide
+what to kill with `-notlike '*streaming stuff\music-deck*'` on the process
+command line. That is what stops a rig teardown from killing the user's real
+app on 8713 - and it stops protecting it, silently, if the repo folder is ever
+renamed. Destructive code that cannot be tested safely from here, so it is
+reported rather than touched.
+
+Verified: the full Python suite 154 of 154 (1 skipped, 15 files); the guard
+3 of 3, red on purpose, green again; every edited file compiles with
+SyntaxWarning fatal, which also cleared two invalid `\c` escapes in `p5min.py`
+and `p5park.py` that had been warning on every run. Nothing here was run
+against a rig: this is the tools' paths, not their results.
+
+## S10 - chat, ingested (2026-09-13)
+
+Taken before S9 on the user's instruction, and it was the right order: S9's own
+text makes chat a constituent of the Live view rather than an addition, so
+building the view first would have meant assembling four things that already
+work around a hole, then reopening it.
+
+**One shape, one adapter per service.** `chat.py` holds a single message -
+service, channel, id, time, user (id, login, display name, color), badges,
+text, and the command if the line starts with one - and an adapter's whole job
+is to produce it. Nothing downstream learns what Twitch is. A fourth service is
+a new adapter and nothing else, which is what the plan asked for.
+
+`!command` is parsed centrally rather than per adapter, so `!queue` means the
+same thing whichever service it arrived from. That is the seam S12 hangs off.
+
+**Two departures from the plan's wording, both deliberate.**
+
+- **TLS IRC, not WebSocket.** The plan says "IRC over websocket", which is right
+  for a browser. This runs in the server, and the app's `WebSocket` (`live.py`
+  448) is explicitly *the server side*: `send()` writes `0x80 | opcode` with no
+  mask bit and never makes a masking key, while RFC 6455 requires
+  client-to-server frames to be masked. So "IRC over websocket" here would mean
+  writing the client half of a WebSocket in order to wrap a protocol that does
+  not need wrapping. `irc.chat.twitch.tv:6697` speaks the same thing directly.
+  The class stays exactly right for the outbound `/ws/chat` feed to pages.
+- **Anonymous read, so no new secret.** A `justinfan` nick joins a public
+  channel with no OAuth at all, so this module holds no credential - in a
+  project that keeps a stream key under DPAPI and still has a leaked token to
+  revoke, that is worth stating. A test asserts it by scanning the module for
+  `oauth:`, `password`, `client_secret` and `access_token`.
+
+**The chat feed is the state feed's endpoint with a different hub.**
+`ChatHub` offers `subscribe()` / `unsubscribe(q)` exactly as `Hub` does, so
+`/ws/chat` is `feeds.serve_ws_feed(self, CHAT, FEEDS)` - the same function,
+unchanged. That was the payoff for copying the existing contract instead of
+inventing a similar one. Subscribers get `queue.Queue(maxsize=8)` and a full
+queue **drops**, counted, rather than growing: a page that cannot keep up misses
+messages instead of eating memory.
+
+Messages never ride the state snapshot. `Hub.broadcast()` serialises the whole
+state and exists to send rarely (`_change_key` suppresses unchanged sends); a
+message per broadcast would defeat both. The snapshot carries only which
+services are connected. A page opening mid-stream backfills from
+`/api/chat/recent`, off a 300-message ring.
+
+**One test hook, and the only one in the app that is refused on the real
+thing.** `/api/debug/chat-endpoint` points the adapter at another host so the
+rig can stand a plain IRC server on localhost. `/api/voice/override` next to it
+is ungated, and rightly - saying "speaking" on the real app is harmless.
+Telling a network client where to dial is not, so this one answers only when
+`CONFIG["port"]` is not 8713.
+
+That hook is what makes the rig check real rather than mocked: a fake server
+speaking Twitch's own handshake, with the adapter's actual socket, reading loop,
+PING answer and reconnect exercised. Mocking the socket would have exercised the
+mock, and those four are where this kind of code breaks. It also caught the
+thing worth catching: the override only survives because `connect()` builds a
+fresh adapter each time and `host`/`port`/`tls` are set on the *class*.
+
+Verified: 34 unit tests (the IRCv3 parser - the five escapes, valueless tags,
+and the trailing parameter that a naive split loses when a message contains a
+URL - the message shape, `/me`, command extraction, and the hub's
+drop-rather-than-grow) and 14 on the rig, end to end. The drop check passed on
+`reconnects: 1` while already back to `joined`: it did not merely notice the
+connection go, it had reconnected and re-joined inside a second and a half,
+with its count intact.
+
+### Two red tests found on the way, neither of them S10's
+
+The full Python suite had not been run in a while - the rig suites were being
+run instead, and for P6 those are two different things with one name. Running
+all of it turned up two failures:
+
+- **`test_p6.py` had been red since S5**, when the two frames moved from the
+  "sharing" group into "legacy" so the canvas would be the obvious home for
+  them. The assertion still expected "sharing". Corrected to match the change
+  S5 made on purpose. What is worth noting is how long it went unseen: every
+  time this work "ran P6" it ran `tools/p6/p6run.sh` on the rig (21/21, 22/22)
+  and never `tests/test_p6.py`. Two suites, one name, and an assumption.
+- **`test_p11.py`'s stream-key guard had been red since `a024091`** - across two
+  commits, on a security-relevant assertion, with nothing surfacing it. The code
+  is not at fault: the only two `.key` reads in `livepanel.js` are the TikTok
+  tab's Show and Copy, both user-initiated, both through
+  `POST /api/tiktok/reveal`, with `maskKey()` putting it back behind dots. The
+  *guard* was written before that tab existed and said flatly "nothing reads
+  .key", which cannot tell a deliberate press from a key riding the status poll.
+  It is sharper now rather than looser: every `.key` read must have a reveal
+  call above it, so a key arriving unasked still fails. `live.py`'s `status()`
+  is still checked for carrying no key at all.
+
+Both are the same lesson this session keeps producing in different costumes: a
+check that is not looking at what it claims to. S1's goldens contained a
+scrollbar, S6's `p9_np.png` could not see the bottom of its own inspector, S8's
+chevron passed by landing under a tolerance, and here two tests were simply
+never run.
+
+**Still to come, and one of them is not mine to decide.** YouTube is second, and
+its Live Chat API is official and quota'd. TikTok has no official read API at
+this tier, so it needs an unofficial connector carrying the same account risk as
+the stream-key work - the plan calls it "a decision, not a step", and it stays
+that way: the cost and the risk get laid out for the user, who decides. It will
+not be quietly built in.
+
+## S8 - the whole flow, gone through button by button (2026-09-13)
+
+The step the walk-through was for. Sixty-two numbered complaints, and this is
+the pass that answers all of them: closed, handed to a step that owns them, or
+deferred here with the reason written down. Nothing is dropped, and three of
+them turn out to have been wrong.
+
+### The Canvas Builder, as it is meant to be used
+
+Written down so the next change has something to disagree with. The order is
+the order of the job, not the order of the screen.
+
+**1. Make a scene.** The picker at the top left lists them; New scene starts
+one, horizontal or phone. A new scene is empty, and an empty scene now says what
+a scene *is*: a picture built out of layers, which becomes a window on this
+computer, and that window is what the people watching you see. That sentence is
+the whole model and everything below is a consequence of it.
+
+**2. Put something in it.** The left panel is three tabs in the order they are
+needed: **Layers** (what is in this scene), **Add** (put something in),
+**Pictures** (files you brought). Add is a grid of kinds, with "You, talking"
+across the top. A window or screen comes from the picker below it. Adding
+anything ends on the Layers list - you should always see what you just made.
+
+**3. Arrange it.** Drag to move, a corner to resize, the knob to turn; what
+Shift, Alt and Ctrl do is drawn under the canvas while you drag. The Layers list
+*is* the stacking order, and says so once there are two things to order.
+
+**4. Change how it looks.** The inspector, one folded section per kind of thing.
+A window from the deck either uses the design it already has or takes a copy for
+this scene - you are never sent elsewhere to recolor what you are looking at.
+
+**5. See what is going out.** "What's on air" shows the live output's picture.
+
+**6. Put it on stream - two different things.** *Open output* gives this scene a
+window on this computer to add in TikTok Studio or OBS. *Off air* opens the LIVE
+panel and streams from this app. Neither implies the other, and both say so
+where you press them. *Take* swaps which scene is live.
+
+**7. Saving.** There is none to do, and if a save fails you are told out loud.
+
+**The rules underneath.** Plain words over our own vocabulary. Marks are drawn,
+never typed characters. A control that is off should say why. And the empty
+state is where the teaching goes, because it is the only moment nothing is in
+the way.
+
+### What changed here
+
+- **An empty canvas explains itself** (G1, F7). A panel with the model in three
+  sentences and the three steps, each with a way into it. It goes the moment the
+  first layer lands, so it is never in the way.
+- **The three ways to make it real now say how they differ** (F5, F6, F9). "Off
+  air" was a pill that read as a status and was a button: it has a hand, a hover
+  and a drawn disclosure mark. "Studio" - the one panel that shows what viewers
+  see, behind a word naming a mode rather than the thing - is **"What's on
+  air"**.
+- **Every mark in the layer list is drawn** (B4), which S6 deferred here by
+  name: nine kinds, no typed characters left. Undo and redo too (B1), the
+  folding marker (B8), and the inspector's reset dots (B7).
+- **Plainer tabs** (G2): Sources and Assets were our filing. Layers / Add /
+  Pictures. The ids are unchanged, so nothing that addresses them breaks.
+- **Small ones:** the grid size no longer vanishes when the grid is off (E7);
+  the zoom readout is no longer the dimmest thing in the bar (E4); a failed
+  autosave says so out loud instead of as a red word in a corner (F3); the
+  layer list says the top is the front, once there are two layers (D1).
+
+### Three the walk-through got wrong
+
+Recorded as corrections rather than fixed, the way B6 was in an earlier slice.
+Each was mis-scored the same way - reading one surface and inferring behavior.
+
+- **F4: "the newer version replaces your work silently, with no dialog".** It
+  does not. `onConflict` raises a toast naming exactly what happened, plus an
+  `announce()` for screen readers. What *is* true, and is deferred: the conflict
+  clears the undo history, so the overwritten work has no way back. That is a
+  question about keeping a copy, not about a label.
+- **G10: "dead CSS suggesting a removed color-preset feature".** The swatches
+  are alive in the deck (`deck.html` 210 and 332, `deck.js` 2014-2020). The one
+  `.cb-right .swatches { display: none }` is the editor suppressing a cloned
+  deck control, like the others in `cleanPane`.
+- **B7 was right, and an earlier pass of mine was wrong to clear it.** The dot
+  is `<button class="reset-dot" ...>&#8635;</button>` - a typed character. The
+  deck hides it and paints a mask; the editor clones those nodes and does not
+  load `deck.css`. Measured in the editor: 8 dots, 12.32 px text, no `::before`,
+  no accessible name. The earlier pass photographed the *deck's* dots and
+  cleared the complaint. Right about the deck, wrong about the surface the
+  walk-through actually used.
+
+### And one shipped in S7
+
+`icons.js`'s `STROKED` never got `mic` when that glyph was added, so `svgIcon`
+painted a path drawn as outlines with `fill="currentColor"`: every microphone
+layer's row mark was a filled blob. `soundpanel.js` checked the layer's bars and
+never its row. The probe reads the rendered `fill`/`stroke` now, so the whole
+class fails a test rather than waiting for an eye.
+
+### Two introduced here and caught here
+
+The layering hint read "the top of this list is the front" on an empty canvas
+with no list - true, useless, and sitting above a second hint saying the scene
+was empty. And "Off air" got a disclosure caret written as a typed U+25BE, in
+the same pass that removed typed U+25B8/U+25BE from the section summaries for
+being font-dependent. Both fixed before the run.
+
+### The ledger
+
+**A (window capture) - all closed** by the picker and `holePreview` work.
+A2 is closed with a note: the `.source-note` cannot use `var(--z)`, because that
+variable lives on the editor's document and the note lives inside the iframe.
+
+**B (icons)** - B1, B2, B3, B4, B5, B7, B8 closed; B6 withdrawn (roving tabindex
+is correct for a tree); **B9 deferred** - "every explanation is a `title=`" is a
+whole-app convention, not a control.
+
+**C (drag and handles)** - C1, C3, C5 closed. **C4, C6, C7, C8, C9 are S17's**
+(rotation back to straight, text boxes stretching, marquee, Space-to-pan,
+wheel-to-zoom). **C2, C10-C14 deferred**: nine targets on a small layer is
+inherent to eight-way resize plus rotate, and the snapping language (lines,
+guides, drop targets) wants settling in one piece rather than four.
+
+**D (layering)** - D1 closed, D4 part closed by it. **D2, D3, D5 deferred**:
+front/back on bracket keys and the grouping story belong together, and a
+99999x99999 background layer is a scene-format question.
+
+**E (size and contrast)** - E3, E4, E7 closed. E1 is half closed and half
+**S16's** (the inspector's headings move all ten goldens, so they belong to the
+step that rewrites them). **E2, E5, E6, E8 deferred**: a type scale, a UI scale
+control, the brand that hides below 1700 px (which already carries its reason -
+the window's own title says Canvas Builder), and disabled controls that do not
+say why - which needs a reason per control.
+
+**F (saving and purpose)** - F1, F2, F3, F5, F6, F7 closed; F4 corrected; F8 and
+F9 part closed. **F8's remainder is deferred**: decoupling the monitor from
+Studio would drag Studio's editing semantics with it.
+
+**G (discovery)** - G1, G2, G3, G9 closed; G10 corrected. **G4, G5, G6, G7, G8
+deferred**: the shortcuts dialog, expression fields, right-click discovery,
+layer names defaulting to their type, and safe zones being unexplained *and*
+grayed with no reason - which this step's own screenshot caught, and which is
+the same fix as E8.
+
+Verified: P9 72 of 72, P8 56 of 56, P6 21 of 21 and 22 of 22, and the empty
+canvas 7 of 7 (`tools/ui` probes for the glyphs and the first-run panel). The
+ten goldens are regenerated: the summary marker is a drawn chevron now, which
+moved every inspector by 0.22-0.35% of its pixels - under the 1% threshold, so
+they *passed* first. Left alone, that is a third of a percent of known drift
+baked into every reference and a smaller budget for the next change, which is
+the accumulating blind spot S1 and S6 both wrote up.
+
+## S7 - the mixer with the door left open (2026-09-13)
+
+`live.py` has mixed the microphone and the desktop into the stream since P4,
+and the only way to see any of it was to open the LIVE panel - where the hint
+said, accurately, "the meters move while you are LIVE". So the mixer existed
+and was invisible unless you were streaming. There is a Sound panel now, in the
+deck and in the editor, built as `LivePanel`'s twin (`mount`/`open`/`close`/
+`toggle`, an anchored popover, Escape and outside-click): both channels with
+device, gain, mute and a meter, hearing yourself, and the talking threshold as
+one number rather than a second copy.
+
+**The meter needed a lease, and nothing but a scene ever took one.** `voice.py`
+opens the microphone only while a page holds a renewable lease, and the only
+holder in the app was `scene.js` (`holdVoice`, when a scene has a reactive layer
+or any trigger). The inspector's meter free-rides on that, which is why its own
+note says "the microphone opens while a scene uses your voice". A panel someone
+opens *to look at their microphone* cannot free-ride on anything: it takes its
+own lease and gives it back on close. Without that the meter is a painted-on
+zero at exactly the moment it matters. The test pins it as `off -> monitor ->
+off`, which works whether or not the machine has a microphone: `_reconcile`
+reports `source: "monitor"` as soon as a lease exists, even where the device
+fails to open.
+
+**One meter is honest about being dead.** The microphone's level is available
+any time, from the voice monitor. The desktop's is not: Windows hands the app
+the mixed desktop sound only through the native mixer, and that runs only while
+streaming. Rather than a bar that never moves, the panel says so.
+
+**Hearing yourself is done in the page**, with `getUserMedia` into an `<audio>`
+element and its own volume, off by default behind a headphones warning. The
+alternative was a render path in `audio.py` for something the browser already
+does, with the same feedback risk either way.
+
+**The microphone layer reads its own level.** The feed carries `speaking` but no
+level, and a meter wants thirty readings a second - an absurd thing to poll a
+server for when the page can listen to the same device, which is what the camera
+layer already does. Bars, one bar, or a waveform, from a WebAudio analyser.
+It copies the camera's device discipline exactly: `visible` inside the
+`mediaKey`, so hiding the layer releases the microphone; an `entry.gone` guard
+for the race where the layer is deleted while Windows is still deciding; and an
+`identity()` entry so a scene switch adopts it instead of closing and re-opening
+the device. No server change was needed at all - `scenes.py` line 98 keeps any
+layer type string, checked rather than assumed.
+
+Four defects in the new code, all mine, and how each was caught:
+
+| Defect | Caught by | Why it mattered |
+|---|---|---|
+| The `AudioContext` was never resumed | reading the runners and noticing `--autoplay-policy` | A page nobody clicked starts it suspended, and a scene output window is opened by the app - so the *normal* case was a meter permanently at zero, which I would have blamed on the rig having no sound |
+| The draw loop rescheduled itself before testing Ultra | re-reading my own loop | It woke 165 times a second to return early - the exact waste `motion.js` exists to prevent |
+| A gain slider's value was clobbered mid-edit | the test: mic gain stayed 1 while system took 0.8 | `paint()` rewrites every unfocused slider from the server's copy every 150 ms, so a reply landing inside the 80 ms debounce reset the slider and the debounce then sent that reset value. `system` survived by luck of timing. The inspector's threshold already had this guard; the gains did not |
+| **`gap: 6%` gave every bar zero width** | the screenshot, and nothing else | 23 gaps of 86 px in a 1440 px box is more gap than box. Every bar flexed to nothing while its transform went on changing, so "24 bars", "30 different shapes" and "24 above the floor" all passed against a layer that rendered a black rectangle |
+
+That last one is the one worth keeping. Reading `style.transform` from the DOM
+cannot see that nothing was laid out, so the fix is not only the gap (scaled
+from the bar count now): `soundpanel.js` measures `getBoundingClientRect()` and
+requires real width - 24 bars, 52 px each, 1242 px across. The same shape of
+fault as `p9_np.png` passing because it could not see the bottom of its own
+inspector.
+
+**What the test does not prove.** Chrome's fake device plays a pure tone, whose
+energy sits in one low bin, so the picture shows the first bars tall and the
+rest at the floor - correct for that input, and no evidence at all about how the
+spread looks on speech. And there is no keyboard shortcut, on purpose:
+Ctrl+Shift+A is Chrome's own tab search, so whether the page ever receives it
+depends on the kind of window, and a headless test would pass either way and
+tell me nothing.
+
+Verified: `tools/ui/soundpanel.js` 20 of 20, P9 72 of 72, P6 21 of 21 and 22 of
+22.
+
+## S6 - the PNGtuber found, and triggers that mean something (2026-09-13)
+
+Two things were asked for: a picture of you that changes when you talk, and the
+camera frame lighting up while you speak. The first already existed and could
+not be found. The second did not exist. Between them sat five actions and three
+moments, of which two moments said the same thing twice and one action worked
+with exactly one moment.
+
+**Found.** The `reactive` layer is "You, talking" everywhere it is named, and it
+leads the Add list across the full width with its own drawn glyph and the word
+PNGtuber in the sub-line - "reactive image" being our word for it and nobody
+else's. Its mark in the layer list was a smiling-face emoji, which is precisely
+what icons.js's opening paragraph forbids; it is a stroked glyph now, like the
+eye and the padlock it sits beside. The other seven type marks are geometric
+symbols rather than emoji and go under S8's pass with everything else. Its
+setup was already one screen and stayed one screen.
+
+**Two moments, four actions, and the coupling gone.** While I talk holds; when I
+start talking does the same thing once, for a beat. That beat is what "pop"
+was - an action welded to one moment - which is why the editor had to keep the
+two dropdowns in step behind your back: choosing pop moved the when, and moving
+the when put the action back to "show it". Every action takes either moment
+now, and the three lines that shoved the fields about are deleted. "While I'm
+quiet" was the same sentence inverted and is gone; "add a style" asked for the
+name of a CSS rule that had to exist somewhere else and is gone.
+
+The glow is a `drop-shadow`, not an outline or a box-shadow, because
+drop-shadow follows what is actually drawn: a round camera or a frame's ring
+lights up on its own shape rather than inside a rectangle. The beat's classes
+are kept separate from the held ones, because a layer diff landing mid-beat
+would otherwise clear the class and cut it short.
+
+**Old files come forward, and one case deliberately does not.** Scene version 2
+migrates on load: silent+show becomes speaking+hide and silent+hide becomes
+speaking+show, pop becomes a one-shot bounce, "add a style" is dropped. But
+**bouncing while quiet has no equivalent and is dropped rather than inverted** -
+the blanket "silent -> speaking" rewrite everybody reaches for first would have
+turned it into its exact opposite. Two unit tests hold that, since it is pure
+logic and costs nothing to pin down.
+
+Two bugs fell out of the vocabulary work, both older than it:
+
+| Bug | What it meant |
+|---|---|
+| `--bounce` fell back to `0px`, and only the PNGtuber layer ever sets it | A "bounce" trigger on a text, camera, shape or frame layer added the class and animated a movement of zero. The second-most-useful action did nothing on every layer type but one. |
+| The Add list built the layer with `bounce: true` | `px()` is `Math.round(Number(n))`, so that is `1px` - a one-pixel bounce, on a slider offering sixty. (Predicted as the invalid `truepx`; reading `px` rather than assuming corrected that.) |
+
+**And a golden that passed by not looking.** Eight of the ten goldens moved by
+86 px - the trigger hint grew, and that section is in every inspector - and
+`p9_face.png` by 164. `p9_np.png` matched at 0.00%. It should not have: Now
+Playing carries the same section. The clip is `min(panel height, content + 12)`,
+and measuring the live DOM gave panel 3351, content 3624, trigger section at
+3359..3624 - **273 px of it outside the picture, and the whole section at that.**
+That golden has never contained the trigger UI since the day it was written, and
+an 86 px change to that very section left it matching perfectly. The goldens are
+shot in a taller viewport now: np went 3351 -> 3620, the other nine matched at
+0.00% (their clips were content-sized already, so a taller panel changes
+nothing), and P9 is 72 of 72. The lesson belongs with S16 alongside S1's
+scrollbar finding: a golden can pass because it cannot see, and only measuring
+the clip against the content will say which.
+
+**What was not built, on purpose.** The plan lists "swap picture" among the
+actions. It is not one. Swapping a picture on your voice is what the "You,
+talking" layer does properly - two assets, a blink, a bounce and a threshold
+with a live meter - and a second, weaker swap living in a trigger row would
+duplicate it badly. The triggers panel says so and points at the layer.
+
+Two faults in the new test, both mine, both caught by reading its output rather
+than its exit code. The bounce check read `translate` and asked whether the
+string started with `0px` - but a vertical bob is `"0px -8px"`, so it always
+does, and the check called a moving layer still while printing the very numbers
+that proved it moved. And the first screenshot framed only the middle of the
+scene: no device metrics were set, so the page centered an unscaled 1920x1080
+inside a 1258x702 window. The DOM checks did not care, which is exactly how a
+useless picture survives.
+
+Verified: `tools/ui/voicetrig.js` 16 of 16, P9 72 of 72, P8 56 of 56, P10 24 of
+24, the scene tests 16 of 16.
+
+## S5 - frames belong to the canvas (2026-09-12)
+
+Screen frame and Camera frame were windows with settings of their own, which is
+exactly why they appeared not to work while a scene was being set up: nothing
+done in the Canvas Builder touched them. They are layers now. `shape: frame`
+already cut the hole; what it lacked was everything around the hole, so the edge
+styles, the hole's shape and mode, the title plate, the four corner badges and
+the decor loop moved across and are read from layer props. The pop-out pages
+still work for anyone driving them through LIVE Studio, and their deck cards
+moved to a "Windows of their own" group so the canvas is the obvious home.
+
+**Lettering comes from the layer, not the viewport.** `frame.html` sizes its
+text at `3.4vmin`, which is right for a window that *is* the viewport and wrong
+inside a scene, where every frame would be lettered identically whatever size it
+was drawn at. `frameDressing` works `--frame-em` out from the layer's own
+transform instead - 3.4% of its short side, floored at 12px. Two frames on one
+scene prove it: 16px on the 480x480 one, 24px on the 1200x700 one.
+
+**What was broken in the pop-out, found on the way.** `.badge` was a fixed 26px
+circle, so a badge reading LIVE spilled straight out of it. Pre-existing, and
+invisible until a layer drew the same badge beside it. `min-width` with padding
+and a 999px radius fixes both at once, and a one-character badge stays round.
+
+Three defects introduced in this step and caught before it shipped:
+
+| Defect | Caught by | Fix |
+|---|---|---|
+| The frame panel showed for every shape, box and line included | re-reading my own edit | `data-show` on the `<details>`, through a new fourth argument to `section()` |
+| Badges placed off `--ring-inset` and `--decor-px` | the picture - they floated inside the ring instead of sitting on it | those are different quantities, and `--decor-px` is not set until `applyDecor` runs; back to `pad + bw/2`, and `pad + 15%` on a circle |
+| `frameDressing`'s fourth argument changed meaning; its callers did not | re-reading the edit before running it | signature and calls put back in step |
+
+**The inspector's section list, and why the expectation stayed at five.** P9
+reads `Editor.inspector().secs`, which counted every `details.sec` in the DOM.
+The frame panel sits in the DOM for every shape and is shown only for a Frame,
+so a Box read six sections and the row failed. Adding `frame-edge` to the Box
+expectation was the small change and the wrong one: it documents a panel the
+user cannot see, and it would go on passing if the `data-show` broke and the
+panel appeared for everything. `secs` filters on `hidden` now, and `p9test.js`
+306 asserts the panel *arrives* when the shape becomes a Frame - `frame panel
+true`. Nine rows unchanged, Box still five, and a broken `data-show` now fails
+the suite. `frame-edge` is the only section carrying a `data-show`, so nothing
+else moved.
+
+`p9_box.png` was nearly deleted on the assumption that a new section must move
+the golden. It does not: a hidden `<details>` takes no layout at all. Deleting a
+reference image to fix a failure it had no part in would have thrown away the
+only record of what that inspector used to look like. Left alone, it compared
+clean.
+
+**The `?` badge: a claim withdrawn, then reinstated.** Earlier the `?` in the
+camera frame's corner was called a failed glyph, then withdrawn as "the user's
+own text". It was neither the user's text nor a font failure. `p6run.sh` sets
+that badge to a sparkle and holds real UTF-8 for it, but `curl.exe` reads the
+ANSI command line, where that character has no cp1252 form - so the server was
+handed `?` and stored `?`. Proven without the app in the loop: a throwaway echo
+server recorded `b'{"bl": "?"}'` from a `-d` payload, while the same bytes
+through a pipe arrived whole. The payload goes over stdin now, the stored value
+reads `✨`, and the shot draws the sparkle. The app was never at fault - the
+deck posts config with `fetch` + `JSON.stringify`, UTF-8 by definition - and no
+other shell script in `tools/` hands non-ASCII to curl.
+
+**The check this step was to be judged by has not been run.** The plan asks for
+the frame layer around a *native capture hole*, captured by WGC and compared
+against the pop-out page. What was run is page-side: `tools/ui/framelayer.js` 13
+of 13, and the layer photographed beside `frame_camera.png` and
+`frame_screen.png`. A CDP screenshot photographs Chrome's rendering, not what
+the native compositor keys into the stream, so it is structurally unable to see
+the divergence that check exists to catch. Running it needs a visible, composed
+window (WGC delivers nothing while DWM is idle) on a one-monitor machine, and
+`p5native.py` records the microphone and system audio into a file it leaves
+behind. It is the user's to run, and it is listed for them rather than quietly
+swapped for something easier.
+
+Unrun is not unchecked, though. It was written against S5's server and S9 to
+S18 moved a great deal of that, so every call it makes was read against the
+server as it stands: the ten endpoints all still answer - the component and
+scene ones through the routers at `server.py:2800` and `2633` rather than as
+literal paths, which is why a first grep for them said they were gone -
+`live_start` still returns `path="native"`, `NATIVE.status()` still carries
+`sources[].frames` with `fps` and `dropped`, `overlay.open()` still returns
+`hosted: true`, and every frame prop it sets is one `scene.js` reads. Its
+ffmpeg is where `FF` points, RTMP 1935 is free, and `frame_camera.png` is
+there to compare against.
+
+One trap, found by reading rather than running: `overlay.open()` answers
+`{"ok": true, "already": true}` with no `hosted` key when the window is
+already up, so a run that was interrupted leaves the live output open and the
+next run fails its first check for that alone. Close the live output first.
+
+Verified: P9 72 of 72, P10 24 of 24, P6 21 of 21 and 22 of 22, pickertest 19 of
+19, `framelayer.js` 13 of 13 twice.
+
+(Also found here, filed on its own: `p5min.py` and `p5park.py` look for `wgc.py`
+in their own folder, while the only copy in the repo is in `tools/p0/`. Done -
+and it was six files and thirteen references rather than two: see "The tools
+could not find each other".)
+
+## S4 - the cards (2026-09-12)
+
+"The buttons here look bad." They did, for two reasons neither of which was the
+one written in the plan - which said the three buttons were crammed in a row
+beside the size. They were not: `deck.css` 1079-1080 already wrapped the scene
+card's footer and gave the size a row of its own. Photographing the strip first
+was what found the real faults, and it is the only reason this entry is right.
+
+| What the picture showed | Why |
+|---|---|
+| "Edit" stranded alone on a second row beside a block of dead space, the three buttons all different widths | Three buttons do not fit one 226 px row, so the wrapping flex broke them 2 + 1 |
+| Six Open buttons at four different heights along the bar | Component descriptions wrap to one or two lines, and the footer followed the text down |
+| "CLOSED" as bare gray capitals in a corner | It was a label, not a state |
+| Eighteen solid accent buttons with a glow, all shouting equally | One primary is a call to action; a strip of them is wallpaper |
+
+All four fixed in CSS alone, so the markup - and with it the paint contract -
+is untouched: `paintSceneCards` and `paintCardState` still find `.wc-state`,
+`[data-act="scene-open"]` and `[data-act="scene-live"]` by selector and rewrite
+their text. The scene footer is a two-column grid with the main action spanning
+both and the other two sharing the row beneath; `.wc-foot` gets `margin-top:
+auto`; `.wc-state` becomes a pill; and the primary inside a card is
+accent-tinted rather than solid with a glow, `.btn-primary` being left alone
+everywhere else in the deck.
+
+**A regression introduced here and fixed here.** `margin-top: auto` is right
+for a component card and wrong for a scene card. Every card in the strip
+stretches to the tallest, and a scene card has no description to fill the
+difference - so the slack that used to sit harmlessly at the bottom opened as a
+hole between the name and the buttons, on all twelve. Twelve cards with a hole
+in them is worse than the ragged wrap it replaced. The pinning is scoped to
+component cards now; scene cards all share one shape and line up with each
+other anyway, and the two groups sit in separate labeled sections where their
+footers were never meant to align.
+
+Verified: component-card buttons at `tops [324 x6], spread 0px` (four different
+heights before), the paint hooks still writing (`stateText "closed"`,
+`openText "Open output"`, `liveText "Go LIVE"`), the head row not wrapping at
+1000 px or 820 px with the chip's new padding, and P6 22 of 22 with no console
+errors. Before and after pictures at 2x and 4x, which is how both the original
+faults and the hole were found.
+
+**And the S2 leftover, closed.** The deck's reset dots were never broken:
+photographed at 3x they draw a crisp centered arrow, exactly as the mask at
+`deck.css` 703-712 intends. Every reading against them was `inkcenter.js`
+filtering out elements at negative coordinates but not ones below the fold - so
+their clips fell outside the viewport and photographed nothing, which the sweep
+reported as "nothing drawn in it". There are 17 of them, not the 8 that happened
+to be measurable in one run. The viewport filter is fixed.
+
+The method note worth keeping: this step photographed the thing before changing
+it, and the pictures corrected the plan twice - once about what was wrong, once
+about what the fix broke. The measuring in S2 did neither.
+
+## S3 - the output window you can move and shut (2026-09-12)
+
+The complaint: open a scene's output and there is no way to drag it anywhere or
+close it. True, and the reason is deliberate - `hostwin.py` 25-34 builds these
+windows `WS_POPUP` with **no `WS_CAPTION`**, borderless on purpose, because a
+title bar would be captured into the stream.
+
+**But the answer to that was already written.** `windowctl.js` opens by saying
+it: "They have no title bar, so moving and resizing happen by forwarding
+pointer deltas to the server, which drives the host window with Win32 calls."
+It gives whole-window drag, eight-way resize, minimize and close, batching
+deltas at 25 Hz. The four component pop-outs and both frame windows have used
+it since they were written. `scene.html` **loads that script** (line 20) and
+never called `attachWindowControls`. The one window a scene actually goes out
+of was the one window with no controls.
+
+So this step is a port, not a design. What differs from `frame.html`, which is
+otherwise the model:
+
+- **The overlay is a sibling of `#root`.** `fit()` (`scene.js` 810-819) gives
+  `#root` a `transform: scale(k)` and computed `left`/`top`; anything inside it
+  would scale with the picture and miss the window's real corners. `frame.js`
+  never met this because its stage is not transformed.
+- **Hover keys off the body, not the stage.** `frame.css` uses
+  `.stage:hover .handles`, which only works because its handles sit inside the
+  stage. With the overlay outside, that selector can never match - so the body
+  is the drag surface, which also gives the first-open hint's class somewhere
+  the stylesheet can see it.
+- **Off unless switched on.** The CSS hides `.handles` outright and `scene.js`
+  adds `has-winctl`; a scene that renders without its script cannot put buttons
+  on a stream. Gated on `!PREVIEW && !window.EMBED`.
+- `--frame-color` does not exist on a scene page, so the hover tints it drove
+  are literals here rather than a variable resolving to nothing.
+
+The backend needed no work: `canvas.outputs` is keyed `"scene:<id>"`,
+`scene.js` already computes `API = '/api/components/scene:<id>'`, and
+`window_action` serves nudge, edge, minimize and close for any component.
+
+Measured against a real window, opened **parked** (off every screen - there is
+one monitor here and it is the user's):
+
+| Asked | Got |
+|---|---|
+| `nudge` (40, 25) | x 60,60 -> 100,85. Moved by exactly (40, 25) |
+| `edge` (30, 20) from `br` | 1920x1080 -> 1950x1100 |
+| `close` | shut, `open` false |
+
+Front end: `tools/ui/ctlgate.js`, 11 of 11 - nothing switched on in the
+preview, the overlay shown but `pointer-events: none` in a standalone output
+with `auto` on both buttons and all eight edges, the overlay outside the scaled
+box, and the hint appearing and clearing itself. Then P10 24 of 24, P9 72 of 72
+and `pickertest` 19 of 19, all three of which load `scene.html` as the editor's
+preview and would have caught buttons appearing over it.
+
+**Two mistakes worth keeping.** The first probe of the backend asked a scene
+output to nudge with no window open, got `{"ok": false, "rect": null}`, and the
+control built to catch that - the same call against a component that has always
+worked - returned the same thing. It proved only that neither can move a window
+that is not there. Open the window first.
+
+The second cost more. `ctlgate` first reported the controls switched on in the
+editor's preview, which looked like the exact regression this step could cause.
+It was the harness: every CDP tool here opens a page with
+`fetch('/json/new?' + encodeURI(url))`, and `encodeURI` leaves `&` alone, so
+`scene.html?id=X&preview=1` reaches `/json/new` as two parameters and the page
+loads as `scene.html?id=X` with the flag stripped. Reordering to
+`?preview=1&id=X` passed, which is what gave it away. The tools written in this
+plan use `encodeURIComponent` now; the project's own suites still do not, and
+are booked at S17b rather than rewritten mid-step.
+
+And a correction: this session twice claimed `scene.html` does not load
+`windowctl.js`. It does, line 20. The claim rested on an S1 grep for
+`rel="stylesheet"`, which could never have shown a `<script>` tag - a search
+that could not have found the thing it was cited as ruling out.
+
+## S2 - the centering bug that was not there (2026-09-12)
+
+The ask was to check every error mark is centered in its button. It is. The
+step is worth writing down anyway, because most of it was spent proving a
+premise wrong.
+
+**Why it needed measuring at all.** Comparing the icon's rect to the button's
+rect only catches layout, and would call the warning emoji perfectly centered:
+a glyph sits inside a line box that is itself centered, while the ink inside
+that box need not be. So `tools/ui/inkcenter.js` measures ink - each mark is
+screenshotted, the dominant color taken as its own fill, everything far enough
+from that counted as ink, and the middle of the ink compared with the middle of
+the box. There is no imaging library here (`capture._png` writes PNGs by hand),
+so it carries a small PNG decoder over node's zlib.
+
+**The first version reported 21 of 21 centered, and that was a false
+all-clear.** It selected `button, [role="button"], summary` - but the two marks
+the step exists for are a `<div class="zone-badge">` and a
+`<span class="row-warn">`, neither of which is a button, and both of which only
+exist on a *phone* scene with a layer under TikTok's comments. The reset dots
+were sealed in a collapsed `<details>`, and the align bar needs a layer
+selected. It measured whatever happened to be on screen and passed. Rewritten
+to choose marks by shape (a lone `<svg>`, or one or two characters that are not
+words), to arrange the page so the marks exist, and to print coverage - a
+narrow sweep must not be able to look like a pass.
+
+**The first calibration was also worthless.** It "nudged" the badge with
+padding on a fixed 20x20 grid box, which moves nothing; the measurement came
+back identical three times, which was the tell. Done properly with synthetic
+controls - a 6 px dot placed by hand at (0,0), (3,2), (-4,0) and (0,-3) - the
+tool returned each offset exactly. It works.
+
+**The answer: 36 of 36 marks centered within 1 px.** Nothing in the deck or the
+editor is off center. The codebase had already solved this properly at
+`deck.css` 703-712, where the reset dot's mark is a mask cropped to the icon's
+own bounds rather than a typed glyph, with a comment saying exactly why: "a
+glyph sits wherever its font puts it, which is rarely the middle."
+
+**So the only real change is the two warning emoji.** `icons.js` opens by
+warning against emoji - they render differently on every machine and look by
+turns childish and broken - and then `canvas.js` and `canvastools.js` used one.
+They are `svgIcon('warn')` now. The glyph is filled with the mark punched out
+rather than stroked, because at 13 px on an amber chip an outlined triangle
+holding a separate exclamation turns to mush; that needed a small `EVENODD` set
+in `svgIcon`, added the way `STROKED` was rather than special-cased.
+
+Verified: P10 24 of 24 (it counts `.zone-badge` elements and tests for
+`.row-warn`, never the character, so it proves the swap kept working), P9 72 of
+72 with no golden moved - `.row-warn` is in the layer tree and `.zone-badge` on
+the canvas overlay, while P9 clips to `#inspector` - `pickertest` 19 of 19, and
+the sweep 36 of 36, where both marks now read as `svg` rather than
+`glyph "⚠"`.
+
+**Left unresolved, and honestly so.** The deck's eight `.reset-dot` buttons.
+Two probes found them absent from the page entirely; the sweep finds all eight
+present and painting nothing, at ink thresholds of 40, 20 and 10. In the same
+run, a `::before`-with-mask control of my own rendered and measured perfectly,
+so `Page.captureScreenshot` handles the technique. The observations contradict
+each other, which makes the measurement unreliable rather than the button
+broken. It is deck-side, pre-existing, and untouched by anything here, so it is
+booked at S4 rather than guessed at a sixth time.
+
+The toast at `newscene.js:215` still says "marked ⚠" in its text. That is
+prose, not a control, and stays.
+
 ## S1 - scrollbars, and what they were hiding in the goldens (2026-09-12)
 
 First step of the Stream Deck plan (`docs/STREAM_DECK_PLAN.md`). The Canvas
@@ -824,7 +3328,7 @@ reference images to land a font-size is the tail wagging the dog, and a global
 `update` blesses every image including any drift you did not mean. The
 inspector's type is its own change, with the goldens rewritten as the point of
 it. What was needed here instead was surgical: the capture inspector genuinely
-changed in the slice before this one (relabelled control, the native-mode hint
+changed in the slice before this one (relabeled control, the native-mode hint
 now shown, picker labels no longer squeezed to 9.4 px), so *that one golden*
 was deleted and left to regenerate - `p9test.js` writes any golden it cannot
 find - while the other nine stayed under comparison and all nine still matched
@@ -888,7 +3392,7 @@ itself with our internal type name - "capture", "reactive", "component". It
 says "Screen or window", "Reactive image", "A window from the deck" now.
 
 **Saving.** There is no File menu, saving is a 60 ms debounce, and the only
-confirmation was the word "Saved" at 12 px in grey in a corner - which reads,
+confirmation was the word "Saved" at 12 px in gray in a corner - which reads,
 to somebody who has lost work before, as something to distrust rather than
 rely on. The indicator is a button now: same class, same box, same text, so the
 top bar cannot wrap where it did not before (it did, at 1440-1600 px, and that

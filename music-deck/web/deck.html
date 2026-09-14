@@ -46,7 +46,10 @@
       <button id="liveGo" class="btn btn-primary btn-sm" type="button">Start</button>
       <button id="liveMore" class="btn btn-ghost btn-sm" type="button" aria-haspopup="dialog" title="The LIVE panel: stream key, quality, sound and the stream's health (Ctrl+Shift+L)">LIVE&hellip;</button>
       <button id="remoteOpen" class="btn btn-ghost btn-sm" type="button" title="A small scene remote window, to switch scenes while you stream">Remote</button>
+      <button id="liveViewOpen" class="btn btn-ghost btn-sm" type="button" title="The Live view: what is on air, how the stream is going out, the scene switcher, sound and chat, in one window">Live view</button>
     </div>
+    <button id="soundBtn" class="btn btn-ghost btn-sm" type="button" aria-haspopup="dialog" title="Your microphone and the desktop sound: which one, how loud, muted or not, hearing yourself, and what counts as talking">Sound&hellip;</button>
+    <button id="chatBtn" class="btn btn-ghost btn-sm" type="button" aria-haspopup="dialog" title="Chat from every service in one list, with commands and mentions marked. Hide a message, or stop showing someone here.">Chat&hellip;</button>
     <label class="check ultra-toggle" title="The lightest the app can run: no animation in the app or your windows, animated pictures frozen, clocks that move once a second, and captions as finished lines only.">
       <input type="checkbox" data-ui="ultra" data-kind="bool"><span>Ultra optimized</span></label>
     <button id="appLookToggle" class="btn btn-ghost btn-sm" title="Colors, font and density of this app's own window">App appearance&hellip;</button>
@@ -129,7 +132,7 @@
       </div>
       <div class="theme-bar">
         <span>Theme</span>
-        <select id="fullTheme" class="input">
+        <select id="fullTheme" class="input" aria-label="Theme">
           <option value="">— pick a full theme —</option>
           <option value="midnight">Midnight</option>
           <option value="minimal">Minimal</option>
@@ -234,21 +237,21 @@
         <details class="adv">
           <summary>Fine-tune individual colors</summary>
           <label class="field"><span>Title</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="text.title_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.title_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="text.title_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.title_color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Artist</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="text.artist_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.artist_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="text.artist_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.artist_color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Label</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="text.label_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.label_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="text.label_color" data-kind="color"><button class="reset-dot" type="button" data-clear="text.label_color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Card border</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="card.border_color" data-kind="color"><button class="reset-dot" type="button" data-clear="card.border_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="card.border_color" data-kind="color"><button class="reset-dot" type="button" data-clear="card.border_color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Card fill</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="card.fill" data-kind="color"><button class="reset-dot" type="button" data-clear="card.fill" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="card.fill" data-kind="color"><button class="reset-dot" type="button" data-clear="card.fill" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Art border</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="art.border_color" data-kind="color"><button class="reset-dot" type="button" data-clear="art.border_color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="art.border_color" data-kind="color"><button class="reset-dot" type="button" data-clear="art.border_color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Progress bar</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="progress.color" data-kind="color"><button class="reset-dot" type="button" data-clear="progress.color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="progress.color" data-kind="color"><button class="reset-dot" type="button" data-clear="progress.color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <label class="field"><span>Decor</span>
-            <span class="color-row"><input class="color wide" type="color" data-np="decor.color" data-kind="color"><button class="reset-dot" type="button" data-clear="decor.color" data-scope="np" title="Reset to theme">&#8635;</button></span></label>
+            <span class="color-row"><input class="color wide" type="color" data-np="decor.color" data-kind="color"><button class="reset-dot" type="button" data-clear="decor.color" data-scope="np" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
           <span class="hint">Blank means "use the theme color above". Set one to override just that element.</span>
         </details>
 
@@ -805,11 +808,11 @@
 
         <div class="divider"></div>
         <label class="field"><span>Words</span>
-          <span class="color-row"><input class="color wide" type="color" data-ly="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="ly" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-ly="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="ly" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <label class="field"><span>Faded / sung</span>
-          <span class="color-row"><input class="color wide" type="color" data-ly="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="ly" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-ly="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="ly" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <label class="field"><span>Highlight</span>
-          <span class="color-row"><input class="color wide" type="color" data-ly="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="ly" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-ly="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="ly" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <span class="hint">Leave blank to use the Now Playing colors. Set a color to give them their own.</span>
       </div>
 
@@ -891,11 +894,11 @@
 
         <div class="divider"></div>
         <label class="field"><span>Track title</span>
-          <span class="color-row"><input class="color wide" type="color" data-q="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="q" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-q="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="q" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <label class="field"><span>Artist / times</span>
-          <span class="color-row"><input class="color wide" type="color" data-q="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="q" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-q="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="q" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <label class="field"><span>Highlight</span>
-          <span class="color-row"><input class="color wide" type="color" data-q="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="q" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-q="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="q" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <span class="hint">Leave blank to use the Now Playing colors. Set a color to give them their own.</span>
       </div>
 
@@ -1033,11 +1036,11 @@
 
         <div class="divider"></div>
         <label class="field"><span>Words</span>
-          <span class="color-row"><input class="color wide" type="color" data-cap="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="cap" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-cap="colors.text" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.text" data-scope="cap" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <label class="field"><span>Status text</span>
-          <span class="color-row"><input class="color wide" type="color" data-cap="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="cap" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-cap="colors.muted" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.muted" data-scope="cap" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <label class="field"><span>Accent</span>
-          <span class="color-row"><input class="color wide" type="color" data-cap="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="cap" title="Reset to theme">&#8635;</button></span></label>
+          <span class="color-row"><input class="color wide" type="color" data-cap="colors.accent" data-kind="color"><button class="reset-dot" type="button" data-clear="colors.accent" data-scope="cap" title="Reset to theme" aria-label="Reset to theme">&#8635;</button></span></label>
         <span class="hint">Leave blank to use the Now Playing colors. Set a color to give them their own.</span>
       </div>
 
@@ -1113,7 +1116,7 @@
             <span>Color</span>
             <div class="row gap">
               <label class="check"><input type="checkbox" id="stickerTint"><span>Tint it</span></label>
-              <input class="color" type="color" id="stickerColor">
+              <input class="color" type="color" id="stickerColor" aria-label="Tint color">
             </div>
             <span class="hint">A dropped-in picture keeps its own colors. Tinting redraws it
               as a single-color silhouette, the way the built-in patterns work.</span>
@@ -1202,16 +1205,16 @@
         </div>
       </div>
       <div class="seek">
-        <input id="seek" class="range" type="range" min="0" max="1000" value="0">
+        <input id="seek" class="range" type="range" min="0" max="1000" value="0" aria-label="Position in the track">
         <div class="times"><span id="deckElapsed">0:00</span><span id="deckDuration">0:00</span></div>
       </div>
       <div class="player-controls">
         <div class="transport">
-          <button id="shuffle" class="icon" title="Shuffle"></button>
-          <button id="prev" class="icon" title="Previous"></button>
-          <button id="playpause" class="icon icon-big" title="Play / pause (Space)"></button>
-          <button id="next" class="icon" title="Next"></button>
-          <button id="repeat" class="icon" title="Repeat"></button>
+          <button id="shuffle" class="icon" title="Shuffle" aria-label="Shuffle"></button>
+          <button id="prev" class="icon" title="Previous" aria-label="Previous"></button>
+          <button id="playpause" class="icon icon-big" title="Play / pause (Space)" aria-label="Play or pause"></button>
+          <button id="next" class="icon" title="Next" aria-label="Next"></button>
+          <button id="repeat" class="icon" title="Repeat" aria-label="Repeat"></button>
         </div>
         <div class="volume" title="Volume">
           <span class="vol-icon" aria-hidden="true"></span>
@@ -1262,8 +1265,8 @@
         <div class="sp-list-head">
           <span id="spQueueCount" class="muted small">Up next</span>
           <div class="row gap">
-            <button id="spShuffle" class="btn btn-ghost btn-sm icon-btn" title="Shuffle"></button>
-            <button id="spRepeat" class="btn btn-ghost btn-sm icon-btn" title="Repeat"></button>
+            <button id="spShuffle" class="btn btn-ghost btn-sm icon-btn" title="Shuffle" aria-label="Shuffle in Spotify"></button>
+            <button id="spRepeat" class="btn btn-ghost btn-sm icon-btn" title="Repeat" aria-label="Repeat in Spotify"></button>
           </div>
         </div>
         <div id="spQueue" class="sp-queue"></div>
@@ -1308,7 +1311,7 @@
         </ol>
 
         <input id="spClientId2" class="input" type="text" placeholder="Client ID"
-               spellcheck="false" autocomplete="off">
+               aria-label="Client ID" spellcheck="false" autocomplete="off">
         <div class="row gap wrap">
           <button id="spConnect2" class="btn btn-primary btn-sm">Connect Spotify</button>
           <span id="spPending2" class="pill pill-warn" hidden>waiting for approval…</span>
@@ -1372,7 +1375,7 @@
       <div class="panel-head">
         <h2>Library</h2>
         <div class="row gap">
-          <input id="search" class="input" type="search" placeholder="Search title, artist, album…">
+          <input id="search" class="input" type="search" placeholder="Search title, artist, album…" aria-label="Search the library">
           <button id="rescan" class="btn btn-ghost btn-sm">Rescan</button>
         </div>
       </div>
@@ -1532,6 +1535,8 @@
 <script src="framer.js"></script>
 <script src="designer.js"></script>
 <script src="livepanel.js"></script>
+<script src="audiopanel.js"></script>
+<script src="chatpanel.js"></script>
 <script src="deck.js"></script>
 </body>
 </html>

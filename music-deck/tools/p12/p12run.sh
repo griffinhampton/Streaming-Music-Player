@@ -11,7 +11,7 @@ O="$(cd "$N/../../.." && pwd)/.rig"   # the rig and its scratch files, beside th
 OW="$(cygpath -w "$O")"
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 FF="/c/Users/ghamp/Downloads/ffmpeg-8.0-essentials_build/bin/ffmpeg.exe"
-PY="C:\\Users\\ghamp\\streaming stuff\\.build-env\\Scripts\\python.exe"
+PY="$(cygpath -w "$(cd "$N/../../.." && pwd)/.build-env/Scripts/python.exe")"   # p12test.js spawns it, so Windows form
 B=http://127.0.0.1:8799
 SCENES="$O/testrig/cache/scenes"
 rm -rf "$O/p12" && mkdir -p "$O/p12"

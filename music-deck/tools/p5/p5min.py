@@ -5,6 +5,11 @@ import json, os, subprocess, sys, time, urllib.request
 
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
+# wgc.py is in tools/p0 (cpuby.ps1 sits here beside the P5 scripts on purpose);
+# the shot goes to <repo>/.rig, beside the repo, like every runner .sh.
+P0 = os.path.abspath(os.path.join(S, "..", "p0"))
+LIVE = os.path.abspath(os.path.join(S, "..", "..", "..", ".rig", "live"))
+os.makedirs(LIVE, exist_ok=True)
 
 
 def get(path):
@@ -20,13 +25,13 @@ def post(path, data=None):
 
 
 def cpu(match, seconds):
-    out = subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\cpuby.ps1" -Match \'{match}\' -Seconds {seconds}'],
+    out = subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\\cpuby.ps1" -Match \'{match}\' -Seconds {seconds}'],
                          capture_output=True, text=True, timeout=120).stdout
     return " | ".join(l.strip() for l in out.splitlines() if any(k in l for k in ("browser", "gpu-process", "renderer", "TOTAL")))
 
 
 def wgc(title):
-    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(S, "wgc.py"), "window", title, os.path.join(S, "live", "p5min.png"), "1", "half"],
+    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(P0, "wgc.py"), "window", title, os.path.join(LIVE, "p5min.png"), "1", "half"],
                          capture_output=True, text=True).stdout
     return " ".join(l for l in out.splitlines() if l.startswith("frames"))
 

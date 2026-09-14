@@ -25,7 +25,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const VK = { Enter: 13, Escape: 27, Tab: 9 };
 
 async function open(url, stubs) {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT' })).json();
+  // encodeURIComponent, not encodeURI: encodeURI leaves `&` alone, so a page
+  // URL with two parameters loses the second to /json/new itself (S17b).
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   const page = { ws, id: 0, pending: new Map(), errors: [], chooser: null, targetId: t.id };
@@ -114,7 +116,19 @@ async function oneStep(name, act, expect) {
 
 /* The inspector as a picture, next to its golden copy. */
 const HIDE_DYNAMIC = `.meter i { width: 0 !important; } [data-voice-note], [data-live-note], #mediaLive, .cb-save { visibility: hidden !important; }
-  * { caret-color: transparent !important; }`;
+  * { caret-color: transparent !important; }
+  /* #inspector is itself the scroller and the clip is its whole 300 px, so its
+     own scrollbar sat inside every golden. Changing that bar from Chrome's
+     15 px default to base.css's 10 px thumb repainted a band at x 285-298 and
+     handed the content five more pixels, which shifted every width:100%
+     control sideways: 6.51% of the image against a 1% threshold, with no change
+     in height to warn anyone. Out of the picture, and that whole class of
+     change stops being able to break this suite.
+
+     Webkit only, as base.css is and for the same reason: setting the standard
+     scrollbar-width would replace the app's own styling rather than take it
+     out of the shot. */
+  ::-webkit-scrollbar { width: 0 !important; height: 0 !important; }`;
 async function golden(name) {
   await ed.ev(`(() => { document.activeElement && document.activeElement.blur(); const s = document.createElement('style'); s.id = 'p9hide'; s.textContent = ${J(HIDE_DYNAMIC)}; document.head.appendChild(s); document.getElementById('inspector').scrollTop = 0; })()`);
   await sleep(250);
@@ -217,7 +231,14 @@ async function golden(name) {
     NP: ['type', 'embed', 'look', 'decor', 'motion', 'trig'], Lyrics: ['type', 'embed', 'look', 'decor', 'motion', 'trig'],
     Cam: ['type', 'look', 'decor', 'motion', 'trig'], Screen: ['type', 'look', 'decor', 'motion', 'trig'], Face: ['type', 'look', 'decor', 'motion', 'trig'],
   };
-  await ed.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 3400, deviceScaleFactor: 1, mobile: false });
+  // Tall enough for the tallest inspector's whole content. The clip below is
+  // min(panel height, content + 12), so a panel shorter than its own content
+  // crops the picture and says nothing about it. At 3400 the panel came out
+  // 3351 while the Now Playing inspector's content was 3624: its entire
+  // trigger section, 3359..3624, has been outside every golden ever taken of
+  // it - which is why an 86 px change to that section left p9_np.png matching
+  // at 0.00%.
+  await ed.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 4200, deviceScaleFactor: 1, mobile: false });
   await sleep(400);
   for (const [n, secs] of Object.entries(SECTIONS)) {
     await selectName(n);
@@ -303,9 +324,12 @@ async function golden(name) {
   // ---- shape
   await selectName('Box');
   await openAll();
-  await oneStep('shape: a frame with a hole, and its settings appear', async () => clickIn('[data-lx="props.kind"] button[data-v="frame"]'),
+  await oneStep('shape: a frame with a hole, its settings and its frame panel appear', async () => clickIn('[data-lx="props.kind"] button[data-v="frame"]'),
     async (b, a) => { const shown = await ed.ev(`!${q('[data-lx="props.pad"]')}.closest('[data-show]').hidden`); const hole = await pv(`!!${pvLayer(id('Box'))}.querySelector('.shape-hole')`);
-      return [byName(a, 'Box').props.kind === 'frame' && shown && hole, `frame settings ${shown}, hole drawn ${hole}`]; });
+      // The whole section, not just the controls inside the type section: for a
+      // Box it is hidden (see SECTIONS above, which lists no frame-edge).
+      const panel = await ed.ev(`Editor.inspector().secs.includes('frame-edge')`);
+      return [byName(a, 'Box').props.kind === 'frame' && shown && panel && hole, `frame settings ${shown}, frame panel ${panel}, hole drawn ${hole}`]; });
   await oneStep('shape: frame width', async () => setVal('input[data-lx="props.pad"]', '40'),
     async (b, a) => [byName(a, 'Box').props.pad === 40, J(byName(a, 'Box').props.pad)]);
 
@@ -334,8 +358,16 @@ async function golden(name) {
   check('animation: Ultra optimized stops the loop', stilled);
   await oneStep('triggers: add one', async () => clickIn('[data-trig-add]'),
     async (b, a) => [J(byName(a, 'Box').triggers) === J([{ on: 'speaking', do: 'show' }]), J(byName(a, 'Box').triggers)]);
-  await oneStep('triggers: "pop" goes with "when I start talking"', async () => setVal('[data-trig="0"] [data-tf="do"]', 'pop', 'change'),
-    async (b, a) => [J(byName(a, 'Box').triggers) === J([{ on: 'speech_start', do: 'pop' }]), J(byName(a, 'Box').triggers)]);
+  // The two fields used to move each other: picking "pop" changed the when, and
+  // changing the when put the action back. Either moment takes any action now,
+  // so choosing one must leave the other exactly where it was.
+  await oneStep('triggers: choosing what it does leaves the when alone, and glow asks for a color',
+    async () => setVal('[data-trig="0"] [data-tf="do"]', 'glow', 'change'),
+    async (b, a) => {
+      const colorShown = await ed.ev(`!${q('[data-trig="0"] [data-tf="value"]')}.hidden`);
+      return [J(byName(a, 'Box').triggers) === J([{ on: 'speaking', do: 'glow' }]) && colorShown,
+        `${J(byName(a, 'Box').triggers)}, color field shown ${colorShown}`];
+    });
   await oneStep('triggers: remove it', async () => clickIn('[data-trig="0"] [data-trig-del]'),
     async (b, a) => [(byName(a, 'Box').triggers || []).length === 0, J(byName(a, 'Box').triggers)]);
 

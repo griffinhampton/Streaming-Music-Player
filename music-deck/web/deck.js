@@ -693,7 +693,11 @@ function applyPictureTheme(assetId, targetKey) {
 function renderPictureThemes() {
   const box = $('pictureThemes');
   if (!box) return;
-  box.innerHTML = ASSETS.map((a) => `
+  // Pictures only. A theme is read out of an asset's colors, and a clip has
+  // none to read - an <img> pointed at one draws the broken icon and the
+  // swatches never fill. Video was already sitting in that same position;
+  // sound only made it visible.
+  box.innerHTML = ASSETS.filter((a) => a.kind === 'image' || a.kind === 'gif').map((a) => `
     <button class="pt" data-id="${esc(a.id)}" title="Theme from ${esc(a.name || a.id)}">
       <img src="${esc(a.url)}" alt="" loading="lazy">
       <span class="pt-swatches"></span>
@@ -1628,7 +1632,10 @@ function renderStickerList() {
     const asset = ASSETS.find((a) => a.id === st.asset) || {};
     $('stickerTintNote').hidden = !asset.animated;
     $('stickerColor').value = /^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#ffffff';
-    $('stickerPicker').innerHTML = ASSETS.map((a) => `
+    // Pictures only, for the same reason: a sticker is drawn as an <img> on
+    // the overlay, so a clip or a piece of sound offered here could only ever
+    // render broken.
+    $('stickerPicker').innerHTML = ASSETS.filter((a) => a.kind === 'image' || a.kind === 'gif').map((a) => `
       <div class="asset ${a.id === st.asset ? 'on' : ''}" data-id="${esc(a.id)}"
            title="${esc(a.name || a.id)}${a.animated ? ' · animated' : ''}">
         <img src="${esc(a.url)}" alt="" loading="lazy">
@@ -1670,6 +1677,11 @@ function addSticker(assetId, xPct = 50, yPct = 50) {
 
 function measureAsset(assetId) {
   if (aspect[assetId]) return;
+  // Only a picture has an aspect to read this way. Everything in the folder
+  // is measured when the deck loads, and an <img> pointed at a clip fetches
+  // the whole file - up to 24 MB of sound - to fail at decoding it, with no
+  // onerror to notice. Video was already paying that too.
+  if (!/\.(png|jpe?g|gif|webp|svg)$/i.test(assetId)) return;
   const img = new Image();
   img.onload = () => {
     aspect[assetId] = img.naturalWidth / Math.max(1, img.naturalHeight);
@@ -1831,7 +1843,7 @@ function renderPickers() {
          title="${esc(a.name || a.id)}${a.animated ? ' · animated' : ''}${a.builtin ? ' (built in)' : ' · ' + Math.round((a.size || 0) / 1024) + ' KB'}">
       <img src="${esc(a.url)}" alt="" loading="lazy">
       ${a.animated ? '<span class="anim">GIF</span>' : ''}
-      ${a.builtin ? '' : `<button class="del" data-del="${esc(a.id)}" title="Delete">×</button>`}
+      ${a.builtin ? '' : `<button class="del" data-del="${esc(a.id)}" title="Delete" aria-label="Delete ${esc(a.name || a.id)}">×</button>`}
     </div>`;
   for (const t of BG_TARGETS) {
     const container = document.querySelector(`[data-assets="${t.key}"]`);
@@ -2045,7 +2057,7 @@ function loadLibrary(rescan) {
       }));
       $('folderBar').innerHTML = (data.dirs || []).map((d) =>
         `<span class="chip" title="${esc(d)}"><span>${esc(d)}</span>
-           <button data-dir="${esc(d)}" title="Remove">×</button></span>`).join('');
+           <button data-dir="${esc(d)}" title="Remove" aria-label="Remove ${esc(d)}">×</button></span>`).join('');
       filterTracks();
       $('libCount').textContent = data.dirs.length
         ? `${data.count} track${data.count === 1 ? '' : 's'} · ${data.dirs.length} folder${data.dirs.length === 1 ? '' : 's'}`
@@ -2396,7 +2408,11 @@ let selectedWin = 'np';
    view. The four music cards keep the element ids the rest of the deck binds
    to, and exist from the start (the registry's own four, until the first
    snapshot), so nothing that binds to them runs before they do. */
-const ROW_GROUPS = [['music', 'Music and words'], ['sharing', 'Screen sharing'], ['canvas', 'Canvas']];
+// Canvas before the frame windows on purpose: a scene draws its own frame as a
+// layer now, and these two are the older way of doing it, kept for anyone
+// putting a border round a game in LIVE Studio without a scene.
+const ROW_GROUPS = [['music', 'Music and words'], ['sharing', 'Screen sharing'],
+                    ['canvas', 'Canvas'], ['legacy', 'Windows of their own']];
 const CARD_IDS = {
   np: { state: 'npStatus', size: 'npSize', toggle: 'npToggle' },
   lyrics: { state: 'lyStatus', size: 'lySize', toggle: 'lyToggle' },
@@ -2729,8 +2745,18 @@ function paintLive(st) {
 /* The LIVE panel (P11): the stream key, quality, sound and health, the same
    panel the Canvas Builder has; the scene remote in its own small window. */
 LivePanel.mount();
+// The Sound panel (S7): the mixer with the door left open - which microphone,
+// how loud, muted or not, hearing yourself, and the one number that decides
+// what counts as talking. No keyboard shortcut on purpose: Ctrl+Shift+A is
+// Chrome's own tab search, so whether the page ever sees it depends on the
+// kind of window it is in.
+AudioPanel.mount();
 $('liveMore').addEventListener('click', () => LivePanel.toggle($('liveMore')));
+$('soundBtn').addEventListener('click', () => AudioPanel.toggle($('soundBtn')));
+ChatPanel.mount();
+$('chatBtn').addEventListener('click', () => ChatPanel.toggle($('chatBtn')));
 $('remoteOpen').addEventListener('click', () => post('/api/canvas/remote/open').then((r) => { if (!r || !r.ok) toast('Could not open the remote'); }));
+$('liveViewOpen').addEventListener('click', () => post('/api/live/view/open').then((r) => { if (!r || !r.ok) toast('Could not open the Live view'); }));
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyL') { e.preventDefault(); LivePanel.toggle($('liveMore')); }
 });
@@ -3809,5 +3835,6 @@ events.onmessage = (e) => {
   try { paintSpotify(st); } catch (_) {}
   paintRegistry(st);
   LivePanel.onState(st);          // the LIVE panel (livepanel.js), when it is open
+  ChatPanel.onState(st);          // which chat services are connected (chatpanel.js)
 };
 

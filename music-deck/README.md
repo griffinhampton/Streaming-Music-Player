@@ -188,9 +188,9 @@ own shape). Start one blank or from a template with **New scene**.
 
 - **Layers** – text (including the song playing), shapes, pictures and videos,
   the Now Playing / Lyrics / Queue / Captions windows, your camera, a screen or
-  a window (your game), a *reactive image* that talks when you do, and
-  full-size backgrounds. Add them from the left panel; pick one on the canvas or
-  in the list to change it on the right.
+  a window (your game), **You, talking** – a PNGtuber whose picture changes as
+  you speak – and full-size backgrounds. Add them from the left panel; pick one
+  on the canvas or in the list to change it on the right.
 - **Moving things** – drag, resize from the handles, rotate from the top
   handle. Things snap to the canvas, the center and each other (hold **Alt** to
   place freely); rulers and guides are there if you want them. Number fields
@@ -609,7 +609,7 @@ music-deck/
   assets.py, fonts.py  the pictures and fonts people add
   capture.py         screen and window capture (Windows Graphics Capture)
   camera.py          the camera, read natively while LIVE
-  voice.py           is the streamer talking (for reactive images)
+  voice.py           is the streamer talking (for "You, talking" and triggers)
   live.py            going LIVE: RTMP, quality presets, reconnects, the key vault
   mfenc.py, nativelive.py, audio.py   hardware H.264, the compositor, the sound
   web/               the deck and the pop-outs (plain HTML/CSS/JS, no build step)

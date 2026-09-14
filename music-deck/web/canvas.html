@@ -44,10 +44,13 @@
   <span class="spacer"></span>
   <span class="cb-media" id="mediaLive" role="status" hidden></span>
   <button type="button" class="cb-save" id="saveState" data-state="saved" title="Your work saves itself as you go. Press to save this moment.">Saved</button>
-  <button type="button" class="cb-live" id="liveStatus" data-state="idle" aria-haspopup="dialog" title="The LIVE panel: stream key, quality, sound, Start and Stop (Ctrl+Shift+L)">Off air</button>
-  <button type="button" class="btn sm tog" id="studioBtn" aria-pressed="false" title="Studio mode: edit here while another scene is on air, then Take (Ctrl+Shift+P)">Studio</button>
+  <button type="button" class="cb-live" id="liveStatus" data-state="idle" aria-haspopup="dialog" title="Send your stream out from this app: the stream key, quality, sound, Start and Stop. This is the one that puts you on the internet (Ctrl+Shift+L)">Off air</button>
+  <button type="button" class="btn sm tog" id="studioBtn" aria-pressed="false" title="Shows what the people watching you are seeing right now, and lets you build the next scene while this one is out. Take swaps the scene you are editing onto the stream (Ctrl+Shift+P)">What&rsquo;s on air</button>
   <button type="button" class="btn sm" id="remoteBtn" title="A small scene remote window, to switch scenes while you stream">Remote</button>
-  <button type="button" class="btn" id="openOutput" title="Open this scene's output window">Open output</button>
+  <button type="button" class="btn sm" id="liveViewOpen" title="The Live view: what is on air, how the stream is going out, the scene switcher, sound and chat, in one window">Live view</button>
+  <button type="button" class="btn sm" id="soundBtn" aria-haspopup="dialog" title="Your microphone and the desktop sound: which one, how loud, muted or not, hearing yourself, and what counts as talking">Sound</button>
+  <button type="button" class="btn sm" id="chatBtn" aria-haspopup="dialog" title="Chat from every service in one list, with commands and mentions marked. Hide a message, or stop showing someone here.">Chat</button>
+  <button type="button" class="btn" id="openOutput" title="Gives this scene a window of its own on this computer, to add as a source in TikTok Studio or OBS. On its own this does not put you on the internet - Off air does that">Open output</button>
   <button type="button" class="btn icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-haspopup="dialog">?</button>
 </header>
 
@@ -55,8 +58,8 @@
   <aside class="cb-left" aria-label="Scene contents">
     <div class="tabs" role="tablist" aria-label="Panels">
       <button type="button" role="tab" id="tabLayers" aria-controls="paneLayers" aria-selected="true">Layers</button>
-      <button type="button" role="tab" id="tabSources" aria-controls="paneSources" aria-selected="false" tabindex="-1">Sources</button>
-      <button type="button" role="tab" id="tabAssets" aria-controls="paneAssets" aria-selected="false" tabindex="-1">Assets</button>
+      <button type="button" role="tab" id="tabSources" aria-controls="paneSources" aria-selected="false" tabindex="-1">Add</button>
+      <button type="button" role="tab" id="tabAssets" aria-controls="paneAssets" aria-selected="false" tabindex="-1">Pictures</button>
     </div>
 
     <section class="pane" id="paneLayers" role="tabpanel" aria-labelledby="tabLayers">
@@ -66,8 +69,9 @@
         <button type="button" class="btn sm" id="dupBtn" title="Duplicate (Ctrl+D)">Duplicate</button>
         <button type="button" class="btn sm danger" id="delBtn" title="Delete (Del)">Delete</button>
       </div>
+      <p class="hint pane-note">The top of this list is the front. Drag a row upwards to bring it in front of the others.</p>
       <div id="layerTree" class="tree" role="tree" aria-label="Layers, top first" aria-multiselectable="true"></div>
-      <p class="hint" id="treeEmpty" hidden>No layers yet &mdash; add one from Sources or Assets.</p>
+      <p class="hint" id="treeEmpty" hidden>Nothing in this scene yet &mdash; the <b>Add</b> tab puts something in it.</p>
     </section>
 
     <section class="pane" id="paneSources" role="tabpanel" aria-labelledby="tabSources" hidden>
@@ -89,7 +93,8 @@
 
   <main class="cb-canvas" id="viewport" tabindex="0" aria-label="Canvas" aria-describedby="canvasHelp">
     <p id="canvasHelp" class="sr-only">Click a layer to select it; drag it to move it, or its handles to resize or rotate it.
-      Arrow keys nudge the selection, Shift+F10 opens its menu. Hold Space and drag to pan; the wheel zooms around the pointer.</p>
+      Double-click the rotate knob to put it straight again. Arrow keys nudge the selection, Shift+F10 opens its menu.
+      Hold Space and drag to pan; the wheel zooms around the pointer.</p>
     <div class="world" id="world">
       <div class="checker" id="checker"></div>
       <iframe id="sceneFrame" title="Scene preview" tabindex="-1"></iframe>
@@ -98,6 +103,25 @@
         <div class="safe-layer" id="safeLayer" hidden></div>
       </div>
     </div>
+    <!-- Shown only while the scene is empty. Nothing said what any of this was
+         for: "a scene" meant nothing, and the three ways to make it real were
+         all on screen at once with no word about how they relate. -->
+    <section class="firstrun" id="firstRun" hidden aria-label="What this is">
+      <h2>This is a scene</h2>
+      <p>A scene is a picture built out of layers &mdash; your camera, your game, some words,
+        the song that is playing. It becomes a window on this computer, and that window
+        is what the people watching you see.</p>
+      <ol class="fr-steps">
+        <li><b>Put something in it.</b>
+          <button type="button" class="btn sm" id="frAdd">Add a layer</button></li>
+        <li><b>Arrange it.</b> Drag it where you want it; drag a corner to change its size.</li>
+        <li><b>Show it to people.</b>
+          <button type="button" class="btn sm" id="frOutput">Open output</button>
+          gives this scene a window of its own to add in TikTok Studio &mdash; or press
+          <b>Off air</b>, at the top, to send it out from here.</li>
+      </ol>
+      <p class="fr-note">There is nothing to save. Your work is kept as you go.</p>
+    </section>
     <div class="hud" id="hud" aria-hidden="true"></div>
     <canvas class="ruler" id="rulerX" aria-hidden="true" hidden></canvas>
     <canvas class="ruler" id="rulerY" aria-hidden="true" hidden></canvas>
@@ -211,6 +235,8 @@
 <script src="inspectors.js"></script>
 <script src="newscene.js"></script>
 <script src="livepanel.js"></script>
+<script src="audiopanel.js"></script>
+<script src="chatpanel.js"></script>
 <script src="studio.js"></script>
 </body>
 </html>

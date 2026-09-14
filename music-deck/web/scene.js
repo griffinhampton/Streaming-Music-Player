@@ -34,7 +34,28 @@ const px = (n) => `${Math.round(Number(n) || 0)}px`;
 const ORIGIN = { tl: '0% 0%', tc: '50% 0%', tr: '100% 0%', ml: '0% 50%', mc: '50% 50%', mr: '100% 50%',
                  bl: '0% 100%', bc: '50% 100%', br: '100% 100%' };
 const fmtTime = (s) => { s = Math.max(0, Math.floor(Number(s) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-const assetUrl = (src) => !src ? '' : /^(\/|https?:|data:|blob:)/.test(src) ? src : '/asset/' + encodeURIComponent(src);
+/* An asset id becomes a URL under /asset. Anything carrying a scheme is
+   refused, and that is a boundary rather than tidiness: a scene can arrive
+   from somebody else through /api/scenes/import, and props are the one part
+   of it the server does not check - scenes.py's _layer() coerces the
+   transform and the style and then passes props through exactly as they came.
+   A src of "https://..." would be fetched from wherever it points, on this
+   machine, live on stream: an IP and a timing beacon for whoever wrote the
+   scene, and a picture they can change whenever they like. Nothing here makes
+   one - the picker uploads the file and keeps the id it gets back
+   (canvas.js:1123) - and an import calls such a scene clean, because
+   used_assets() only counts strings shaped like an asset id, which
+   "beacon.png" is not. "//host/x" is remote as well, so a leading "/" is not
+   enough on its own. "builtin:" is this app's own name for shipped artwork
+   (assets.py:156) and stays. An empty result is the same state a layer with
+   no picture chosen is already in. */
+const assetUrl = (src) => {
+  const s = src ? String(src) : '';
+  if (!s || s.startsWith('//')) return '';
+  if (s.startsWith('/')) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^builtin:/i.test(s)) return '';
+  return '/asset/' + encodeURIComponent(s);
+};
 /* A picture or video whose file is gone (deleted anyway, or a scene imported
    without it) shows nothing on stream instead of a broken-image icon; the
    editor's preview outlines the empty box so it can be found and fixed. */
@@ -198,7 +219,9 @@ TYPES.image = {
       const still = window.stillOf ? window.stillOf(src) : src;
       if (m.dataset.src !== still) { m.dataset.src = still; m.src = still; }
     } else if (want === 'DIV') {
-      m.style.backgroundImage = `url("${window.stillOf ? window.stillOf(src) : src}")`;
+      // Quoted and escaped: a src holding a quote would otherwise close the
+      // url("...") and write CSS of its own after it.
+      m.style.backgroundImage = `url(${JSON.stringify(window.stillOf ? window.stillOf(src) : src)})`;
       m.style.backgroundRepeat = 'repeat';
       m.style.backgroundSize = p.tile_size ? px(p.tile_size) : 'auto';
     } else if (isUltra()) {
@@ -218,6 +241,69 @@ TYPES.image = {
   },
   motion(entry) { this.update(entry); },
 };
+
+const FRAME_STYLES = ['solid', 'double', 'dashed', 'glow', 'none'];
+
+/* The dressing a frame layer can wear: a title plate riding its edge, and up
+   to four corner badges.
+
+   Sized against the layer's own box rather than the window. frame.html sets
+   `font-size: max(12px, 3.4vmin)` on a stage fixed to the viewport, which
+   means nothing inside a scene that is scaled to fit and can hold frames of
+   several sizes - a 480 px camera frame and a 1920 px screen frame would come
+   out lettered the same. The transform is the layer's box (applyBox writes the
+   element straight from it), so there is nothing to measure and nothing to
+   invalidate: a resize already comes back through update(). */
+function frameDressing(el, p, t, pad, bw, color) {
+  const em = Math.max(12, Math.min(Number(t.w) || 0, Number(t.h) || 0) * 0.034);
+  el.style.setProperty('--frame-em', px(em));
+  // The title and the badges ride the ring's stroke, and here the ring is the
+  // hole's own border - so its center line is the frame's thickness plus half
+  // the border, in from the layer's edge.
+  //
+  // Not the windows' --ring-inset, which is their decor band plus 0.9em: their
+  // ring sits at the stage edge and has to be pushed inside the loop, while
+  // this one already sits at a thickness the user chose. Borrowing their
+  // formula put every badge inside the ring instead of on it, and read the
+  // band off the DOM a step before applyDecor had set it.
+  const edge = pad + bw / 2;
+  const ti = p.title || {};
+  const text = String(ti.text || '').trim();
+  if (text) {
+    const plate = document.createElement('div');
+    plate.className = 'frame-title';
+    plate.textContent = text;
+    plate.style.fontSize = `calc(var(--frame-em) * ${Number(ti.size) || 1})`;
+    plate.style.background = color;
+    plate.style.color = ti.color || '#ffffff';
+    if (ti.place === 'bottom') {
+      plate.style.bottom = px(edge);
+      plate.style.transform = 'translate(-50%, 50%)';
+    } else {
+      plate.style.top = px(edge);
+    }
+    el.appendChild(plate);
+  }
+  const bd = p.badges || {};
+  // A circle's corners are outside it, so its badges come in onto the ring -
+  // the windows' own 15% and 85%, with the inset added rather than folded into
+  // the percentage.
+  const circle = p.shape === 'circle';
+  const near = circle ? `calc(${px(pad)} + 15%)` : px(edge);
+  const far = circle ? `calc(85% - ${px(pad)})` : `calc(100% - ${px(edge)})`;
+  for (const k of ['tl', 'tr', 'bl', 'br']) {
+    const v = String(bd[k] || '').trim();
+    if (!v) continue;
+    const badge = document.createElement('div');
+    badge.className = 'frame-badge';
+    badge.textContent = v;
+    badge.style.fontSize = `calc(var(--frame-em) * ${Number(bd.size) || 1})`;
+    badge.style.background = bd.color || color;
+    badge.style.left = k[1] === 'l' ? near : far;
+    badge.style.top = k[0] === 't' ? near : far;
+    el.appendChild(badge);
+  }
+}
 
 TYPES.shape = {
   create(entry) { this.update(entry); },
@@ -240,14 +326,36 @@ TYPES.shape = {
       // A frame with a hole: the hole is a box whose huge shadow paints the
       // frame around it, clipped to the layer. What shows through the hole is
       // whatever sits under the layer - the key color, a game, the desktop.
+      //
+      // Everything the Screen frame and Camera frame windows draw, a layer can
+      // draw here: the hole's shape, an edge in one of a few styles, a title
+      // plate riding that edge, four corner badges, and - through props.decor,
+      // like any layer - the loop. The windows go on working; this is so a
+      // scene does not have to leave the canvas to get a frame around its game
+      // or its camera.
       const hole = document.createElement('div');
       hole.className = 'shape-hole';
       const pad = Number(p.pad ?? 24);
+      const shape = p.shape || 'rounded';
+      const b = p.border || {};
+      const style = FRAME_STYLES.includes(b.style) ? b.style : 'solid';
+      const color = b.color || '#8b5cf6';
+      // Double needs room for two lines and a gap, as it does on the windows.
+      const bw = style === 'none' ? 0 : style === 'double'
+        ? Math.max(6, Number(b.width ?? 0)) : Number(b.width ?? 0);
       hole.style.inset = px(pad);
-      hole.style.borderRadius = px(p.hole_radius ?? 16);
+      hole.style.borderRadius = shape === 'circle' ? '50%'
+        : shape === 'rect' ? '0' : px(p.hole_radius ?? 16);
+      // Painted the key color instead of see-through, for a chroma key.
+      hole.style.background = p.hole === 'key' ? (p.key_color || '#00ff00') : '';
+      // The edge is the hole's own border: it lands exactly on the frame's
+      // inner edge, with no second element to keep in step with it.
+      if (bw) hole.style.border = `${px(bw)} ${style === 'glow' ? 'solid' : style} ${color}`;
       hole.style.boxShadow = `0 0 0 20000px ${p.fill || 'rgba(255,255,255,.9)'}` +
-        (st.w ? `, inset 0 0 0 ${px(st.w)} ${st.color || '#fff'}` : '');
+        (st.w ? `, inset 0 0 0 ${px(st.w)} ${st.color || '#fff'}` : '') +
+        (bw && style === 'glow' ? `, 0 0 ${px(bw * 1.6)} ${color}, inset 0 0 ${px(bw * 1.2)} ${color}` : '');
       el.appendChild(hole);
+      frameDressing(el, p, entry.layer.transform || {}, pad, bw, color);
       el.style.background = '';
     } else {
       el.style.background = p.fill || 'rgba(255,255,255,.9)';
@@ -465,6 +573,174 @@ TYPES.capture = {
   destroy(entry) { entry.gone = true; dropStream(entry); },
 };
 
+/* Microphone: your own voice as something you can put on the canvas - bars, a
+   single level bar, or a waveform.
+
+   The level is read here, with WebAudio, rather than asked of the server. The
+   feed carries "speaking" but no level, and a meter wants thirty readings a
+   second: an absurd thing to poll a server for when this page can listen to
+   the same microphone itself, exactly as the camera layer opens its own
+   device. Nothing is recorded and nothing leaves the page.
+
+   motion.js steps CSS animations at 30 fps but has no ticker to join, so this
+   runs its own and throttles itself to the same rate. Ultra stops it, and the
+   meter holds the last shape it drew. */
+async function pickAudioDevice(hint) {
+  if (!hint) return undefined;
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const hit = devs.find((d) => d.kind === 'audioinput'
+      && (d.deviceId === hint || (d.label || '').toLowerCase().includes(String(hint).toLowerCase())));
+    return hit ? { exact: hit.deviceId } : undefined;
+  } catch (_) { return undefined; }
+}
+
+const MIC_STYLES = ['bars', 'level', 'wave'];
+
+TYPES.mic = {
+  create(entry) { entry.gone = false; this.update(entry); },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const style = MIC_STYLES.includes(p.style) ? p.style : 'bars';
+    const count = Math.max(4, Math.min(64, Math.round(Number(p.bars) || 24)));
+    // The looks, every update, without touching the device.
+    entry.gain = Math.max(0.2, Math.min(4, Number(p.gain) || 1));
+    entry.color = p.color || '#8b5cf6';
+    entry.el.style.setProperty('--mic-color', entry.color);
+    if (entry.analyser) entry.analyser.smoothingTimeConstant = Math.max(0, Math.min(0.95, Number(p.smooth ?? 0.7)));
+    // visible is in the key on purpose: hiding the layer changes it, which
+    // tears the microphone down and skips the re-open below (the camera layer
+    // releases its device the same way).
+    const key = JSON.stringify([p.device, style, count, entry.layer.visible]);
+    if (entry.mediaKey === key) return;
+    entry.mediaKey = key;
+    this.stop(entry);                       // not destroy(): that marks the layer gone
+    entry.el.querySelectorAll('.mic-bars, .mic-wave').forEach((n) => n.remove());
+    if (entry.layer.visible === false) return;
+    this.build(entry, style, count);
+    this.start(entry, p);
+  },
+  build(entry, style, count) {
+    entry.style = style;
+    if (style === 'wave') {
+      const c = document.createElement('canvas');
+      c.className = 'mic-wave';
+      entry.el.appendChild(c);
+      entry.canvas = c;
+      return;
+    }
+    const box = document.createElement('div');
+    box.className = 'mic-bars' + (style === 'level' ? ' one' : '');
+    const n = style === 'level' ? 1 : count;
+    // The gap has to shrink as the bars multiply. A flat 6% put 23 gaps of 86px
+    // into a 1440px box - more gap than box - so every bar flexed down to no
+    // width at all, while their transforms went on changing perfectly and every
+    // check that read the DOM passed against a layer drawing nothing.
+    box.style.setProperty('--mic-gap', (100 / (n * 7)).toFixed(2) + '%');
+    box.innerHTML = new Array(n).fill('<i></i>').join('');
+    entry.el.appendChild(box);
+    entry.bars = [...box.querySelectorAll('i')];
+  },
+  async start(entry, p) {
+    noteSource(entry, 'microphone starting', false);
+    try {
+      const deviceId = await pickAudioDevice(p.device);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId } : true, video: false });
+      // Deleted or hidden while Windows was thinking about it.
+      if (entry.gone || entry.layer.visible === false) { stream.getTracks().forEach((t) => t.stop()); return; }
+      entry.stream = stream;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      entry.actx = new Ctx();
+      // A page nobody clicked starts its AudioContext suspended, and a
+      // suspended analyser reads silence for ever. A scene output window is
+      // opened by the app rather than by a person, so that is the normal case
+      // here, not an edge one.
+      if (entry.actx.state === 'suspended') entry.actx.resume().catch(() => {});
+      const an = entry.actx.createAnalyser();
+      an.fftSize = 1024;
+      an.smoothingTimeConstant = Math.max(0, Math.min(0.95, Number(p.smooth ?? 0.7)));
+      entry.actx.createMediaStreamSource(stream).connect(an);
+      entry.analyser = an;
+      entry.bins = new Uint8Array(an.frequencyBinCount);
+      entry.wave = new Uint8Array(an.fftSize);
+      noteSource(entry, 'microphone' + (p.device ? ': ' + p.device : ''), false);
+      this.loop(entry);
+    } catch (e) {
+      noteSource(entry, 'microphone: ' + (e.message || e.name), true);
+    }
+  },
+  loop(entry) {
+    cancelAnimationFrame(entry.raf);
+    let last = 0;
+    const draw = (t) => {
+      // Stop outright rather than wake 165 times a second to do nothing: in
+      // Ultra, or while the window is hidden, this ends and motion() starts it
+      // again - scene.js calls that on the Ultra switch and on visibilitychange.
+      if (!entry.analyser || document.hidden || isUltra()) { entry.raf = 0; return; }
+      entry.raf = requestAnimationFrame(draw);
+      if (t - last < 1000 / 30) return;                  // 30 a second, as motion.js does
+      last = t;
+      this.paint(entry);
+    };
+    entry.raf = requestAnimationFrame(draw);
+  },
+  paint(entry) {
+    const an = entry.analyser;
+    if (entry.style === 'wave') {
+      const c = entry.canvas;
+      if (!c) return;
+      const w = entry.el.clientWidth, h = entry.el.clientHeight;
+      if (!w || !h) return;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      an.getByteTimeDomainData(entry.wave);
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      ctx.lineWidth = Math.max(2, h * 0.025);
+      ctx.strokeStyle = entry.color;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      const n = entry.wave.length;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h / 2 + ((entry.wave[i] - 128) / 128) * (h / 2) * entry.gain;
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+      return;
+    }
+    if (!entry.bars || !entry.bars.length) return;
+    if (entry.style === 'level') {
+      an.getByteTimeDomainData(entry.wave);
+      let sum = 0;
+      for (let i = 0; i < entry.wave.length; i++) { const d = (entry.wave[i] - 128) / 128; sum += d * d; }
+      const rms = Math.sqrt(sum / entry.wave.length);
+      entry.bars[0].style.transform = `scaleX(${Math.max(0.005, Math.min(1, rms * 4 * entry.gain)).toFixed(3)})`;
+      return;
+    }
+    an.getByteFrequencyData(entry.bins);
+    const bars = entry.bars, n = bars.length, bins = entry.bins.length;
+    for (let i = 0; i < n; i++) {
+      // Bunched towards the low end, where a voice actually is.
+      const from = Math.floor(((i / n) ** 1.6) * bins);
+      const to = Math.max(from + 1, Math.floor((((i + 1) / n) ** 1.6) * bins));
+      let sum = 0;
+      for (let j = from; j < to; j++) sum += entry.bins[j];
+      const v = (sum / (to - from) / 255) * entry.gain;
+      bars[i].style.transform = `scaleY(${Math.max(0.02, Math.min(1, v)).toFixed(3)})`;
+    }
+  },
+  stop(entry) {
+    cancelAnimationFrame(entry.raf);
+    entry.raf = 0;
+    if (entry.actx) { try { entry.actx.close(); } catch (_) { /* already closed */ } entry.actx = null; }
+    entry.analyser = null; entry.bins = null; entry.wave = null;
+    entry.bars = null; entry.canvas = null;
+    dropStream(entry);                      // stops the microphone's track
+  },
+  destroy(entry) { entry.gone = true; this.stop(entry); },
+  motion(entry) { if (entry.analyser && !entry.raf && !isUltra() && !document.hidden) this.loop(entry); },
+};
+
 /* Reactive image: one picture while quiet, another while talking, an
    optional blink, an optional bounce. Speaking comes from the server's voice
    state on the feed. */
@@ -502,6 +778,295 @@ TYPES.reactive = {
   motion(entry) { this.update(entry); },
 };
 
+/* Alerts (S15): a layer that shows nothing at all until something happens.
+
+   The show/hide is on the card inside rather than on the layer box, because
+   applyBox writes el.style.opacity inline on every layer and an inline style
+   beats a stylesheet rule - put it on the box and the alert would simply always
+   be on screen.
+
+   In the editor it would otherwise be an invisible rectangle with nothing to
+   style, so a sample is drawn there. On stream it stays empty until an event
+   arrives. */
+TYPES.alert = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="alert-card"><b class="alert-title"></b><span class="alert-text"></span></div>';
+    entry.queue = [];
+    entry.showing = null;
+    this.update(entry);
+  },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const card = entry.el.querySelector('.alert-card');
+    // The text layer's rule, and for the same two reasons: quote the family so
+    // one with spaces in it applies at all, keep the fallbacks, and clear back
+    // to the stylesheet when none is chosen - without that last part an unset
+    // font lands on the browser's serif default, which looks nothing like the
+    // rest of the app.
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 34);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    if (PREVIEW && !entry.showing) {
+      this.paint(entry, { kind: 'command', title: '!hello', text: 'Amy ran !hello' }, true);
+    }
+  },
+  /* One event, from the page's single alert socket. */
+  alert(entry, ev) {
+    const p = entry.layer.props || {};
+    const want = String(p.kinds || '').trim();
+    if (want && !want.split(/[\s,]+/).includes(ev.kind)) return;
+    const max = Math.max(1, Math.min(20, Number(p.max) || 5));
+    entry.queue.push(ev);
+    // A burst must not become a backlog that plays for a minute after it: keep
+    // the newest and drop the rest, which is what somebody watching wants.
+    if (entry.queue.length > max) entry.queue.splice(0, entry.queue.length - max);
+    if (!entry.showing) this.next(entry);
+  },
+  next(entry) {
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing');
+      return;
+    }
+    entry.showing = ev;
+    this.paint(entry, ev, false);
+    const secs = Math.max(1, Math.min(60, Number((entry.layer.props || {}).seconds) || 6));
+    clearTimeout(entry.hold);
+    entry.hold = setTimeout(() => { entry.showing = null; this.next(entry); }, secs * 1000);
+  },
+  paint(entry, ev, sample) {
+    entry.el.querySelector('.alert-title').textContent = ev.title || '';
+    entry.el.querySelector('.alert-text').textContent = ev.text || '';
+    entry.el.classList.toggle('sample', !!sample);
+    entry.el.classList.add('showing');
+    if (!sample) playEnter(entry);          // the layer's own entrance, per alert
+  },
+  /* T10: off the stream now, and nothing waiting to follow it. update() puts
+     the editor's sample back; on stream it draws nothing. */
+  takeDown(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    entry.el.classList.remove('showing');
+    this.update(entry);
+  },
+  destroy(entry) { clearTimeout(entry.hold); },
+};
+
+/* An effect: a picture or a clip, shown when something happens.
+
+   The alert layer says what happened in words; this one shows something. It
+   rides the same socket - declaring alert() is what makes needsAlerts() open
+   it - and copies the alert layer's queue rule deliberately: keep the newest
+   few and drop the rest. That matters more here than it does for text. A
+   burst of gifts turning into a minute of backlog would leave the stream
+   showing an event that finished long ago.
+
+   It plays a clip as well (T3, sound() below), and T10's takeDown() takes the
+   picture, the clip and everything queued behind them off the stream at once.
+
+   The source goes through assetUrl like every other layer, so a scene shared
+   by somebody else cannot aim this at their server. */
+TYPES.effect = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="fx-box"></div>';
+    entry.queue = [];
+    entry.showing = null;
+    this.update(entry);
+  },
+  update(entry) {
+    this.show(entry, assetUrl((entry.layer.props || {}).src));
+    // In the editor nothing is ever going to happen, so it sits there visible
+    // and half lit rather than being an empty rectangle you cannot style.
+    if (PREVIEW && !entry.showing) entry.el.classList.add('showing', 'sample');
+  },
+  /* Put one source in the box. The element type is decided here rather than
+     once when the layer is made, because a gif command names its own picture
+     and that picture can be a clip: an .mp4 arriving by event would otherwise
+     land in an <img> and draw nothing at all. */
+  show(entry, src) {
+    const p = entry.layer.props || {};
+    const want = isVideo(src) ? 'VIDEO' : 'IMG';
+    let m = entry.media;
+    if (!m || m.tagName !== want) {
+      if (m) m.remove();
+      m = document.createElement(want.toLowerCase());
+      m.className = 'media';
+      watchMissing(m, entry);           // the missing-source treatment, free
+      if (want === 'VIDEO') { m.loop = false; m.muted = true; m.playsInline = true; }
+      entry.el.querySelector('.fx-box').appendChild(m);
+      entry.media = m;
+    }
+    const shown = window.stillOf ? window.stillOf(src) : src;
+    if (m.dataset.src !== shown) { m.dataset.src = shown; if (shown) m.src = shown; }
+    m.style.objectFit = { cover: 'cover', stretch: 'fill' }[p.fit] || 'contain';
+  },
+  /* One event, from the page's single alert socket. */
+  alert(entry, ev, scene) {
+    const p = entry.layer.props || {};
+    const d = ev.detail || {};
+    if (d.layer) {
+      // T11: a command this layer owns is addressed to it by id and by scene,
+      // and it answers whatever kinds it listens for - the command is part of
+      // its own setup. Every other effect layer ignores it, including one
+      // listening for everything: it was not theirs.
+      if (d.layer !== entry.layer.id || (d.scene && scene && d.scene !== scene.id)) return;
+    } else {
+      const want = String(p.kinds || '').trim();
+      if (want && !want.split(/[\s,]+/).includes(ev.kind)) return;
+    }
+    const max = Math.max(1, Math.min(20, Number(p.max) || 3));
+    entry.queue.push(ev);
+    if (entry.queue.length > max) entry.queue.splice(0, entry.queue.length - max);
+    if (!entry.showing) this.next(entry);
+  },
+  /* Play the clip an event names. One element per layer, reused on purpose:
+     a new event stops whatever was playing rather than layering over it,
+     which is what keeps two clips from talking over each other. */
+  sound(entry, id) {
+    const src = assetUrl(id);
+    if (!src) { this.hush(entry); return; }
+    const p = entry.layer.props || {};
+    let a = entry.audio;
+    if (!a) { a = entry.audio = new Audio(); a.preload = 'auto'; }
+    // An unset volume has to mean "most of the way up", not silence: a
+    // Number(undefined) of 0 would look exactly like a broken feature.
+    a.volume = Math.max(0, Math.min(1, p.volume === undefined ? 0.8 : Number(p.volume) || 0));
+    if (entry.audioSrc !== src) { entry.audioSrc = src; a.src = src; }
+    try { a.currentTime = 0; } catch (_) { /* not seekable yet */ }
+    // A page nobody clicked can refuse to play. The app starts its own
+    // windows with --autoplay-policy=no-user-gesture-required (overlay.py:32)
+    // for exactly this, and a refusal must not throw into the alert loop.
+    const started = a.play();
+    if (started && started.catch) started.catch(() => {});
+  },
+  hush(entry) {
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} }
+  },
+  next(entry) {
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing');
+      this.hush(entry);            // the clip stops when the box does
+      return;
+    }
+    entry.showing = ev;
+    entry.el.classList.remove('sample');
+    // The event may name its own picture - a gif command carries one in
+    // detail.asset - and the layer's own src is the fallback for events that
+    // do not, which is how a single "reaction" layer with one picture works.
+    this.show(entry, assetUrl((ev.detail && ev.detail.asset) || (entry.layer.props || {}).src));
+    entry.el.classList.add('showing');
+    const m = entry.media;
+    // A clip starts again for each event rather than playing once ever.
+    if (m && m.tagName === 'VIDEO') { try { m.currentTime = 0; m.play().catch(() => {}); } catch (_) {} }
+    playEnter(entry);
+    // The event may name its own clip, exactly as it may name its own
+    // picture; the layer's own is the fallback. A layer with a sound and no
+    // picture is a legitimate thing to build - it simply shows nothing.
+    this.sound(entry, (ev.detail && ev.detail.sound) || (entry.layer.props || {}).sound);
+    const secs = Math.max(1, Math.min(60, Number((entry.layer.props || {}).seconds) || 5));
+    clearTimeout(entry.hold);
+    entry.hold = setTimeout(() => { entry.showing = null; this.next(entry); }, secs * 1000);
+  },
+  /* T10: the picture, the clip and the queue behind them, all at once. The
+     queue matters most - clearing only what is showing would let the next
+     two events of the flood that made you press stop walk straight on.
+     update() points the box back at the layer's own picture, so the event's
+     one is not left loaded behind a hidden box. */
+  takeDown(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    entry.el.classList.remove('showing');
+    this.hush(entry);
+    const m = entry.media;
+    if (m && m.tagName === 'VIDEO') { try { m.pause(); } catch (_) {} }
+    this.update(entry);
+  },
+  destroy(entry) {
+    clearTimeout(entry.hold);
+    // Or a layer somebody deleted mid-clip keeps playing to the stream.
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} entry.audio = null; }
+    entry.audioSrc = '';
+    if (entry.media) { entry.media.remove(); entry.media = null; }
+  },
+  motion(entry) { this.update(entry); },
+};
+
+/* Polls (S14): the bars people are voting on.
+
+   The tally comes down the same alert socket S15 opened - which is why this
+   declares an alert() hook: needsAlerts() only opens that socket for types that
+   have one, so a scene holding nothing but a poll layer would otherwise never
+   hear a thing.
+
+   It draws the last whole tally it was given and holds it. Never a running
+   total of its own: that is what lets a page which joined halfway through a
+   poll be right at the very next vote instead of adding up what it missed. */
+TYPES.poll = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="poll-card"><b class="poll-q"></b><div class="poll-rows"></div></div>';
+    entry.tally = null;
+    this.update(entry);
+  },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const card = entry.el.querySelector('.poll-card');
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 30);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    entry.el.style.setProperty('--poll-bar', p.bar || '#8b5cf6');
+    // In the editor it would be an empty box with nothing to style.
+    if (PREVIEW && !entry.tally) {
+      this.paint(entry, { question: 'Which song next?', choices: ['Sabotage', 'Intergalactic'],
+                          counts: [7, 3], total: 10, shares: [0.7, 0.3], open: true }, true);
+    }
+  },
+  alert(entry, ev) {
+    if (ev.kind !== 'poll') return;
+    const tally = (ev.detail || {}).poll;
+    if (!tally || !Array.isArray(tally.choices)) return;
+    entry.tally = tally;
+    this.paint(entry, tally, false);
+    clearTimeout(entry.linger);
+    if (!tally.open) {
+      // Keep the result up for a moment - that is the point of closing - then
+      // take it away, so a poll from twenty minutes ago is not still on screen.
+      const secs = Math.max(0, Math.min(600, Number((entry.layer.props || {}).linger ?? 15)));
+      entry.linger = setTimeout(() => entry.el.classList.remove('showing'), secs * 1000);
+    }
+  },
+  paint(entry, t, sample) {
+    const total = Number(t.total) || 0;
+    entry.el.querySelector('.poll-q').textContent = t.question || '';
+    entry.el.querySelector('.poll-rows').innerHTML = (t.choices || []).map((label, i) => {
+      const count = (t.counts || [])[i] || 0;
+      const share = Math.round(((t.shares || [])[i] || 0) * 100);
+      return `<div class="poll-row">
+          <span class="poll-n">${i + 1}</span>
+          <span class="poll-label"></span>
+          <span class="poll-count">${count}${total ? ` &middot; ${share}%` : ''}</span>
+          <span class="poll-track"><i style="width:${share}%"></i></span>
+        </div>`;
+    }).join('');
+    // Labels are viewers' words in the open case and the streamer's otherwise:
+    // set as text, never as markup.
+    entry.el.querySelectorAll('.poll-row .poll-label').forEach((el, i) => {
+      el.textContent = (t.choices || [])[i] || '';
+    });
+    entry.el.classList.toggle('sample', !!sample);
+    entry.el.classList.add('showing');
+  },
+  destroy(entry) { clearTimeout(entry.linger); },
+};
+
 /* Any layer: a decorative border loop (decor.js), and "while speaking" triggers. */
 function applyDecor(entry) {
   const d = (entry.layer.props || {}).decor;
@@ -519,20 +1084,45 @@ function applyDecor(entry) {
   renderDecor(entry.el, box, d, d.color || '#ffffff');
 }
 
+/* Two moments, four things to do. "While I talk" holds for as long as you are
+   talking; "when I start talking" does the same thing once, for a beat, at the
+   moment speech starts.
+
+   That beat is what "pop" used to be: an action welded to one moment, which is
+   why the editor had to keep the two dropdowns in step behind your back - pick
+   pop and the when changed itself. Every action can use either moment now, and
+   the coupling is gone with it.
+
+   The beat's classes are separate from the held ones on purpose: a layer diff
+   landing in the middle of a beat would otherwise clear the class and cut it
+   short. */
+const TRIG_BEAT = 650;
+const GLOW = '#ffffff';
+function beatClass(entry, cls) {
+  entry.beats = entry.beats || {};
+  clearTimeout(entry.beats[cls]);
+  entry.el.classList.add(cls);
+  entry.beats[cls] = setTimeout(() => entry.el.classList.remove(cls), TRIG_BEAT);
+}
 function applyTriggers(entry, v) {
   const trig = entry.layer.triggers || [];
   if (!trig.length) return;
-  let visible = entry.layer.visible !== false, bounce = false;
+  let visible = entry.layer.visible !== false, bounce = false, glow = '';
   for (const t of trig) {
-    const active = t.on === 'speaking' ? v.speaking : t.on === 'silent' ? !v.speaking : false;
-    if (t.do === 'show') visible = visible && active;
-    else if (t.do === 'hide') visible = visible && !active;
-    else if (t.do === 'bounce') bounce = bounce || active;
-    else if (t.do === 'class' && t.value) entry.el.classList.toggle('t-' + t.value, active);
-    if (t.on === 'speech_start' && v.started && t.do === 'pop') {
-      entry.el.classList.add('pop');
-      setTimeout(() => entry.el.classList.remove('pop'), 650);
+    if (t.on === 'speech_start') {
+      // Ultra keeps everything still, and a beat is motion.
+      if (!v.started || isUltra()) continue;
+      if (t.do === 'bounce') beatClass(entry, 'beat-bounce');
+      else if (t.do === 'glow') { entry.el.style.setProperty('--glow', t.value || GLOW); beatClass(entry, 'beat-glow'); }
+      else if (t.do === 'show') beatClass(entry, 'beat-show');
+      else if (t.do === 'hide') beatClass(entry, 'beat-hide');
+      continue;
     }
+    if (t.on !== 'speaking') continue;      // "silent" and the rest: migrated away in scenes.py
+    if (t.do === 'show') visible = visible && v.speaking;
+    else if (t.do === 'hide') visible = visible && !v.speaking;
+    else if (t.do === 'bounce') bounce = bounce || v.speaking;
+    else if (t.do === 'glow' && v.speaking) glow = t.value || GLOW;
   }
   // Shown by a trigger (talking, going quiet): it comes in the way it enters.
   const was = entry.trigShown;
@@ -540,6 +1130,9 @@ function applyTriggers(entry, v) {
   if (visible && was === false) playEnter(entry);
   entry.el.classList.toggle('hidden', !visible);
   entry.el.classList.toggle('bounce', bounce && !isUltra());
+  // A glow is a still outline, not motion, so Ultra leaves it alone.
+  if (glow) entry.el.style.setProperty('--glow', glow);
+  entry.el.classList.toggle('talk-glow', !!glow);
 }
 
 /* Motion a layer asks for (P9). An enter animation plays when the layer
@@ -590,6 +1183,17 @@ function identity(layer) {
     case 'component': return 'component:' + (p.component || 'np');
     case 'camera': return 'camera:' + JSON.stringify([p.mode, p.device, p.width, p.height, p.fps]);
     case 'capture': return 'capture:' + JSON.stringify([p.mode, p.source, p.fps]);
+    // A microphone is a device too: without this a scene switch would close it
+    // and ask Windows for it again.
+    case 'mic': return 'mic:' + JSON.stringify([p.device]);
+    // An alert layer holds no device, but it does hold an alert part way
+    // through showing and a queue of ones waiting. Rebuilt on a switch, both
+    // are simply dropped - so it is kept for the same reason, by what it
+    // listens for rather than by how it looks.
+    case 'alert': return 'alert:' + String(p.kinds || 'all');
+    // A poll layer holds the tally it is drawing. Rebuilt on a switch it would
+    // blank in the middle of a poll and stay blank until the next vote.
+    case 'poll': return 'poll';
     case 'image': return isVideo(assetUrl(p.src)) ? 'video:' + p.src : '';
     default: return '';
   }
@@ -782,6 +1386,41 @@ class Stage {
     }
   }
 
+  /* One event in, dispatched to whichever layers want it - the same shape as
+     voice() above, so the page holds one socket however many alert layers a
+     scene has. */
+  alert(ev) {
+    // T10's stop is not an event for anybody to show. It goes to every layer
+    // that can hold something on screen, whatever kinds that layer listens
+    // for - a layer filtering for "gif" must still hear it - and never to
+    // alert(), where a layer listening for everything would show a blank card.
+    //
+    // takeDown, not stop, and the name is the whole contract: every type that
+    // defines it is called. The first version said stop(), which TYPES.mic
+    // already had - "release the microphone" - so pressing Stop effects froze
+    // a meter on stream. tests/test_takedown.py pins who may define this.
+    if (ev && ev.kind === 'stop') {
+      for (const entry of this.layers.values()) {
+        const t = TYPES[entry.type];
+        if (t.takeDown) t.takeDown(entry);
+      }
+      return;
+    }
+    // The scene rides along so a layer can tell an event addressed to it
+    // (T11) from one addressed to a layer of the same id on another scene.
+    for (const entry of this.layers.values()) {
+      const t = TYPES[entry.type];
+      if (t.alert) t.alert(entry, ev, this.scene);
+    }
+  }
+
+  needsAlerts() {
+    for (const entry of this.layers.values()) {
+      if (TYPES[entry.type] && TYPES[entry.type].alert && entry.layer.visible !== false) return true;
+    }
+    return false;
+  }
+
   needsVoice() {
     for (const entry of this.layers.values()) {
       if (entry.type === 'reactive' || (entry.layer.triggers || []).length) return true;
@@ -834,6 +1473,7 @@ async function show(scene, transition) {
   current.state(lastState);
   fit();
   holdVoice();
+  holdAlerts();
 }
 
 async function loadScene(id, transition) {
@@ -932,8 +1572,33 @@ function holdVoice() {
     voiceToken = null;
   }
 }
+/* Alerts (S15): one socket for the page, and only while the scene on it has a
+   layer that wants events. A scene with nothing listening costs nothing, and a
+   scene with three alert layers still costs one - the Stage hands the event to
+   each of them. */
+let alertWs = null;
+function holdAlerts() {
+  const need = current && current.needsAlerts();
+  if (need && !alertWs) {
+    const page = encodeURIComponent(location.pathname.split('/').pop() + location.search);
+    try { alertWs = new WebSocket(`ws://${location.host}/ws/alerts?page=${page}`); } catch (_) { alertWs = null; return; }
+    alertWs.onmessage = (e) => { try { if (current) current.alert(JSON.parse(e.data)); } catch (_) { /* next one */ } };
+    alertWs.onclose = () => {
+      alertWs = null;
+      setTimeout(() => { if (current && current.needsAlerts()) holdAlerts(); }, 1500);
+    };
+    alertWs.onerror = () => { try { alertWs.close(); } catch (_) {} };
+  } else if (!need && alertWs) {
+    const gone = alertWs;
+    alertWs = null;
+    gone.onclose = null;                      // deliberate: do not reconnect
+    try { gone.close(); } catch (_) {}
+  }
+}
+
 window.addEventListener('pagehide', () => {
   if (voiceToken) navigator.sendBeacon('/api/voice/release', new Blob([JSON.stringify({ token: voiceToken })], { type: 'application/json' }));
+  if (alertWs) { const gone = alertWs; alertWs = null; gone.onclose = null; try { gone.close(); } catch (_) {} }
 });
 
 onMotionChange(() => { if (current) current.motion(); });
@@ -944,6 +1609,25 @@ window.addEventListener('resize', () => {
   if (!PREVIEW) reportWindowMetrics(API);
 });
 if (!PREVIEW) reportWindowMetrics(API);
+
+/* The window's own controls. This page has loaded windowctl.js all along and
+   never called it, so the one window a scene actually goes out of was the one
+   window with no way to move it, resize it or shut it - the four component
+   pop-outs and the frames have had this since they were written.
+
+   The body is the drag surface, not #stage: #stage lives inside the box fit()
+   scales, and the class windowctl adds for the first-open hint has to land
+   somewhere the stylesheet can see. Deltas are screen pixels, so the scale
+   does not disturb them. Never in the editor's preview, and never when a scene
+   is embedded in another page. */
+if (!PREVIEW && !window.EMBED) {
+  document.body.classList.add('has-winctl');
+  attachWindowControls({
+    stage: document.body,
+    close: document.getElementById('closeBtn'),
+    api: API,
+  });
+}
 
 /* For tests and the editor: what the runtime holds right now. */
 window.SceneDebug = {

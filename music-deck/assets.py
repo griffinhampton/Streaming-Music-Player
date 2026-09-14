@@ -20,10 +20,21 @@ import urllib.parse
 class AssetStore:
     OK_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
               ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-              ".webm": "video/webm", ".mp4": "video/mp4"}
+              ".webm": "video/webm", ".mp4": "video/mp4",
+              # Sound, for what a command or a gift sets off. Here rather than
+              # in a store of its own: a clip is a file somebody picks from a
+              # list, exactly as a picture is, and everything that already
+              # keeps, serves, imports and deletes assets then applies to it.
+              ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
+              ".m4a": "audio/mp4"}
     VIDEO_EXT = (".webm", ".mp4")
+    AUDIO_EXT = (".mp3", ".ogg", ".wav", ".m4a")
     MAX_BYTES = 12 * 1024 * 1024
     MAX_VIDEO_BYTES = 80 * 1024 * 1024
+    # Its own cap, because neither of the others fits: a minute of wav is
+    # about 10 MB, so the picture cap would refuse ordinary clips, while the
+    # video cap would let somebody park an album in the folder.
+    MAX_AUDIO_BYTES = 24 * 1024 * 1024
     THUMB = ".thumb.jpg"
 
     def __init__(self, folder, builtin=None):
@@ -51,6 +62,8 @@ class AssetStore:
     @classmethod
     def kind_of(cls, name, animated=False):
         ext = os.path.splitext(name)[1].lower()
+        if ext in cls.AUDIO_EXT:
+            return "audio"
         if ext in cls.VIDEO_EXT:
             return "video"
         return "gif" if animated else "image"
@@ -123,8 +136,10 @@ class AssetStore:
         try:
             ext = os.path.splitext(name)[1].lower()
             if ext not in self.OK_EXT:
-                return {"ok": False, "reason": f"{ext or 'that file type'} is not a picture or video"}
-            limit = self.MAX_VIDEO_BYTES if ext in self.VIDEO_EXT else self.MAX_BYTES
+                return {"ok": False, "reason": f"{ext or 'that file type'} is not a picture, video or sound"}
+            limit = (self.MAX_VIDEO_BYTES if ext in self.VIDEO_EXT
+                     else self.MAX_AUDIO_BYTES if ext in self.AUDIO_EXT
+                     else self.MAX_BYTES)
             if len(raw) > limit:
                 return {"ok": False, "reason": f"file is larger than {limit // (1024 * 1024)} MB"}
             if not raw:

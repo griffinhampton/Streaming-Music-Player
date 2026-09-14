@@ -7,12 +7,27 @@
 <title>Awesome Streaming Deck - Canvas (source)</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="stylesheet" href="scene.css">
+<link rel="stylesheet" href="windowctl.css">
 <script src="fonts.js"></script>
 <script src="motion.js"></script>
 </head>
 <body>
 <div id="root">
   <div id="stage" class="stage"></div>
+</div>
+<!-- The window's own controls. A sibling of #root on purpose: fit() scales
+     #root to the scene, so anything inside it would scale with the picture and
+     miss the window's real corners. Hidden until scene.js switches them on, so
+     a scene rendered without its script cannot put buttons on a stream. -->
+<div class="handles" id="winHandles">
+  <div class="hint">drag to move &middot; edges resize &middot; &minus; hides it</div>
+  <button id="minBtn"   class="winbtn min"   title="Hide &mdash; find it on the taskbar" aria-label="Hide">&minus;</button>
+  <button id="closeBtn" class="winbtn close" title="Close (also Alt+F4)" aria-label="Close">&times;</button>
+  <div class="rz rz-n" data-edge="t"></div>  <div class="rz rz-s" data-edge="b"></div>
+  <div class="rz rz-w" data-edge="l"></div>  <div class="rz rz-e" data-edge="r"></div>
+  <div class="rz rz-nw" data-edge="tl"></div><div class="rz rz-ne" data-edge="tr"></div>
+  <div class="rz rz-sw" data-edge="bl"></div>
+  <div id="grip" class="rz rz-se grip" data-edge="br" title="Drag to resize"></div>
 </div>
 <div id="banner" class="banner" hidden></div>
 <script src="scenes.js"></script>

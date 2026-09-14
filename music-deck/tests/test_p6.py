@@ -26,7 +26,12 @@ class RowRegistry(unittest.TestCase):
     def test_groups_the_row_is_drawn_from(self):
         d = self.by_id()
         self.assertEqual([i for i, c in d.items() if c["group"] == "music"], ["np", "lyrics", "queue", "captions"])
-        self.assertEqual([i for i, c in d.items() if c["group"] == "sharing"], ["screenframe", "camframe"])
+        # S5 moved the two frames out of "sharing" and into "legacy": the
+        # Canvas Builder draws the same frame as a layer now, and the pop-out
+        # windows are kept for anyone driving them through LIVE Studio. The
+        # group is what the deck sorts the row into, so the change is the point
+        # rather than an accident.
+        self.assertEqual([i for i, c in d.items() if c["group"] == "legacy"], ["screenframe", "camframe"])
         self.assertEqual(d["live"]["group"], "canvas")
 
     def test_every_card_has_a_line_and_a_page(self):

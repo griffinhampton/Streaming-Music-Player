@@ -33,7 +33,9 @@ const EXPECTED_LOG = (url, text) => /favicon|status of 409/.test(url + text)
   || (/\/asset\//.test(url) && /404/.test(text)) || (/\/api\/scenes\/import/.test(url) && /400/.test(text));
 
 async function open(url) {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT' })).json();
+  // encodeURIComponent, not encodeURI: encodeURI leaves `&` alone, so a page
+  // URL with two parameters loses the second to /json/new itself (S17b).
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   const page = { ws, id: 0, pending: new Map(), errors: [], dialogs: [], accept: false, chooser: null, targetId: t.id };

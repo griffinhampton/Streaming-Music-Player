@@ -8,10 +8,17 @@ import json, os, subprocess, sys, time, urllib.request
 
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
+# wgc.py is in tools/p0; cpuby.ps1 and wins.py were deliberately copied here
+# beside the P5 scripts when the rig moved, so those two stay on S. Everything
+# written out goes to <repo>/.rig, beside the repo, like every runner .sh.
+P0 = os.path.abspath(os.path.join(S, "..", "p0"))
+O = os.path.abspath(os.path.join(S, "..", "..", "..", ".rig"))
+LIVE = os.path.join(O, "live")
+os.makedirs(LIVE, exist_ok=True)
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 FF = r"C:\Users\ghamp\Downloads\ffmpeg-8.0-essentials_build\bin"
 PARTS = set(sys.argv[1:]) or {"all"}
-LOG = open(os.path.join(S, "live", "p5rig.log"), "w", buffering=1)
+LOG = open(os.path.join(LIVE, "p5rig.log"), "w", buffering=1)
 results = []
 
 
@@ -66,8 +73,8 @@ def server_cpu(seconds=15):
 
 
 def wgc(title, name, seconds=1.0):
-    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(S, "wgc.py"), "window", title,
-                          os.path.join(S, "live", name), str(seconds), "half"], capture_output=True, text=True).stdout
+    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(P0, "wgc.py"), "window", title,
+                          os.path.join(LIVE, name), str(seconds), "half"], capture_output=True, text=True).stdout
     return out
 
 
@@ -80,7 +87,7 @@ def close_all():
 
 
 def source_window(on):
-    prof = os.path.join(S, "prof-srcwin")
+    prof = os.path.join(O, "prof-srcwin")
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-srcwin*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     if on:
         subprocess.Popen([CHROME, "--app=http://127.0.0.1:8799/p0-anim.html?title=P0%20Anim%20Source&label=SRC&fps=30",
@@ -98,7 +105,7 @@ def want(part):
 
 
 def sink(name):
-    out = os.path.join(S, "live", name)
+    out = os.path.join(LIVE, name)
     if os.path.exists(out):
         os.remove(out)
     p = subprocess.Popen(creationflags=0x08000000, args=[os.path.join(FF, "ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-y", "-listen", "1",
@@ -265,7 +272,7 @@ if want("feeds"):
         st, r = post(f"/api/components/{cid}/open")
         say(f"   open {cid}: {r.get('ok')} hosted {r.get('hosted')}")
         time.sleep(1.5)
-    prof = os.path.join(S, "prof-deck")
+    prof = os.path.join(O, "prof-deck")
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-deck*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     subprocess.Popen([CHROME, f"--app={BASE}/deck.html", "--window-size=1180,820", "--window-position=2860,640", "--no-first-run",
                       "--no-default-browser-check", "--disable-component-update", "--disable-background-networking", f"--user-data-dir={prof}"])
@@ -283,7 +290,7 @@ if want("feeds"):
     time.sleep(5)
     st, st2 = get("/api/components/live/status")
     check("the live output followed the switch with seven feeds open", (st2.get("rect") or {}).get("h") == 1920, json.dumps(st2.get("rect")))
-    log = open(os.path.join(S, "rig.log"), encoding="utf-8", errors="replace").read()
+    log = open(os.path.join(O, "rig.log"), encoding="utf-8", errors="replace").read()
     check("no six-connection warning in the server log", "event streams open" not in log)
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-deck*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     post("/api/canvas/live", {"id": ""})

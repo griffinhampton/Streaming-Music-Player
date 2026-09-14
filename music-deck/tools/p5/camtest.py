@@ -1,7 +1,7 @@
 """Standalone camera check: list devices, open one, read frames for a few
 seconds and upload them into a texture; then read the texture back."""
 import ctypes, sys, time, os
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import capture, camera
 hint = sys.argv[1] if len(sys.argv) > 1 else "IR"
 print("cameras:", camera.list_cameras())

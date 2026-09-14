@@ -19,7 +19,7 @@ import shutil
 import threading
 import time
 
-VERSION = 1
+VERSION = 2
 BACKUPS = 5
 FORMATS = {"horizontal": (1920, 1080), "phone": (1080, 1920)}
 TRANSPARENCY = ("opaque", "see-through", "key")
@@ -173,6 +173,45 @@ def migrate(raw):
             scene.setdefault("height", scene["size"][1])
         if "items" in scene and "layers" not in scene:
             scene["layers"] = scene.pop("items")
+    if version < 2:
+        # S6: two moments (while I talk, when I start talking) and four things
+        # to do (show, hide, bounce, glow).
+        #
+        # "While I'm quiet" is the same sentence inverted, so show and hide
+        # carry straight over. Bouncing *while quiet* has no equivalent, and
+        # rewriting it to "speaking" would mean the opposite of what somebody
+        # asked for - so it is dropped rather than turned inside out.
+        #
+        # "pop" was an action welded to the moment speech starts; that moment
+        # now takes any action, and a one-shot bounce is what a pop was.
+        # "add a style" named a CSS rule that had to exist somewhere else, and
+        # there is nothing to migrate it to.
+        for layer in scene.get("layers") or []:
+            if not isinstance(layer, dict):
+                continue
+            kept = []
+            for tr in layer.get("triggers") or []:
+                if not isinstance(tr, dict):
+                    continue
+                on, do = tr.get("on"), tr.get("do")
+                if on == "silent":
+                    if do == "show":
+                        on, do = "speaking", "hide"
+                    elif do == "hide":
+                        on, do = "speaking", "show"
+                    else:
+                        continue
+                if do == "pop":
+                    on, do = "speech_start", "bounce"
+                if on not in ("speaking", "speech_start"):
+                    continue
+                if do not in ("show", "hide", "bounce", "glow"):
+                    continue                      # "class", and anything newer we do not know
+                fresh = {"on": on, "do": do}
+                if do == "glow" and tr.get("value"):
+                    fresh["value"] = tr["value"]  # the outline's color
+                kept.append(fresh)
+            layer["triggers"] = kept
     return validate(scene)
 
 

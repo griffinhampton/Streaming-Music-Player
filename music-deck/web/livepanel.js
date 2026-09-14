@@ -255,7 +255,7 @@ const LivePanel = (() => {
       await refreshTikTok();
     });
     // Categories come from Streamlabs as you type; a datalist keeps the
-    // keyboard behaviour the browser already gives a text field.
+    // keyboard behavior the browser already gives a text field.
     $('[data-lp="ttCat"]').addEventListener('input', (e) => {
       clearTimeout(e.target._t);
       const q = e.target.value.trim();

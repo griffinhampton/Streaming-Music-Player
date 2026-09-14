@@ -79,6 +79,7 @@ function studioOnState(st) {
   const sc = (st.scenes || []).find((x) => x.id === id);
   studioLive = { id, name: sc ? sc.name : '', state: (st.live || {}).state || 'idle' };
   LivePanel.onState(st);
+  ChatPanel.onState(st);
   if (studio.on) paintProgram();
 }
 
@@ -101,9 +102,18 @@ for (const ev of ['pointerdown', 'wheel', 'contextmenu', 'dblclick']) {
   $('programPanel').addEventListener(ev, (e) => e.stopPropagation());
 }
 $('liveStatus').addEventListener('click', () => LivePanel.toggle($('liveStatus')));
+// The Sound panel (S7), the same one the deck has.
+AudioPanel.mount();
+$('soundBtn').addEventListener('click', () => AudioPanel.toggle($('soundBtn')));
+ChatPanel.mount();
+$('chatBtn').addEventListener('click', () => ChatPanel.toggle($('chatBtn')));
 $('remoteBtn').addEventListener('click', () => {
   fetch('/api/canvas/remote/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     .then((r) => r.json()).then((d) => { if (!d.ok) toast('Could not open the remote'); }).catch(() => {});
+});
+$('liveViewOpen').addEventListener('click', () => {
+  fetch('/api/live/view/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    .then((r) => r.json()).then((d) => { if (!d.ok) toast('Could not open the Live view'); }).catch(() => {});
 });
 
 window.addEventListener('keydown', (e) => {

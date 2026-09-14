@@ -40,7 +40,13 @@ run_case four
 echo "===== frame pages"
 "$CHROME" --headless=new --remote-debugging-port=9346 "--user-data-dir=$W\\prof-p6frame" --no-first-run --window-size=640,640 about:blank > /dev/null 2>&1 &
 sleep 5
-curl -s -X POST -H "Content-Type: application/json" -d '{"camframe": {"frame": {"hole": "key", "shape": "circle", "border": {"style": "glow", "width": 10, "color": "#ff7ab6"}, "badges": {"tr": "LIVE", "bl": "✨"}, "title": {"text": "cam", "place": "bottom"}}}, "screenframe": {"frame": {"loop": {"border": "sparkle"}, "title": {"text": "Ranked grind"}, "badges": {"tl": "1"}}}}' $B/api/config > /dev/null
+# Over stdin, not -d: curl.exe reads the ANSI command line, so an emoji in a
+# -d payload reaches the server as "?" - which is what the ✨ badge used to
+# shoot as. Piped bytes are passed through untouched. (The app was never at
+# fault: the deck posts config with fetch + JSON.stringify, always UTF-8.)
+curl -s -X POST -H "Content-Type: application/json" --data-binary @- $B/api/config > /dev/null <<'JSON'
+{"camframe": {"frame": {"hole": "key", "shape": "circle", "border": {"style": "glow", "width": 10, "color": "#ff7ab6"}, "badges": {"tr": "LIVE", "bl": "✨"}, "title": {"text": "cam", "place": "bottom"}}}, "screenframe": {"frame": {"loop": {"border": "sparkle"}, "title": {"text": "Ranked grind"}, "badges": {"tl": "1"}}}}
+JSON
 node "$N/shotpage.js" 9346 "$B/frame.html?kind=camera&preview=1" 480 480 "$W\\p6shots\\frame_camera.png"
 node "$N/shotpage.js" 9346 "$B/frame.html?kind=screen" 960 540 "$W\\p6shots\\frame_screen.png"
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.Name -eq 'chrome.exe' -and \$_.CommandLine -like '*prof-p6frame*' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
