@@ -324,7 +324,14 @@ class TheChat(unittest.TestCase):
     def test_a_line_arrives_with_its_handle(self):
         out = self.room().frame("1", 2, b64(chat_frame(text="!hello there")))
         self.assertEqual(out, [{"kind": "chat", "user": "Amy", "handle": "amy", "text": "!hello there", "mod": False,
-                                "follower": False}])
+                                "follower": False, "gifter": False}])
+
+    def test_a_gifter_is_tiktoks_flag_1(self):
+        """On every line of all nine people who chatted after sending a gift."""
+        r = self.room()
+        self.assertTrue(r.frame("1", 2, b64(chat_frame(flags=(1, 4))))[0]["gifter"])
+        for flags in ((2, 3, 4, 5), ()):
+            self.assertFalse(r.frame("1", 2, b64(chat_frame(flags=flags)))[0]["gifter"], flags)
 
     def test_a_follower_is_flag_4_and_nothing_else(self):
         """Checked on real lives: absent from the lines of people who had not

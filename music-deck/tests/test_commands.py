@@ -39,6 +39,11 @@ class Ladder(unittest.TestCase):
         self.assertLess(commands.RANK["everyone"], commands.RANK["follower"])
         self.assertLess(commands.RANK["follower"], commands.RANK["subscriber"])
 
+    def test_a_gifter_stands_on_the_followers_rung(self):
+        """As asked: commands for the people who follow you or have gifted you."""
+        self.assertEqual(commands.rank_of(["gifter/1"]), commands.RANK["follower"])
+        self.assertEqual(commands.rank_of(["gifter/1", "moderator/1"]), commands.RANK["mod"])
+
     def test_a_founder_is_not_left_below_a_subscriber(self):
         self.assertEqual(commands.rank_of(["founder/0"]), commands.RANK["subscriber"])
 
@@ -126,6 +131,23 @@ class Running(unittest.TestCase):
     def test_a_mod_passes_a_subscriber_gate(self):
         self.eng.load([{"name": "subs", "action": "say", "role": "subscriber", "response": "x"}])
         self.assertEqual(self.eng.handle(msg("!subs", badges=["moderator/1"]))["outcome"], "ran")
+
+    def test_the_floor_is_under_every_command(self):
+        """"Commands are for": set to followers and gifters, a plain viewer runs
+        nothing, a follower or a gifter runs what their rung allows, and a
+        command asking more than the floor still asks it."""
+        self.eng.load([{"name": "hi", "action": "say", "response": "x"},
+                       {"name": "subs", "action": "say", "role": "subscriber", "response": "x"}])
+        self.assertEqual(self.eng.set_floor("follower"), "follower")
+        entry = self.eng.handle(msg("!hi", login="amy"))
+        self.assertEqual(entry["outcome"], "denied")
+        self.assertIn("followers and gifters", entry["response"])
+        self.assertEqual(self.eng.handle(msg("!hi", badges=["follower/1"], login="bob"))["outcome"], "ran")
+        self.assertEqual(self.eng.handle(msg("!hi", badges=["gifter/1"], login="cy"))["outcome"], "ran")
+        self.assertEqual(self.eng.handle(msg("!subs", badges=["gifter/1"], login="dee"))["outcome"], "denied")
+        self.assertEqual(self.eng.handle(msg("!subs", badges=["subscriber/1"], login="eve"))["outcome"], "ran")
+        self.assertEqual(self.eng.set_floor("nonsense"), "everyone", "an unknown rung is no floor, not a lock")
+        self.assertEqual(self.eng.handle(msg("!hi", login="fay"))["outcome"], "ran")
 
     def test_a_followers_gate(self):
         """The rung TikTok's follower flag reaches - and everything above it."""

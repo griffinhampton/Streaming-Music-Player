@@ -234,12 +234,16 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   if (!(guard.ok === false && guard.refused === true)) { console.log('\nnot a guarded rig - stopping'); process.exit(1); }
 
   const before = (await getJ('/api/config')).commands || {};
-  await post('/api/commands/save', { commands: [
+  const CMDS = [
     { name: 'hello', action: 'say', response: 'hi {user}' },
     { name: 'modonly', action: 'say', role: 'mod', response: 'ok' },
     { name: 'mine', action: 'say', role: 'broadcaster', response: 'yours' },
     { name: 'fans', action: 'say', role: 'follower', response: 'thanks for following' },
-  ], symbol: '!', budget: { count: 5, seconds: 0 } });
+  ];
+  await post('/api/commands/save', { commands: CMDS, symbol: '!', budget: { count: 5, seconds: 0 }, floor: 'everyone' });
+  // The coin ledger is kept across restarts (gifts.py); this run counts from nothing.
+  const reset = await post('/api/gifts/reset', {});
+  check('the coin ledger starts again on Reset', reset.ok && reset.ledger && reset.ledger.coins === 0, J(reset.ledger));
   await new Promise((r) => fixture.listen(FIXTURE_PORT, '127.0.0.1', r));
   const pointed = await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 4 });
   check('the rig points its reader at the fixture', pointed.ok, J(pointed));
@@ -324,6 +328,20 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   st = await tiktokStatus();
   check('the reader is still reading', st && st.state === 'joined', J(st && [st.state, st.error]));
   check('and counts what it posted', st && st.page && st.page.gifts === 6, J(st && st.page));
+  // What they came to in coins (gifts.py): Amy's Rose x5 (5), Bob's Galaxy
+  // (1000), Cy's Rose x3 (3), and a Rose each from Dup, ToMe and After (3).
+  const led = await getJ('/api/gifts/ledger?top=10');
+  check('the ledger counts coins, not just gifts: 1011 coins in 12 gifts from 6 people',
+    led.coins === 1011 && led.gifts === 12 && led.senders === 6, J({ coins: led.coins, gifts: led.gifts, senders: led.senders }));
+  check('and knows who gave the most, by handle', led.top[0] && led.top[0].handle === 'bob' && led.top[0].coins === 1000 &&
+    (led.top.find((t) => t.handle === 'amy') || {}).coins === 5, J(led.top));
+  const lv = await openPage(`${RIG}/liveview.html`);
+  await sleep(4500);
+  const shownGifts = await lv.ev('LiveView.gifts()');
+  check('the Live view shows the coins this stream and the top gifter', shownGifts.coins === '1,011' &&
+    shownGifts.gifts === '12' && /^Bob . 1,000 coins$/.test(shownGifts.top[0] || ''), J(shownGifts));
+  check('nothing was thrown in the Live view', lv.errors.length === 0, lv.errors.slice(0, 2).join(' | '));
+  await closePage(lv);
 
   // ------------------------------------------ 6. nothing a name can run
   const EVIL = '<img src=x onerror=window.__pwned=1>';
@@ -354,7 +372,8 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   toRoom(C({ from: user(204, 'Plain', 'plain'), text: '!modonly', flags: [1, 2, 3, 4] }));
   toRoom(C({ from: user(205, 'Old', 'old'), text: '!hello', history: true }));
   toRoom(C({ from: user(206, 'Fan', 'fan'), text: '!fans', flags: [4] }));
-  toRoom(C({ from: user(207, 'NotFan', 'notfan'), text: '!fans', flags: [1, 2, 3] }));
+  toRoom(C({ from: user(207, 'NotFan', 'notfan'), text: '!fans', flags: [2, 3] }));
+  toRoom(C({ from: user(208, 'Flagged', 'flagged'), text: '!fans', flags: [1] }));
   // The page draws the host's line too, as TikTok's does, and a line of its own.
   ops.push({ index: 40, name: 'Whatever I Call Myself', text: '!mine' });
   ops.push({ index: 41, name: 'DrawnOnly', text: 'only on the page' });
@@ -373,8 +392,31 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('a moderator, by TikTok\'s own flag, runs a mod-only command', out('ModMo', 'modonly') === 'ran');
   check('a follower, gift-giver and subscriber without it does not (the control)', out('Plain', 'modonly') === 'denied');
   check('a line from before the page joined is not replayed', !lines.some((m) => m.user.name === 'Old') && !out('Old', 'hello'));
-  check('a follower, by TikTok\'s own flag, runs a followers-only command', out('Fan', 'fans') === 'ran');
-  check('a gift-giver and subscriber who does not follow does not (the control)', out('NotFan', 'fans') === 'denied');
+  check('a follower, by TikTok\'s own flag, runs a followers-and-gifters command', out('Fan', 'fans') === 'ran');
+  check('so does someone TikTok marks as having gifted you', out('Flagged', 'fans') === 'ran');
+  check('someone who neither follows nor has gifted does not (the control)', out('NotFan', 'fans') === 'denied');
+  // A gifter by this stream's ledger: Bob gave a Galaxy above. First someone
+  // who only copies his display name, then Bob himself, known by his handle.
+  const logBob = (await logNow()).length;
+  toRoom(C({ from: user(299, 'Bob', 'bobcopy'), text: '!fans' }));
+  await sleep(1500);
+  const copy = (await logNow()).slice(logBob).find((e) => e.user === 'Bob' && e.command === 'fans');
+  check('a viewer with a gifter\'s display name but another handle is no gifter (the control)', copy && copy.outcome === 'denied', J(copy));
+  toRoom(C({ from: user(102, 'Bob', 'bob'), text: '!fans' }));
+  await sleep(1500);
+  const real = (await logNow()).slice(logBob).filter((e) => e.user === 'Bob' && e.command === 'fans')[1];
+  check('the viewer who gifted this stream, by handle, runs it', real && real.outcome === 'ran', J(real));
+  // "Commands are for": the floor under every command.
+  await post('/api/commands/save', { commands: CMDS, symbol: '!', budget: { count: 5, seconds: 0 }, floor: 'follower' });
+  const logFloor = (await logNow()).length;
+  toRoom(C({ from: user(211, 'Passerby', 'passerby'), text: '!hello' }));
+  toRoom(C({ from: user(212, 'FanToo', 'fantoo'), text: '!hello', flags: [4] }));
+  await sleep(2000);
+  const fl = (await logNow()).slice(logFloor);
+  const fo = (who) => (fl.find((e) => e.user === who && e.command === 'hello') || {}).outcome;
+  check('with commands for followers and gifters, a passer-by runs none', fo('Passerby') === 'denied', J(fl.map((e) => [e.user, e.outcome])));
+  check('and a follower runs what anyone could before', fo('FanToo') === 'ran');
+  await post('/api/commands/save', { commands: CMDS, symbol: '!', budget: { count: 5, seconds: 0 }, floor: 'everyone' });
   st = await tiktokStatus();
   check('the reader says chat is coming from the room socket', st && st.page && st.page.chat_from === 'socket', J(st && st.page));
 
@@ -483,6 +525,7 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   await post(`/api/scenes/${sc.id}/delete`, {});
   await post('/api/commands/save', {
     commands: before.list || [], symbol: before.symbol || '!', budget: before.budget || { count: 5, seconds: 30 },
+    floor: before.floor || 'everyone',
   });
   sockets.room.concat(sockets.other).forEach((s) => s.destroy());
   fixture.close();

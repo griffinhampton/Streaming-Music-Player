@@ -258,14 +258,14 @@ class WhatItMayDoInThePage(unittest.TestCase):
         from test_webcast import chat_frame, user
         a, got, say = self.socket_adapter()
         say(chat_frame(text="hi", frm=user(3, "Mo", "mo"), flags=(1, 2, 3, 4, 5)))
-        say(chat_frame(text="hi", frm=user(4, "Su", "su"), flags=(1, 2, 3)))
+        say(chat_frame(text="hi", frm=user(4, "Su", "su"), flags=(2, 3)))
         self.assertEqual([chat_rank(m) for m in got], ["mod", "everyone"])
 
     def test_a_follower_by_tiktoks_own_flag(self):
         from test_webcast import chat_frame, user
         a, got, say = self.socket_adapter()
         say(chat_frame(text="hi", frm=user(5, "Fan", "fan"), flags=(4,)))
-        say(chat_frame(text="hi", frm=user(6, "Gifter", "gifter"), flags=(1, 2, 3)))
+        say(chat_frame(text="hi", frm=user(6, "Sub", "sub"), flags=(2, 3)))       # neither follows nor gifted
         say(chat_frame(text="hi", frm=user(7, "ModFan", "modfan"), flags=(4, 5)))
         self.assertEqual([chat_rank(m) for m in got], ["follower", "everyone", "mod"])
 
@@ -420,6 +420,24 @@ class WhatItMayDoInThePage(unittest.TestCase):
             self.assertIn(key, page, key)
         self.assertTrue(page["own"])
         self.assertNotIn("gifts", page, "a counter that ticks per gift would put the state on the wire per gift")
+
+    def test_a_gifter_by_tiktoks_flag_or_by_this_streams_ledger(self):
+        """Who has gifted: TikTok's own flag, or a coin in the ledger under the
+        chatter's @handle - never their display name, which anybody can copy."""
+        from test_webcast import chat_frame, user
+        ledger = {"giver": 25}
+        old = tt.TikTokAdapter.gifted
+        self.addCleanup(setattr, tt.TikTokAdapter, "gifted", old)
+        tt.TikTokAdapter.gifted = lambda handle: ledger.get(handle, 0)
+        a, got, say = self.socket_adapter()
+        say(chat_frame(text="hi", frm=user(1, "Giver", "giver")))                 # the ledger
+        say(chat_frame(text="hi", frm=user(2, "Flagged", "flagged"), flags=(1,)))  # TikTok's flag
+        say(chat_frame(text="hi", frm=user(3, "Giver", "copycat")))              # the name, not the handle
+        say(chat_frame(text="hi", frm=user(4, "Nobody", "nobody")))
+        self.assertEqual([chat_rank(m) for m in got], ["follower", "follower", "everyone", "everyone"])
+        tt.TikTokAdapter.gifted = lambda handle: 1 / 0                            # a ledger that fails
+        say(chat_frame(text="hi", frm=user(1, "Giver", "giver")))
+        self.assertEqual(chat_rank(got[-1]), "everyone", "a failing ledger gives nobody a rung")
 
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))

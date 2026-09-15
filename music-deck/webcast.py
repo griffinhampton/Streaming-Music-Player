@@ -194,13 +194,18 @@ def chat(payload):
       4 - follows the streamer: absent from every line of people who had not
           yet followed, and on every line after they followed, the same
           people, lined up against TikTok's own follow announcement.
-    The rest - 1, 2, 3, gift-giver, subscriber and mutual follow by the
-    community's definitions - are not used. 2 was never there to check, and a
-    role nobody has checked is not one to hand out."""
+      1 - has gifted the streamer: on every line of all nine people who
+          chatted after sending a gift, and on some lines of people before
+          their first gift of that stream - so TikTok's "has gifted you",
+          not only "this stream". The gift gate takes it beside the ledger's
+          own count (gifts.py).
+    The rest - 2 and 3, subscriber and mutual follow by the community's
+    definitions - are not used. 2 was never there to check, and a role nobody
+    has checked is not one to hand out."""
     fs = fields(payload)
     ident = fields(_bytes(fs, 18))
     return {"user": user(_bytes(fs, 2)), "text": _text(fs, 3, 500), "mod": _int(ident, 5) == 1,
-            "follower": _int(ident, 4) == 1}
+            "follower": _int(ident, 4) == 1, "gifter": _int(ident, 1) == 1}
 
 
 def is_webcast(url, allow_local=False):
@@ -388,7 +393,7 @@ class Room:
         self.chats += 1
         u = c["user"]
         return [{"kind": "chat", "user": u["name"] or u["handle"] or "Someone", "handle": u["handle"],
-                 "text": text, "mod": c["mod"], "follower": c["follower"]}]
+                 "text": text, "mod": c["mod"], "follower": c["follower"], "gifter": c["gifter"]}]
 
     def _done(self, finished):
         out = []

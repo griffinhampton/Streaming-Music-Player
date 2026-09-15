@@ -48,6 +48,7 @@ import polls
 import tts
 import tiktok_chat          # registers chat.ADAPTERS["tiktok"] (T4, T5)
 import avatars              # gift senders' pictures, fetched here, never by a scene (T6)
+import gifts                # the coin ledger: what was gifted, by whom
 import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
@@ -1138,6 +1139,10 @@ def _pump():
             HUB.broadcast_if_changed()
         except Exception:
             pass
+        try:
+            LEDGER.save(force=False)     # the coin ledger, at most every gifts.SAVE_EVERY
+        except Exception:
+            pass
         time.sleep(0.4)
 
 
@@ -1505,6 +1510,8 @@ COMMANDS.load((CONFIG.get("commands") or {}).get("list") or [])
 # budget the engine is not honoring would be a setting that lies.
 CONFIG.setdefault("commands", {})["budget"] = COMMANDS.set_budget(
     (CONFIG.get("commands") or {}).get("budget"))
+# The floor under every command ("Commands are for"), kept the same way.
+CONFIG["commands"]["floor"] = COMMANDS.set_floor((CONFIG.get("commands") or {}).get("floor"))
 
 
 def command_symbol():
@@ -1874,8 +1881,11 @@ def tiktok_gift(g):
     """A finished gift from the TikTok reader's page (T6, webcast.py): a
     one-off at once, a streak at its end with its total. Not held by Stop
     effects' pause - that pause is for chat's commands, and a gift is not one;
-    the stop itself still takes a gift that is showing down. The sender's
-    picture is fetched first, off the reader's thread (avatars.Poster)."""
+    the stop itself still takes a gift that is showing down. Its coins go in
+    the ledger at once, so the sender counts as a gifter by their next line;
+    the sender's picture is fetched first, off the reader's thread
+    (avatars.Poster)."""
+    LEDGER.record(g.get("handle"), g.get("user"), g.get("coins"), g.get("count", 1))
     GIFT_POSTER.put(g)
 
 
@@ -1886,6 +1896,10 @@ AVATARS = avatars.AvatarCache(os.path.join(CACHE, "avatars"), log=_log, allow_lo
 GIFT_POSTER = avatars.Poster(AVATARS, lambda g, aid: post_gift(
     g.get("user"), g.get("gift"), g.get("coins"), g.get("count", 1), ("/avatar/" + aid) if aid else ""))
 tiktok_chat.TikTokAdapter.on_gift = tiktok_gift
+# The coins gifted, per sender and in all (gifts.py), kept in the cache across
+# a restart until the streamer resets it; and the reader asks it who has gifted.
+LEDGER = gifts.GiftLedger(os.path.join(CACHE, "gift-ledger.json"))
+tiktok_chat.TikTokAdapter.gifted = LEDGER.coins_from
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()
@@ -2577,6 +2591,7 @@ class Handler(BaseHTTPRequestHandler):
                                # in force rather than the one it was written with.
                                "symbol": chat.symbols(),
                                "budget": COMMANDS.budget(), "paused": COMMANDS.paused,
+                               "floor": COMMANDS.floor(),
                                # T11: the ones that belong to layers on the
                                # scene on air, each with any conflict it has.
                                "layers": COMMANDS.layer_list()})
@@ -2604,6 +2619,15 @@ class Handler(BaseHTTPRequestHandler):
                                # That sentence has to name the symbol actually
                                # in force or it is instructions to fail.
                                "symbol": chat.symbols()})
+        if path == "/api/gifts/ledger":
+            # The coins gifted this stream, in all and by the top senders
+            # (gifts.py). Read by the Live view while it is open, not pushed on
+            # the state feed: a gift storm must not send the whole state per gift.
+            try:
+                top = max(0, min(50, int((query.get("top") or ["5"])[0])))
+            except ValueError:
+                top = 5
+            return self._json(LEDGER.snapshot(top))
         if path == "/api/alerts/recent":
             # For a page that opened late, and for the tests. The feed itself
             # sends nothing on connect, exactly as the chat one does not.
@@ -3002,11 +3026,16 @@ class Handler(BaseHTTPRequestHandler):
             symbol = command_symbol()
             if "budget" in data:
                 CONFIG["commands"]["budget"] = COMMANDS.set_budget(data.get("budget"))
+            if "floor" in data:
+                CONFIG["commands"]["floor"] = COMMANDS.set_floor(data.get("floor"))
             save_config(CONFIG)
             kept = COMMANDS.load(items)          # what survived cleaning, so the editor can show it
             HUB.broadcast()
             return self._json({"ok": True, "commands": kept, "symbol": symbol,
-                               "budget": COMMANDS.budget()})
+                               "budget": COMMANDS.budget(), "floor": COMMANDS.floor()})
+        if path == "/api/gifts/reset":
+            # A new stream: the coin ledger starts again (gifts.py).
+            return self._json({"ok": True, "ledger": LEDGER.reset()})
         if path == "/api/commands/stop":
             stop_everything()
             return self._json({"ok": True, "paused": COMMANDS.paused})
@@ -3206,6 +3235,7 @@ class Handler(BaseHTTPRequestHandler):
                 CAPTIONS.stop()      # likewise the one holding the microphone
                 TTS.close()          # and the voice's
                 CHAT.stop()          # and the TikTok reader's window with it
+                LEDGER.save()        # the coins gifted, whatever the last save missed
                 live_stop()          # unpublish cleanly rather than vanish
                 time.sleep(0.4)
                 os._exit(0)

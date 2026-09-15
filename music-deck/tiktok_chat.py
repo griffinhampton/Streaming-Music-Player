@@ -392,6 +392,8 @@ def to_message(channel, p):
         badges.append("subscriber/1")
     elif role == "follower":
         badges.append("follower/1")
+    if p.get("gifter"):
+        badges.append("gifter/1")        # commands.py puts gifters on the follower rung
     return chat.message("tiktok", channel, text, user={"id": login, "login": login, "name": name}, badges=badges)
 
 
@@ -411,6 +413,10 @@ class TikTokAdapter(chat.Adapter):
     # A finished gift, for server.py's post_gift (T6). Called through the
     # class, so it stays a plain function rather than becoming a method.
     on_gift = None
+    # Coins a handle has gifted this stream (gifts.py's coins_from), set by
+    # server.py - so a gifter is known the moment their gift lands, not only
+    # once TikTok's own flag says so. Called through the class, like on_gift.
+    gifted = None
     reopen_first = 60        # REOPEN_MAX says why
 
     def __init__(self, channel, on_message, log=None):
@@ -474,6 +480,20 @@ class TikTokAdapter(chat.Adapter):
         DevTools reports each navigation - a full load (Page.frameNavigated)
         or TikTok moving within its one page (Page.navigatedWithinDocument)."""
         return self._at == f"/@{self.channel}/live"
+
+    def _gifter(self, e):
+        """Has this chatter gifted the streamer? TikTok's own flag (webcast.chat),
+        or a coin in this stream's ledger under their @handle - the handle, not
+        the display name, which anybody can copy."""
+        if e.get("gifter"):
+            return True
+        gifted, handle = type(self).gifted, e.get("handle") or ""
+        if not gifted or not handle:
+            return False
+        try:
+            return gifted(handle) > 0
+        except Exception:
+            return False
 
     def _navigated(self, url):
         self._at = urlparse(url or "").path.lower().rstrip("/")
@@ -639,7 +659,7 @@ class TikTokAdapter(chat.Adapter):
             if e["kind"] == "chat":
                 role = "moderator" if e["mod"] else "follower" if e.get("follower") else ""
                 msg = to_message(self.channel, {"name": e["user"], "login": e["handle"], "text": e["text"],
-                                                "role": role})
+                                                "role": role, "gifter": self._gifter(e)})
                 if msg:
                     self.messages += 1
                     self.on_message(msg)

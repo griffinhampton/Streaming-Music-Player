@@ -45,16 +45,24 @@ NAME_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]{0,31}$")
 MAX_RESPONSE = 400
 
 # The ladder. Anything at or above the gate may run the command. "follower" is
-# TikTok's: its room socket says who follows the streamer (webcast.chat, checked
-# on real lives). Twitch chat carries no follow status at all, so there a
-# followers-only command lets in subscribers and up - the safe way round.
+# TikTok's, and means followers and gifters: its room socket says who follows
+# the streamer and who has gifted them (webcast.chat, checked on real lives),
+# and the coin ledger (gifts.py) knows who gifted this stream. Twitch chat
+# carries neither, so there the same gate lets in subscribers and up - the safe
+# way round.
 ROLES = ("everyone", "follower", "subscriber", "vip", "mod", "broadcaster")
 RANK = {name: i for i, name in enumerate(ROLES)}
+# How a refusal names a rung.
+ROLE_WORDS = {"everyone": "anyone", "follower": "followers and gifters", "subscriber": "subscribers",
+              "vip": "VIPs", "mod": "moderators", "broadcaster": "the streamer"}
 
-# Badge names, mapped onto it: Twitch's, and "follower" from the TikTok reader.
-# A founder is an early subscriber, so it would be wrong to leave them below one.
+# Badge names, mapped onto it: Twitch's, and "follower" and "gifter" from the
+# TikTok reader - one rung for both, as asked: commands for the people who
+# follow you or have gifted you. A founder is an early subscriber, so it would
+# be wrong to leave them below one.
 BADGE_ROLE = {"broadcaster": "broadcaster", "moderator": "mod", "vip": "vip",
-              "subscriber": "subscriber", "founder": "subscriber", "follower": "follower"}
+              "subscriber": "subscriber", "founder": "subscriber", "follower": "follower",
+              "gifter": "follower"}
 
 ACTIONS = ("say", "scene", "queue", "poll", "gif", "sound", "stop")
 
@@ -236,6 +244,10 @@ class Engine:
         # that survived a restart would be commands that silently do nothing at
         # the start of the next stream, with no memory of why.
         self.paused = False
+        # A floor under every command - the list's and the layers' alike: the
+        # least a chatter must be to run any of them, whatever each asks. Set
+        # to "follower", chat commands are for followers and gifters only.
+        self._floor = "everyone"
         self._budget = clean_budget(None)
         self._spent = deque()               # when each recent effect ran, oldest first
         self.clock = clock                  # injected so cooldowns can be tested without sleeping
@@ -306,6 +318,18 @@ class Engine:
         with self._lock:
             return dict(self._budget)
 
+    def set_floor(self, role):
+        """Replace the floor from config; returns what was kept."""
+        role = str(role or "everyone").lower()
+        role = role if role in RANK else "everyone"
+        with self._lock:
+            self._floor = role
+        return role
+
+    def floor(self):
+        with self._lock:
+            return self._floor
+
     def set_paused(self, flag):
         with self._lock:
             self.paused = bool(flag)
@@ -367,8 +391,12 @@ class Engine:
         if self.paused and cmd["action"] != "stop":
             return self._record(msg, cmd, "paused", "commands are paused")
 
-        if rank_of(msg.get("badges")) < RANK[cmd["role"]]:
-            return self._record(msg, cmd, "denied", f"{cmd['name']} is for {cmd['role']} and above")
+        # The command's own gate or the floor under all of them, whichever is higher.
+        with self._lock:
+            floor = self._floor
+        need = max(cmd["role"], floor, key=RANK.get)
+        if rank_of(msg.get("badges")) < RANK[need]:
+            return self._record(msg, cmd, "denied", f"{cmd['name']} is for {ROLE_WORDS.get(need, need)} and above")
 
         with self._lock:
             last = self._last_cmd.get(cmd["name"], None)

@@ -92,3 +92,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
   .lv-body { grid-template-columns: 1fr 1fr; }
   .lv-col.lv-chat { grid-column: span 2; min-height: 320px; }
 }
+
+/* Who gifted the most coins this stream (gifts.py), under the coin tiles. */
+.lv-top { margin: 6px 0 2px; padding-left: 22px; font-size: 13px; color: var(--fg); }
+.lv-top li { margin: 2px 0; overflow-wrap: anywhere; }
+.lv-top:empty { display: none; }

@@ -732,6 +732,70 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Coins, and commands for followers and gifters (2026-09-15)
+
+Asked for in the user's words: *"begin creating the logic for understanding how
+many coins were gifted - not just that a gift was sent - and only giving
+command privleges to people who are following me on tiktok, or gifters"*.
+
+**What a gift is worth.** Its own price times how many: the gift message
+carries the gift's coin price (15.12) and the count (5). Checked on real lives
+before the ledger was built on it - 22 gift messages across five lives: the
+group count (4) was 1 every time and the combo count always equalled the
+count, so neither is a second multiplier. Two kinds arrived. Gifts sent as a
+streak (type 1: Rose, Treasure Clover, a coin each) came as a message and an
+end; the big ones (types 2 and 4: Galaxy and Shiny Air Balloon at 1,000, Money
+Gun 500, Hearts 199, Hand Heart 100) came as one message with no end flag -
+which `Combos` already counts at once, since only type 1 is a streak. Every
+real streak caught was a single tap; a streak of several taps comes to price
+times its final count by the community's definitions, and is tested on the
+rig, not yet seen live.
+
+**The ledger** (`gifts.py`): every finished TikTok gift's coins, by the
+sender's @handle - which TikTok sets and nobody can copy - with their display
+name beside it, and the stream's total. It is kept in the cache, saved at most
+every two seconds and on quit, so a restart mid-stream keeps it, and the Live
+view's Reset starts it again for a new stream. It holds viewers' names on this
+PC only, as long as the streamer keeps it. The Live view shows the coins, the
+gifts and the gifters, and the five who gave most, reading the ledger every
+few seconds while it is on screen (`/api/gifts/ledger`) - not on the state
+feed, where a storm of gifts would send the whole state to every window per
+gift.
+
+**Who counts as a gifter.** Either of two, both keyed to the handle: TikTok's
+own flag on a chat line (identity 1 - on every line of all nine people seen
+chatting after a gift, and on some lines of people before their first gift of
+that stream, so it reads as "has gifted you", not only this stream), or a coin
+in this stream's ledger (`tiktok_chat.py`, `_gifter`) - the ledger is asked
+the moment a line arrives, so a first-time gifter counts by their next line
+rather than when TikTok's flag catches up. A viewer who takes a gifter's
+display name under another handle is no gifter; the rig checks exactly that.
+
+**One rung for both.** Gifters stand on the rung followers do - "Followers,
+gifters and up" (`commands.py`, `BADGE_ROLE`) - rather than a rung of their
+own: a gifter need not follow, and a follower need not gift, and the user asked
+for either. Twitch chat carries neither, so there the rung still means
+subscribers and up.
+
+**And a floor under everything - "Commands are for"** (`commands.py`,
+`set_floor`; the Commands panel). The least a chatter must be to run any
+command, the list's and every layer's alike; each command's own "who" still
+applies above it. Set to Followers & gifters, chat commands are for the people
+who follow the streamer or have gifted them, and nobody else - as asked. It
+defaults to Anyone, so nothing changes until the streamer chooses it, and an
+unknown value is no floor rather than a lock. A refusal says whom a command is
+for in words ("for followers and gifters and above").
+
+**Checked** in `tests/test_gifts.py` (totals, handles over names, bounds, a
+restart, reset, a damaged file), `tests/test_commands.py` (the rung, the
+floor), `tests/test_webcast.py` and `tests/test_tiktok_chat.py` (the flag,
+the ledger by handle, a copied name, a failing ledger), and on the rig by
+`tools/ui/ttgifts.js`: a known run of gifts comes to exactly 1,011 coins in 12
+gifts from 6 people with the right one on top, the Live view shows it, a
+follower, a flagged gifter and a ledger gifter all run a followers-and-gifters
+command while a copied name and a plain viewer do not, and with the floor set a
+passer-by runs nothing that anyone could before.
+
 ## Opened before the live starts (2026-09-15)
 
 The likeliest first-stream snag: the streamer presses Open TikTok before going

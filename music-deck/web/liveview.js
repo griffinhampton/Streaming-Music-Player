@@ -284,7 +284,37 @@ function connect() {
   connect();
   pollHealth();
   pollProgram();
+  paintGifts();
 })();
+
+/* The coins gifted this stream (gifts.py): read every few seconds while this
+   view is on screen - not pushed on the state feed, so a storm of gifts is a
+   few reads here rather than the whole state sent to every window per gift.
+   Names are set as text; they are chatters'. */
+async function paintGifts() {
+  const d = await getJSON('/api/gifts/ledger?top=5');
+  if (!d) return;
+  gifts = d;
+  const n = (v) => Number(v || 0).toLocaleString();
+  const box = $('lvGifts');
+  box.querySelector('[data-gift="coins"]').textContent = n(d.coins);
+  box.querySelector('[data-gift="gifts"]').textContent = n(d.gifts);
+  box.querySelector('[data-gift="senders"]').textContent = n(d.senders);
+  $('lvTopGifters').replaceChildren(...(d.top || []).map((t) => {
+    const li = document.createElement('li');
+    li.textContent = `${t.name || t.handle} · ${n(t.coins)} coin${t.coins === 1 ? '' : 's'}`;
+    return li;
+  }));
+  $('lvGiftSince').textContent = d.since ? 'counting since ' + new Date(d.since * 1000).toLocaleString([],
+    { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+}
+let gifts = null;
+setInterval(() => { if (!document.hidden) paintGifts(); }, 3000);
+$('lvGiftReset').addEventListener('click', async () => {
+  if (!confirm('Start the coin count again for a new stream? The totals so far are cleared.')) return;
+  await fetch('/api/gifts/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+  paintGifts();
+});
 
 /* For tests. */
 window.LiveView = {
@@ -292,6 +322,8 @@ window.LiveView = {
   health: () => health,
   program: () => ({ shown: !$('pgImg').hidden, none: !$('pgNone').hidden, src: $('pgImg').src || '' }),
   tiles: () => Object.fromEntries([...document.querySelectorAll('#lvHealth [data-lv]')].map((d) => [d.dataset.lv, d.textContent])),
+  gifts: () => Object.assign(Object.fromEntries([...document.querySelectorAll('#lvGifts [data-gift]')].map((d) => [d.dataset.gift, d.textContent])),
+    { top: [...document.querySelectorAll('#lvTopGifters li')].map((li) => li.textContent), read: gifts }),
   scenes: () => [...document.querySelectorAll('#lvScenes .lv-scene')].map((b) => ({ id: b.dataset.id, on: b.classList.contains('on') })),
   docked: () => ({
     sound: !!document.querySelector('#lvSound .lp.ap.docked'),

@@ -491,9 +491,9 @@ function triggerSection(l) {
    command lives in its props, so deleting the layer deletes the command, and
    there is no second form somewhere else to keep in step with it.
    commands.py's layer_command() reads these four props and nothing else. */
-// "follower" is TikTok's to say (commands.py ROLES); Twitch chat never says, so
-// there "Followers and up" lets in subscribers and up.
-const CMD_ROLES = [['everyone', 'Anyone'], ['follower', 'Followers and up'], ['subscriber', 'Subscribers and up'],
+// "follower" is TikTok's to say, and means followers and gifters (commands.py
+// ROLES); Twitch chat says neither, so there it lets in subscribers and up.
+const CMD_ROLES = [['everyone', 'Anyone'], ['follower', 'Followers, gifters and up'], ['subscriber', 'Subscribers and up'],
   ['vip', 'VIPs and up'], ['mod', 'Moderators and me'], ['broadcaster', 'Only me']];
 const CMD_WAITS = [[0, 'No wait'], [5, '5 s'], [10, '10 s'], [30, '30 s'], [60, '1 min'], [300, '5 min'], [900, '15 min']];
 const LAYER_CMD_TYPES = ['effect', 'speak'];  // commands.py LAYER_TYPES

@@ -58,6 +58,19 @@
     </dl>
     <p class="lp-error" id="lvError" role="alert" hidden></p>
 
+    <!-- The coins gifted this stream, from the ledger (gifts.py) - read while
+         this view is open, and started again with Reset for a new stream. -->
+    <h2 class="lv-h" id="lvGiftsH">Gifts</h2>
+    <dl class="lp-health" id="lvGifts" aria-labelledby="lvGiftsH">
+      <div><dt>Coins</dt><dd data-gift="coins">0</dd></div>
+      <div><dt>Gifts</dt><dd data-gift="gifts">0</dd></div>
+      <div><dt>Gifters</dt><dd data-gift="senders">0</dd></div>
+    </dl>
+    <ol class="lv-top" id="lvTopGifters" aria-label="Who gifted the most coins this stream"></ol>
+    <p class="lv-cap"><button type="button" class="lv-btn" id="lvGiftReset"
+       title="Start the coin count again, for a new stream">Reset the count</button>
+       <span id="lvGiftSince"></span></p>
+
     <h2 class="lv-h">Sound</h2>
     <div class="lv-dock" id="lvSound"></div>
   </section>

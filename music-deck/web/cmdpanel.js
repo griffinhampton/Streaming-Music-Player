@@ -28,6 +28,12 @@ const CmdPanel = (() => {
 
   let el = null, anchor = null, timer = null;
   let roles = ['everyone', 'follower', 'subscriber', 'vip', 'mod', 'broadcaster'];
+  // How each rung reads (commands.py ROLES and ROLE_WORDS). "follower" is
+  // TikTok's followers and gifters; Twitch says neither, so there it is
+  // subscribers and up.
+  const ROLE_LABEL = { everyone: 'anyone', follower: 'followers & gifters', subscriber: 'subscribers',
+    vip: 'VIPs', mod: 'mods', broadcaster: 'only me' };
+  const roleLabel = (r) => ROLE_LABEL[r] || r;
   let actions = ['say', 'scene'];
   let rows = [];              // what is on screen, saved or not
   // What starts a command, as the server last accepted it. Every label here
@@ -56,7 +62,7 @@ const CmdPanel = (() => {
             ${actions.map((a) => `<option value="${esc(a)}"${a === c.action ? ' selected' : ''}>${esc(a)}</option>`).join('')}
           </select>
           <select class="lp-input cmd-sm" data-cmd="role" aria-label="Who may run it">
-            ${roles.map((r) => `<option value="${esc(r)}"${r === c.role ? ' selected' : ''}>${esc(r)}</option>`).join('')}
+            ${roles.map((r) => `<option value="${esc(r)}"${r === c.role ? ' selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
           </select>
           <label class="lp-check"><input type="checkbox" data-cmd="enabled"${c.enabled !== false ? ' checked' : ''}><span>On</span></label>
           <button type="button" class="lp-btn ghost cmd-del" data-cmd="remove" aria-label="Remove !${esc(c.name)}">Remove</button>
@@ -148,6 +154,15 @@ const CmdPanel = (() => {
         </div>
       </fieldset>
       <fieldset class="lp-group">
+        <legend>Commands are for</legend>
+        <div class="lp-row">
+          <select class="lp-input" data-cmd="floor" aria-label="Who may use chat commands at all"></select>
+          <span class="lp-hint">The least a chatter must be to run any command - each command's own
+            "who" still applies on top. <b>Followers &amp; gifters</b>: people who follow you on TikTok, or
+            have gifted you. Twitch chat says neither, so there it means subscribers and up.</span>
+        </div>
+      </fieldset>
+      <fieldset class="lp-group">
         <legend>How many effects at once</legend>
         <div class="lp-row">
           <label class="cmd-cool">At most <input class="lp-input cmd-num" type="number" min="1" max="60" data-cmd="bcount" value="5"
@@ -222,7 +237,16 @@ const CmdPanel = (() => {
     for (const k of ['bcount', 'bseconds']) {
       $(`[data-cmd="${k}"]`).addEventListener('input', () => { dirty = true; $('[data-cmd="save"]').disabled = false; });
     }
+    $('[data-cmd="floor"]').addEventListener('change', () => { dirty = true; $('[data-cmd="save"]').disabled = false; });
     $('[data-cmd="save"]').addEventListener('click', save);
+  }
+
+  // "Commands are for": the floor under every command (commands.py set_floor),
+  // offered from the same rungs as each row - all but "only me", which would
+  // switch chat commands off for everyone else.
+  function paintFloor(floor) {
+    $('[data-cmd="floor"]').innerHTML = roles.filter((r) => r !== 'broadcaster').map((r) =>
+      `<option value="${esc(r)}"${r === (floor || 'everyone') ? ' selected' : ''}>${esc(r === 'everyone' ? 'Anyone' : roleLabel(r) + ' and up')}</option>`).join('');
   }
 
   async function save() {
@@ -230,6 +254,7 @@ const CmdPanel = (() => {
     const d = await post('/api/commands/save', {
       commands: rows, symbol: $('[data-cmd="symbol"]').value,
       budget: { count: Number($('[data-cmd="bcount"]').value), seconds: Number($('[data-cmd="bseconds"]').value) },
+      floor: $('[data-cmd="floor"]').value,
     });
     const err = $('[data-cmd="error"]');
     if (!d || !d.ok) {
@@ -248,6 +273,7 @@ const CmdPanel = (() => {
     symbol = d.symbol || symbol;
     $('[data-cmd="symbol"]').value = symbol;
     paintBudget(d.budget);                 // clamped by the server, shown as kept
+    paintFloor(d.floor);
     // A name added or removed here changes which layer commands conflict.
     getJSON('/api/commands').then((x) => { if (x) paintLayers(x.layers); });
     if (asked !== symbol) {
@@ -271,7 +297,7 @@ const CmdPanel = (() => {
     $('[data-cmd="layersbox"]').hidden = !items.length;
     const why = (c) => (c.conflict === 'list' ? 'the command above with this name answers instead'
       : c.conflict === 'layer' ? 'another layer took this name first'
-      : [c.role === 'everyone' ? 'anyone' : c.role + ' and up',
+      : [c.role === 'everyone' ? 'anyone' : roleLabel(c.role) + ' and up',
          c.cooldown ? `every ${c.cooldown} s` : '', c.user_cooldown ? `${c.user_cooldown} s per person` : '']
         .filter(Boolean).join(', '));
     $('[data-cmd="layers"]').innerHTML = items.map((c) => `
@@ -329,6 +355,7 @@ const CmdPanel = (() => {
       symbol = d.symbol || symbol;
       $('[data-cmd="symbol"]').value = symbol;
       paintBudget(d.budget);
+      paintFloor(d.floor);
       paintLayers(d.layers);
       onState({ commands: { paused: !!d.paused } });
     }

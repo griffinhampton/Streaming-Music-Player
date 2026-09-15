@@ -265,6 +265,13 @@ itself, so a scene still never loads anything from outside - checked on a real
 live, where seven real picture links were fetched and kept. Chat from the same
 socket came before that - see the end of T4.
 
+**Coins, counted (2026-09-15, asked for).** Every gift is now worth what it
+cost - its price times how many, checked against 22 real gift messages - and
+the Live view shows the coins this stream, the gifts, and who gave most, with
+Reset for a new stream. The same count makes a gifter: with **Commands are
+for: Followers & gifters** in the Commands panel, chat commands work for the
+people who follow you on TikTok or have gifted you, and nobody else.
+
 ### T7. Text to speech, for followers
 
 A `System.Speech.Synthesis` bridge, built like `captions.ps1`: a PowerShell
