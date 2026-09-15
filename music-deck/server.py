@@ -1880,12 +1880,19 @@ LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
 BROWSER = overlay_mod.find_browser()
-# TikTok chat (T4, T5): the user's own logged-in TikTok page, in a Chrome of its
-# own whose profile - and so its sign-in - lives in the cache and nowhere else.
-# The rig's never shows a window.
+# TikTok chat (T4, T5): the streamer's TikTok live page, in a Chrome of its own
+# whose profile - and so any sign-in - lives in the cache and nowhere else.
+# Hidden (headless) unless the streamer asks to see it, to sign in there
+# (/api/chat/tiktok/window); the rig's is never shown. A hidden one left running
+# by a run that ended without stopping it is closed now: nobody could see it
+# to close it (tiktok_chat.close_hidden).
 tiktok_chat.TikTokAdapter.browser = BROWSER
 tiktok_chat.TikTokAdapter.profile = os.path.join(CACHE, "chrome-tiktok")
-tiktok_chat.TikTokAdapter.headless = TEST_RIG
+tiktok_chat.TikTokAdapter.headless = TEST_RIG or not ((CONFIG.get("chat") or {}).get("tiktok") or {}).get("show")
+try:
+    tiktok_chat.close_hidden(tiktok_chat.TikTokAdapter.profile)
+except Exception as exc:
+    _log(f"chat: tiktok: a reader left running could not be closed: {exc}")
 
 
 def tiktok_gift(g):
@@ -3000,6 +3007,18 @@ class Handler(BaseHTTPRequestHandler):
             refresh_native_sources(sid)
             return self._json({"ok": True, "scene": scene})
 
+        if path == "/api/chat/tiktok/window":
+            # Show the TikTok reader as a window - to sign in there - or keep it
+            # hidden, the default. Kept; a reader already running starts again
+            # as the kind asked for. The rig's is never shown (TEST_RIG).
+            show = data.get("show") is True
+            CONFIG.setdefault("chat", {}).setdefault("tiktok", {})["show"] = show
+            save_config(CONFIG)
+            tiktok_chat.TikTokAdapter.headless = TEST_RIG or not show
+            running = next((s for s in CHAT.status()["services"] if s.get("service") == "tiktok"), None)
+            res = CHAT.connect("tiktok", running["channel"]) if running else {"ok": True}
+            HUB.broadcast()
+            return self._json(dict(res, show=show, shown=not tiktok_chat.TikTokAdapter.headless))
         if path == "/api/chat/connect":
             service = str(data.get("service") or "twitch").lower()
             channel = str(data.get("channel") or "").strip()

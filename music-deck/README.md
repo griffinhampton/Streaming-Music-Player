@@ -301,14 +301,16 @@ them to work: chat commands, a voice reading chat aloud, gift animations, a coin
 goal and a top-gifters list.
 
 1. In the Live view's chat panel (or the deck's **Chat...**), type your TikTok
-   username and press **Open TikTok**. A window of its own opens on your live
-   page. **You do not have to sign in**: TikTok shows a live's chat and gifts to
-   viewers who are signed out, and a window that never signed in keeps no TikTok
-   login. Open it before or after you go live - if your live has not started
-   yet, it looks again by itself until it has.
-2. Leave that window open. It can sit behind everything, and it stays muted.
-   It reads only your own live page: if it wanders onto someone else's live,
-   nothing from there reaches your stream, and the chat panel says so.
+   username and press **Open TikTok**. It reads your live page in the
+   background - no window on your screen, and muted. **You do not have to sign
+   in**: TikTok shows a live's chat and gifts to viewers who are signed out,
+   and a reader that never signed in keeps no TikTok login. Open it before or
+   after you go live - if your live has not started yet, it looks again by
+   itself until it has.
+2. It reads only your own live page: if TikTok moves it on to someone else's
+   live, nothing from there reaches your stream, and it goes back to yours by
+   itself. To sign in anyway, tick **Show the TikTok window**, sign in there,
+   and untick it - the reader carries on hidden, still signed in.
 3. From then on TikTok chat works in the app the way Twitch chat does:
    commands, the **Voice** layer's `!tts`, polls, song requests.
 
@@ -336,8 +338,9 @@ stay on this PC, across restarts, until you reset them.
 - **Top gifters** - who gave most, hidden until someone has gifted.
 - **Voice** - reads chat out loud (`!tts`) in a Windows voice made on this PC.
 
-**What the TikTok window costs.** About a fifth of one CPU core while it reads a
-live (measured with the window hidden; the one you see may use more).
+**What the TikTok reader costs.** About a fifth of one CPU core while it reads
+a live, hidden - which is how it runs unless you ask to see it. Shown as a
+window it may use more.
 
 **If chat stops arriving**, TikTok may have changed its page. From the
 `music-deck` folder, `python tools/ui/ttrealreader.py <someone who is live>`
@@ -362,12 +365,13 @@ checks the reader against a real live and says which part stopped matching.
   `cache\live.json`: another account or another PC cannot read it. It is
   never written to a log or shown again. **Forget** in the LIVE panel removes
   it.
-- **The TikTok window** is TikTok's own live page, and talks to TikTok the way
-  any browser showing your live would. The app reads what arrives in it, on
-  this PC, and sends nothing of its own - apart from fetching each gift
-  sender's picture from TikTok's image servers, once, so the stream page never
-  has to. A window you never signed in holds no TikTok login. The coin totals
-  keep viewers' names on this PC until you press **Reset the count**.
+- **The TikTok reader** is TikTok's own live page, hidden unless you ask to
+  see it, and talks to TikTok the way any browser showing your live would. The
+  app reads what arrives in it, on this PC, and sends nothing of its own -
+  apart from fetching each gift sender's picture from TikTok's image servers,
+  once, so the stream page never has to. A reader you never signed in holds no
+  TikTok login. The coin totals keep viewers' names on this PC until you press
+  **Reset the count**.
 - **A scene export** holds the scene's pictures and fonts. Look at what is in a
   scene before you give it away.
 

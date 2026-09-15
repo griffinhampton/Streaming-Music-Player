@@ -204,6 +204,9 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('with no room socket, the page\'s drawing takes over after the wait', st && st.page && st.page.chat_from === 'page', J(st && st.page));
   check('and says the page is signed out while the Log in button is there', st && st.page && st.page.signed_in === false, J(st && st.page));
   check('the reader window answers on its own DevTools port (the floor for stopping)', await readerAlive());
+  // Hidden unless asked (DECISIONS, "The reader, hidden") - and the rig's is
+  // never shown, whatever is asked.
+  check('the reader runs hidden, with no window', st && st.page && st.page.shown === false, J(st && st.page));
 
   // ------------------------------------------------------------ 2. lines
   await sleep(1500);

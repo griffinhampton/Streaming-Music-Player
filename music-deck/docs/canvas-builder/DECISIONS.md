@@ -985,6 +985,67 @@ signed out - chat, gifts, handles, flags - so the chat panel no longer tells
 the user to sign in: a window that was never signed in holds no TikTok login
 at all. It says to sign in only if the user's live does not show without it.
 
+## The reader, hidden (2026-09-15)
+
+The reader's Chrome opened as a window on the user's screen, while every check
+of it on real lives ran it headless - the rig's setting, because no test window
+goes on that screen. So the way it shipped was the one way it had never been
+seen to read TikTok: the same kind of gap the port-0 launch fell through. And a
+window costs more - it is drawn, on a 165 Hz screen, where the measured fifth
+of a core was headless.
+
+**Hidden unless asked.** The reader now starts headless, as the checks ran it.
+**Show the TikTok window** in the chat panel starts it as a window instead, to
+sign in; unticked, it starts hidden again, still signed in - the profile is the
+same one. The choice is kept in `config.chat.tiktok.show`, and the rig's reader
+is never shown, whatever is asked.
+
+**What hidden changes.** Nobody can steer a window that is not there, so:
+- On someone else's page - TikTok moves an ended live on to another - a hidden
+  reader opens the streamer's own page again after the same wait as a page
+  with no live on it, twice as long each time (`_reopen_due`). A shown one
+  still leaves that to the streamer, whose window it is.
+- A focused field no longer holds the reopening back when hidden: nobody types
+  there, and a headless page reports focus anyway.
+- A hidden Chrome left running by a run of the app that ended without stopping
+  it would be invisible, so nothing would ever close it. At the app's start a
+  hidden one still running is closed, and opening the reader never reuses one.
+  A window is left alone: the streamer may be using it.
+
+**Only its own Chrome.** Closing things raises a question reusing a tab never
+had to answer: is the Chrome on the port the reader wrote down still the one it
+started? A reader whose Chrome died leaves that port free, and another program's
+Chrome can take it. Each Chrome that starts gets a browser id of its own - its
+DevTools address, `/devtools/browser/<id>` - and answers to no other. The reader
+writes down the kind it started and that id (`asd-window`, in its profile), and
+closes or reuses only a Chrome answering to that id; the request to quit is
+sent to that address, so another Chrome refuses it at the door
+(`reader_on`, `close_browser`).
+
+**Closed as Chrome would close itself.** Stopping used to end the reader's
+Chrome outright. Chrome saves cookies now and then, not at once, so ending it
+moments after a sign-in could lose the sign-in - which ticking the window on
+and off again invites. It is now asked to quit (`Browser.close`: the one
+DevTools call added to the reader's list, and only ever sent to its own
+Chrome), and ended only if it has not quit within five seconds. Each reader
+keeps the kind it was started as, so the switch, which sets the kind for the
+next one a moment before starting it, never changes the one being stopped.
+The rig found one more: stopped while the previous reader's Chrome was still
+closing - the switch, then Stop at once - a reader went on to start a new one,
+which outlived the stop by five seconds. Now nothing is started once stopping
+has begun, and a Chrome that never answered, with nothing in it to save, is
+ended at once.
+
+**Checked** in `tests/test_tiktok_chat.py` (`Hidden`: the way back when hidden
+and not when shown, focus ignored when hidden, `reader_on` knowing only the
+Chrome it started, a leftover hidden one closed and a window not, reuse and
+relaunch by kind, someone else's Chrome never closed or used, quit before kill)
+and on the rig: `tiktokchat.js` - the reader runs hidden, and stopping closes
+it within three seconds, which only the request to quit can do, since ending
+it waits five; `ttgifts.js` - moved on to another live, the hidden reader goes
+back to the streamer's own by itself and reads it again; the switch keeps the
+choice, the rig's stays hidden, and the reader starts again and reads.
+
 ## Followers and up (2026-09-15)
 
 T7 was written as text to speech *for followers*, and could not be: nothing

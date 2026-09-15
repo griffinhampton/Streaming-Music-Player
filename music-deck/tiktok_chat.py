@@ -14,6 +14,9 @@ How it reads, and what it never does:
     written into the profile's DevToolsActivePort. This connects to that port, installs
     one binding, and injects OBSERVER, which watches the chat list and hands
     each new line to the binding. The page sends nothing anywhere else.
+  * Hidden (headless) unless the streamer asks to see it, to sign in there -
+    which is also how every check on real lives ran it. Either way it is
+    stopped by asking Chrome to quit, so a sign-in is saved (close_browser).
   * OBSERVER only reads. It never clicks, submits or navigates. The page is the
     user's, signed in as them, and a script that could press things there
     could press Go LIVE (NEVER GO LIVE, 2026-09-15).
@@ -360,6 +363,73 @@ def _alive(port):
         return False
 
 
+# Which Chrome the reader started, kept in its profile beside the port file:
+# its kind - "hidden" (headless) or "shown" (a window) - and its browser id.
+MODE_FILE = "asd-window"
+
+
+def _browser_id(port):
+    """The DevTools address of the Chrome on `port` itself,
+    /devtools/browser/<id>: new each time a Chrome starts, and no other Chrome
+    answers to it. "" if nothing answers."""
+    try:
+        path = urlparse(json.loads(_http(port, "/json/version")).get("webSocketDebuggerUrl") or "").path
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return path if path.startswith("/devtools/browser/") else ""
+
+
+def reader_on(profile):
+    """(port, kind, browser id) of the reader's Chrome if the one answering on
+    the port it wrote down is the one it started - the same browser id - and
+    None otherwise: a Chrome that has since taken that port is someone else's,
+    and is never closed or used. The kind is "hidden" or "shown"."""
+    port = devtools_port(profile)
+    try:
+        with open(os.path.join(profile, MODE_FILE), encoding="utf-8") as f:
+            kind, bid = (f.read().split() + ["", ""])[:2]
+    except OSError:
+        return None
+    if not port or not bid.startswith("/devtools/browser/") or _browser_id(port) != bid:
+        return None
+    return port, "hidden" if kind == "hidden" else "shown", bid
+
+
+def close_browser(port, bid):
+    """Ask the reader's Chrome to quit, as its own Exit would: it saves its
+    profile first - a sign-in made a moment ago included - which ending it
+    outright could lose. Sent to its browser id, so any other Chrome refuses
+    it. False if it could not be asked."""
+    if not bid.startswith("/devtools/browser/"):
+        return False
+    try:
+        c = Cdp(f"ws://127.0.0.1:{port}{bid}", timeout=3)
+    except OSError:
+        return False
+    try:
+        c.send("Browser.close", {})
+        try:
+            c.recv()                 # its answer, or the connection closing as it quits
+        except OSError:
+            pass
+        return True
+    except OSError:
+        return False
+    finally:
+        c.close()
+
+
+def close_hidden(profile):
+    """Close a hidden reader Chrome still running from a run of the app that
+    ended without stopping it. Nobody can see one to close it, so server.py
+    calls this at the app's start, before any reader runs. A window is left
+    alone: it is on screen, and the streamer may be using it."""
+    known = reader_on(profile)
+    if not known or known[1] != "hidden":
+        return False
+    return close_browser(known[0], known[2])
+
+
 def _is_local(url):
     try:
         u = urlparse(url)
@@ -440,7 +510,14 @@ class TikTokAdapter(chat.Adapter):
         self._wait = type(self).reopen_first
         self._looking = False
         self.looks = 0
+        # When the window left the streamer's page (_navigated) - or opened, if
+        # it has not been there yet: a hidden reader goes back after the wait.
+        self._left_at = time.monotonic()
+        # The kind this reader is, fixed now: the window switch sets the next
+        # one's a moment before starting it (server.py).
+        self.headless = type(self).headless
         self._proc = None
+        self._bid = ""               # its Chrome's browser id, once started (reader_on)
         self._tab = ""
         self._port = None
 
@@ -451,7 +528,7 @@ class TikTokAdapter(chat.Adapter):
         waiting = self._own() and not live and (self._looking or time.monotonic() - self._loaded_at >= PAGE_WAIT)
         return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts,
                                                 chat_from=self._chat_from(), own=self._own(), live=live,
-                                                waiting=waiting, looks=self.looks))
+                                                waiting=waiting, looks=self.looks, shown=not self.headless))
 
     def _live(self):
         """Has the page that last loaded shown a live - its room socket heard,
@@ -459,14 +536,22 @@ class TikTokAdapter(chat.Adapter):
         return self.room.heard >= self._loaded_at or self._drawn_at >= self._loaded_at
 
     def _reopen_due(self, now):
-        """Time to open the streamer's own page again, because it has no live
-        on it (REOPEN_MAX)? Twice as long between looks each time; the wait
-        starts over once there is a live."""
-        if self._live():
+        """Time to open the streamer's own page again? Twice as long between
+        looks each time; the wait starts over once there is a live.
+
+        On their page with no live on it (REOPEN_MAX) - never under someone
+        typing in the window. On any other page only when hidden: a window on
+        screen is the streamer's to steer, but a hidden one has nobody to bring
+        it back when TikTok moves an ended live on to another."""
+        if not self._own():
+            if not self.headless or now - self._left_at < self._wait:
+                return False
+            self._left_at = now
+        elif self._live():
             self._wait = type(self).reopen_first
             self._looking = False
             return False
-        if not self._own() or self.page.get("typing") or now - self._loaded_at < self._wait:
+        elif (self.page.get("typing") and not self.headless) or now - self._loaded_at < self._wait:
             return False
         self._wait = min(self._wait * 2, REOPEN_MAX)
         self.looks += 1
@@ -500,7 +585,10 @@ class TikTokAdapter(chat.Adapter):
             return False
 
     def _navigated(self, url):
+        was = self._own()
         self._at = urlparse(url or "").path.lower().rstrip("/")
+        if was and not self._own():
+            self._left_at = time.monotonic()     # for a hidden reader's way back (_reopen_due)
 
     def _chat_from(self):
         """Where chat is being read from: the room socket, the page's drawing
@@ -569,8 +657,9 @@ class TikTokAdapter(chat.Adapter):
         except OSError as exc:
             if not self._stop.is_set():
                 closed = "closed" in str(exc).lower() or "refused" in str(exc).lower()
-                self._set("failed", "the TikTok window was closed - press Open TikTok to open it again"
-                          if closed else f"could not read the TikTok window: {exc}")
+                what = "the TikTok reader" if self.headless else "the TikTok window"
+                self._set("failed", f"{what} was closed - press Open TikTok to open it again"
+                          if closed else f"could not read {what}: {exc}")
                 self.log("chat: tiktok: " + self.error)
         finally:
             if cdp:
@@ -580,37 +669,66 @@ class TikTokAdapter(chat.Adapter):
 
     def _open(self):
         """(port, DevTools address, tab id) of a blank tab: one more in the
-        reader's window if it is running, otherwise a new window's first."""
+        reader's window if a window is wanted and one is running; otherwise the
+        first of a new Chrome of the kind asked for - hidden (headless) or a
+        window - once whatever else ran on this profile has quit."""
         os.makedirs(self.profile, exist_ok=True)
-        port = devtools_port(self.profile)
-        if port and _alive(port):
-            t = json.loads(_http(port, "/json/new?about:blank", method="PUT"))
-            if not t.get("webSocketDebuggerUrl"):
-                raise OSError("the TikTok window would not open a tab")
-            return port, t["webSocketDebuggerUrl"], t.get("id", "")
+        known = reader_on(self.profile)
+        if known:
+            port, kind, bid = known
+            if not self.headless and kind == "shown":
+                t = json.loads(_http(port, "/json/new?about:blank", method="PUT"))
+                if not t.get("webSocketDebuggerUrl"):
+                    raise OSError("the TikTok window would not open a tab")
+                return port, t["webSocketDebuggerUrl"], t.get("id", "")
+            # A hidden one nobody can see, or the other kind than the one asked
+            # for: asked to quit - so it saves its profile - before a new one.
+            close_browser(port, bid)
+            deadline = time.monotonic() + 10
+            while _alive(port) and time.monotonic() < deadline and not self._stop.is_set():
+                time.sleep(0.25)
+            if _alive(port):
+                raise OSError("the TikTok reader already running would not close")
         port_file = os.path.join(self.profile, "DevToolsActivePort")
-        try:
-            os.remove(port_file)
-        except OSError:
-            pass
-        port = free_port()
-        args = [self.browser, f"--user-data-dir={self.profile}", f"--remote-debugging-port={port}"] + FLAGS
-        if self.headless:
-            args.append("--headless=new")
-        args.append("about:blank")
-        self._proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        # Given a port, Chrome writes no port file of its own; this one is how
-        # the next Open TikTok finds the window that is already running.
-        with open(port_file, "w", encoding="utf-8") as f:
-            f.write(f"{port}\n")
-        deadline = time.monotonic() + START_TIMEOUT
-        while time.monotonic() < deadline and not self._stop.is_set():
-            page = self._page(port) if _alive(port) else None
-            if page:
-                return (port,) + page
-            time.sleep(0.25)
-        raise OSError("the TikTok window did not start")
+        for name in (port_file, os.path.join(self.profile, MODE_FILE)):
+            try:
+                os.remove(name)
+            except OSError:
+                pass
+        for _ in range(2):
+            if self._stop.is_set():
+                break                # stopped while the last one closed: start nothing
+            port = free_port()
+            args = [self.browser, f"--user-data-dir={self.profile}", f"--remote-debugging-port={port}"] + FLAGS
+            if self.headless:
+                args.append("--headless=new")
+            args.append("about:blank")
+            self._proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self._port, self._bid = port, ""
+            # Given a port, Chrome writes no port file of its own; this one is
+            # how the next Open TikTok finds the reader already running.
+            with open(port_file, "w", encoding="utf-8") as f:
+                f.write(f"{port}\n")
+            deadline = time.monotonic() + START_TIMEOUT
+            while time.monotonic() < deadline and not self._stop.is_set():
+                page = self._page(port) if _alive(port) else None
+                if page:
+                    # And beside it, which Chrome this is: its kind, and the
+                    # browser id only it answers to (reader_on).
+                    self._bid = _browser_id(port)
+                    with open(os.path.join(self.profile, MODE_FILE), "w", encoding="utf-8") as f:
+                        f.write(f"{'hidden' if self.headless else 'shown'}\n{self._bid}\n")
+                    return (port,) + page
+                if self._proc.poll() is not None:
+                    break
+                time.sleep(0.25)
+            if self._proc.poll() is None or self._stop.is_set():
+                break
+            # It left at once: Chrome hands itself to one still closing on the
+            # same profile. Once more, a moment later.
+            time.sleep(1)
+        raise OSError("the TikTok reader did not start")
 
     def _page(self, port):
         """A new window's one page, once DevTools lists it."""
@@ -700,18 +818,27 @@ class TikTokAdapter(chat.Adapter):
                 self.on_message(msg)
 
     def _close(self):
-        """Stopping closes what this opened: the whole window if it was ours,
-        or just the tab it added to one that was already running."""
+        """Stopping closes what this opened: the whole Chrome if it was ours -
+        asked to quit first, so it saves its profile and a sign-in in it, and
+        ended only if it will not - or just the tab it added to a window that
+        was already running."""
         proc, self._proc = self._proc, None
         if proc is not None:
+            # Ours, so the Chrome on its port is too, even before its id was
+            # written down. One that cannot be asked never came up, and has
+            # nothing to save: it is ended at once rather than in five seconds.
+            asked = proc.poll() is None and close_browser(self._port, self._bid or _browser_id(self._port))
             try:
-                proc.terminate()
-                proc.wait(5)
+                proc.wait(5 if asked else 0.5)
             except Exception:
                 try:
-                    proc.kill()
+                    proc.terminate()
+                    proc.wait(5)
                 except Exception:
-                    pass
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
         elif self._port and self._tab:
             try:
                 _http(self._port, "/json/close/" + self._tab)

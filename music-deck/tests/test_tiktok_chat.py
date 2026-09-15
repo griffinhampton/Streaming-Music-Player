@@ -207,7 +207,9 @@ class WhatItMayDoInThePage(unittest.TestCase):
         asked = set(re.findall(r'\("([A-Z][A-Za-z]+\.[A-Za-z]+)",', src))
         self.assertEqual(asked, {"Runtime.enable", "Page.enable", "Network.enable", "Runtime.addBinding",
                                  "Page.addScriptToEvaluateOnNewDocument", "Page.navigate",
-                                 "Emulation.setEmulatedMedia"})
+                                 "Emulation.setEmulatedMedia",
+                                 # Only ever to the reader's own Chrome, to quit (close_browser)
+                                 "Browser.close"})
         self.assertIn('("Page.navigate", {"url": url})', src)
         self.assertIn("url = self.live_url()", src)
         for never in ("Cookies", "Storage.", "getResponseBody", "setRequestInterception", "Fetch.",
@@ -450,6 +452,238 @@ class WhatItMayDoInThePage(unittest.TestCase):
 
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))
+
+
+import time  # noqa: E402
+from unittest import mock  # noqa: E402
+
+
+class Hidden(unittest.TestCase):
+    """Hidden unless asked (DECISIONS, "The reader, hidden"): the reader starts
+    headless, as every check on real lives ran it; shown, it is a window."""
+
+    def own(self, a):
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+
+    def profile(self, port, kind, bid="/devtools/browser/old"):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "DevToolsActivePort"), "w") as f:
+            f.write(f"{port}\n")
+        with open(os.path.join(d, tt.MODE_FILE), "w") as f:
+            f.write(f"{kind}\n{bid}\n" if bid else kind)
+        return d
+
+    def adapter(self, hidden):
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a.headless = hidden
+        return a
+
+    def written(self, a):
+        with open(os.path.join(a.profile, tt.MODE_FILE), encoding="utf-8") as f:
+            return f.read().split()
+
+    def test_status_says_which_kind_is_running(self):
+        self.assertFalse(self.adapter(True).status()["page"]["shown"])
+        self.assertTrue(self.adapter(False).status()["page"]["shown"])
+
+    def test_each_reader_keeps_the_kind_it_was_started_as(self):
+        """The window switch sets the kind for the next reader a moment before
+        it starts one; the one being stopped is still what it was."""
+        was = tt.TikTokAdapter.headless
+        try:
+            tt.TikTokAdapter.headless = True
+            a = tt.TikTokAdapter("probe", lambda m: None)
+            tt.TikTokAdapter.headless = False
+            self.assertTrue(a.headless)
+            self.assertFalse(a.status()["page"]["shown"])
+        finally:
+            tt.TikTokAdapter.headless = was
+
+    def test_hidden_it_goes_back_to_the_streamers_page(self):
+        """TikTok moves an ended live on to another, and nobody can steer a
+        hidden reader back - so it goes back itself, after the wait, twice as
+        long each time. A window on screen is still the streamer's to steer."""
+        for hidden in (True, False):
+            a = tt.TikTokAdapter("probe", lambda m: None)
+            a.headless = hidden
+            self.own(a)
+            a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")     # a live
+            now, first = time.monotonic(), tt.TikTokAdapter.reopen_first
+            a._event("Page.navigatedWithinDocument",
+                     {"frameId": "main", "url": "https://www.tiktok.com/@someoneelse/live"})
+            self.assertFalse(a._own())
+            self.assertFalse(a._reopen_due(now + 1), "just left")
+            self.assertEqual(a._reopen_due(now + first + 1), hidden, "after the wait: hidden goes back, shown never")
+            if hidden:
+                self.assertEqual(a.looks, 1)
+                self.assertFalse(a._reopen_due(now + first + 2), "the next look waits twice as long")
+                self.assertTrue(a._reopen_due(now + 3 * first + 2))
+
+    def test_hidden_a_focused_field_does_not_hold_it_back(self):
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a.headless = True
+        self.own(a)
+        a.page["typing"] = True
+        now = time.monotonic()
+        a._loaded_at = now - 10 * tt.REOPEN_MAX
+        self.assertTrue(a._reopen_due(now), "nobody types in a hidden window, and headless pages report focus")
+
+    def test_only_the_chrome_it_started_is_known(self):
+        """Each Chrome that starts gets a new browser id; the reader writes its
+        own down, so a Chrome that later answers on the same port - someone
+        else's - is never closed and never used."""
+        self.assertIsNone(tt.reader_on(tempfile.mkdtemp()), "nothing started")
+        d = self.profile(51000, "hidden")
+        with mock.patch.object(tt, "_browser_id", lambda p: "/devtools/browser/old" if p == 51000 else ""):
+            self.assertEqual(tt.reader_on(d), (51000, "hidden", "/devtools/browser/old"))
+            self.assertEqual(tt.reader_on(self.profile(51000, "shown"))[1], "shown")
+            self.assertEqual(tt.reader_on(self.profile(51000, "junk"))[1], "shown")
+            self.assertIsNone(tt.reader_on(self.profile(51000, "hidden", bid="")), "no id written down: not known")
+        with mock.patch.object(tt, "_browser_id", lambda p: "/devtools/browser/someone-elses"):
+            self.assertIsNone(tt.reader_on(d), "another Chrome on that port")
+        with mock.patch.object(tt, "_browser_id", lambda p: ""):
+            self.assertIsNone(tt.reader_on(d), "nothing on that port")
+
+    def test_a_hidden_reader_left_running_is_closed_and_a_window_is_not(self):
+        asked = []
+        with mock.patch.object(tt, "_browser_id", lambda p: "/devtools/browser/old"), \
+                mock.patch.object(tt, "close_browser", lambda p, b: asked.append((p, b)) or True):
+            self.assertFalse(tt.close_hidden(self.profile(51000, "shown")))
+            self.assertEqual(asked, [], "a window on screen is the streamer's")
+            self.assertTrue(tt.close_hidden(self.profile(51001, "hidden")))
+            self.assertEqual(asked, [(51001, "/devtools/browser/old")])
+        self.assertFalse(tt.close_hidden(tempfile.mkdtemp()), "nothing running, nothing to close")
+
+    def launch(self, a, running, theirs=False):
+        """_open, with Chrome faked: a Chrome of kind `running` on port 51002 -
+        the reader's own, or with `theirs` someone else's that took the port -
+        and a new one on 51003. What it asked to quit, what it started, and
+        what it returned."""
+        a.profile = self.profile(51002, running)
+        closed, started = [], []
+
+        class Proc:
+            def poll(self):
+                return None
+
+        def alive(p):
+            return p == 51003 or (p == 51002 and not closed)
+
+        def browser_id(p):
+            if p == 51003:
+                return "/devtools/browser/new"
+            if not alive(p):
+                return ""
+            return "/devtools/browser/someone-elses" if theirs else "/devtools/browser/old"
+
+        def popen(args, **_k):
+            started.append(args)
+            return Proc()
+        page = '{"webSocketDebuggerUrl": "ws://127.0.0.1:51002/devtools/page/t", "id": "t"}'
+        with mock.patch.object(tt, "_alive", alive), mock.patch.object(tt, "_browser_id", browser_id), \
+                mock.patch.object(tt, "close_browser", lambda p, b: closed.append((p, b)) or True), \
+                mock.patch.object(tt, "free_port", lambda: 51003), \
+                mock.patch.object(tt, "_http", lambda p, path, method="GET": page), \
+                mock.patch.object(tt.subprocess, "Popen", popen), \
+                mock.patch.object(tt.TikTokAdapter, "_page", lambda self, p: (f"ws://127.0.0.1:{p}/devtools/page/n", "n")):
+            got = a._open()
+        return got, closed, started
+
+    def test_opening_never_reuses_a_hidden_chrome(self):
+        a = self.adapter(True)
+        got, closed, started = self.launch(a, "hidden")
+        self.assertEqual(closed, [(51002, "/devtools/browser/old")], "the hidden one running is asked to quit")
+        self.assertEqual(len(started), 1)
+        self.assertIn("--headless=new", started[0])
+        self.assertEqual(got[0], 51003)
+        self.assertEqual(self.written(a), ["hidden", "/devtools/browser/new"], "the new one's kind and id")
+        self.assertEqual(a._bid, "/devtools/browser/new")
+
+    def test_a_window_is_reused_when_a_window_is_wanted(self):
+        a = self.adapter(False)
+        got, closed, started = self.launch(a, "shown")
+        self.assertEqual((closed, started), ([], []), "a tab in the window already open")
+        self.assertEqual(got[0], 51002)
+
+    def test_the_other_kind_is_closed_and_the_kind_asked_for_started(self):
+        for want_hidden, running in ((False, "hidden"), (True, "shown")):
+            a = self.adapter(want_hidden)
+            got, closed, started = self.launch(a, running)
+            self.assertEqual(closed, [(51002, "/devtools/browser/old")])
+            self.assertEqual("--headless=new" in started[0], want_hidden)
+            self.assertEqual(self.written(a)[0], "hidden" if want_hidden else "shown")
+
+    def test_someone_elses_chrome_is_never_closed_or_used(self):
+        """A Chrome on the port the reader once wrote down that is not the one
+        it started: left alone, and a new one started on a port of its own."""
+        for hidden in (True, False):
+            a = self.adapter(hidden)
+            got, closed, started = self.launch(a, "hidden" if hidden else "shown", theirs=True)
+            self.assertEqual(closed, [], "never asked to quit")
+            self.assertEqual(len(started), 1, "never given a tab")
+            self.assertEqual(got[0], 51003)
+
+    def test_stopping_asks_chrome_to_quit_before_ending_it(self):
+        """Chrome saves cookies now and then; ended outright moments after a
+        sign-in, it could lose the sign-in."""
+        for quits in (True, False):
+            ended, asked = [], []
+
+            class Proc:
+                def poll(self):
+                    return None
+
+                def wait(self, t=None):
+                    if not quits and not ended:
+                        raise tt.subprocess.TimeoutExpired("chrome", t)
+
+                def terminate(self):
+                    ended.append("terminate")
+
+                def kill(self):
+                    ended.append("kill")
+
+            a = tt.TikTokAdapter("probe", lambda m: None)
+            a._proc, a._port, a._bid = Proc(), 51004, "/devtools/browser/b"
+            with mock.patch.object(tt, "close_browser", lambda p, b: asked.append((p, b)) or True):
+                a._close()
+            self.assertEqual(asked, [(51004, "/devtools/browser/b")])
+            self.assertEqual(ended, [] if quits else ["terminate"])
+
+    def test_one_that_never_came_up_is_ended_at_once(self):
+        """Stopped before its Chrome answered - no id, nothing to ask, nothing
+        a sign-in could have saved in it: ended in half a second, not five."""
+        waits, ended = [], []
+
+        class Proc:
+            def poll(self):
+                return None
+
+            def wait(self, t=None):
+                waits.append(t)
+                if not ended:
+                    raise tt.subprocess.TimeoutExpired("chrome", t)
+
+            def terminate(self):
+                ended.append("terminate")
+
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a._proc, a._port, a._bid = Proc(), 51005, ""
+        with mock.patch.object(tt, "_browser_id", lambda p: ""):
+            a._close()
+        self.assertEqual((waits, ended), ([0.5, 5], ["terminate"]))
+
+    def test_nothing_is_started_once_stopping(self):
+        """Found on the rig: stopped while the last reader's Chrome was still
+        closing, it went on to start a new one - which then outlived the stop."""
+        a = self.adapter(True)
+        a.profile = tempfile.mkdtemp()
+        a._stop.set()
+        started = []
+        with mock.patch.object(tt.subprocess, "Popen", lambda args, **_k: started.append(args)):
+            with self.assertRaises(OSError):
+                a._open()
+        self.assertEqual(started, [])
 
 
 if __name__ == "__main__":

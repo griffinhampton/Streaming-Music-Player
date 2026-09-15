@@ -37,7 +37,7 @@ const ChatPanel = (() => {
   let blocked = [];                      // logins, from config.chat.blocked
   // The channel each service last connected to, kept in config by the connect
   // route - offered again rather than asked for every stream. Public names.
-  let saved = { twitch: '', tiktok: '' };
+  let saved = { twitch: '', tiktok: '', show: false };
   const hidden = new Set();              // message ids, this session only
   let services = [];                     // from the state snapshot
   let paused = false, unseen = 0;
@@ -153,21 +153,31 @@ const ChatPanel = (() => {
     // Reading means something is arriving: the room socket, or lines of chat.
     // A chat list alone is not enough - an offline live page draws one too.
     const reading = pg.live || pg.chat_from === 'socket';
+    // Hidden unless asked (tiktok_chat.py): running, the reader says which kind
+    // it is; not running, the choice kept is what Open TikTok will start.
+    const shown = tt ? pg.shown === true : saved.show;
     $('[data-cp="tthint"]').textContent = !tt
-      ? 'Opens your TikTok live page in a window of its own and reads its chat and gifts - nothing leaves this PC. You do not have to sign in there.'
-      : tt.state === 'failed' ? (tt.error || 'The TikTok window stopped.')
+      ? (shown ? 'Opens your TikTok live page in a window of its own and reads its chat and gifts - nothing leaves this PC. You do not have to sign in there.'
+        : 'Reads your TikTok live page in the background - no window, muted - and takes its chat and gifts. Nothing leaves this PC, and you do not have to sign in.')
+      : tt.state === 'failed' ? (tt.error || 'The TikTok reader stopped.')
       : tt.state !== 'joined' ? 'Opening TikTok…'
       // The window moved to someone else's live (tiktok_chat.py _own): nothing
-      // from there reaches the stream, and the streamer should know why.
-      : pg.own === false && pg.path ? `The TikTok window is on another page. Chat and gifts are read only from your own live page (@${tt.channel}) - open it there again.`
+      // from there reaches the stream, and the streamer should know why. A
+      // hidden reader goes back by itself (_reopen_due).
+      : pg.own === false && pg.path ? (shown
+        ? `The TikTok window is on another page. Chat and gifts are read only from your own live page (@${tt.channel}) - open it there again.`
+        : `TikTok moved on to another page. Nothing from there is read, and the reader goes back to your live page (@${tt.channel}) by itself.`)
       // Opened before going live: the page has no live on it, and the reader
       // looks again by itself (tiktok_chat.py _reopen_due).
       : pg.waiting ? 'Your live page is open, but TikTok has no live on it yet. When your LIVE starts, the reader finds it by itself - it looks again every few minutes, nothing to press.'
       // Nothing heard and no chat list: the page is still loading, or the
       // window is on some other page. Which one cannot be told, so say both.
-      : !reading ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'
-      : 'Reading your live chat and gifts. Leave the TikTok window open - it can sit behind everything, and it stays muted.' +
-        (pg.signed_in === false ? ' Signed out is fine; sign in there only if your live does not show without it.' : '');
+      : !reading ? (shown ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'
+        : 'Waiting for your live page to load.')
+      : shown ? 'Reading your live chat and gifts. Leave the TikTok window open - it can sit behind everything, and it stays muted.' +
+        (pg.signed_in === false ? ' Signed out is fine; sign in there only if your live does not show without it.' : '')
+      : 'Reading your live chat and gifts, in the background.' +
+        (pg.signed_in === false ? ' Signed out is fine; to sign in, tick Show the TikTok window.' : '');
   }
 
   /* --------------------------------------------------------------- wiring */
@@ -197,6 +207,7 @@ const ChatPanel = (() => {
         <button type="button" class="lp-btn primary" data-cp="ttgo">Open TikTok</button>
         <button type="button" class="lp-btn" data-cp="ttstop" hidden>Stop</button>
       </div>
+      <label class="lp-check"><input type="checkbox" data-cp="ttshow"><span>Show the TikTok window, to sign in there</span></label>
       <p class="lp-hint" data-cp="tthint" aria-live="polite"></p>
       <div class="cp-logwrap">
         <div class="cp-log" data-cp="log" role="log" aria-live="polite" aria-label="Chat messages"></div>
@@ -249,6 +260,16 @@ const ChatPanel = (() => {
       connect('tiktok', name);
     });
     $('[data-cp="ttstop"]').addEventListener('click', () => disconnect('tiktok'));
+    // Hidden unless asked (tiktok_chat.py): ticked, the reader starts again as
+    // a window, to sign in there; unticked, hidden again, still signed in.
+    $('[data-cp="ttshow"]').addEventListener('change', (e) => {
+      const show = e.target.checked;
+      saved.show = show;
+      post('/api/chat/tiktok/window', { show }).then((d) => {
+        if (d && d.status) { services = services.filter((s) => s.service !== 'tiktok').concat([d.status]); setMention(); }
+        paintState();
+      });
+    });
 
     const log = $('[data-cp="log"]');
     /* Pause on scroll: reading something further up must not be yanked away by
@@ -332,7 +353,9 @@ const ChatPanel = (() => {
     const cfg = await getJSON('/api/config');
     blocked = (((cfg || {}).chat || {}).blocked || []).filter((n) => typeof n === 'string');
     const kept = (cfg || {}).chat || {};
-    saved = { twitch: String((kept.twitch || {}).channel || ''), tiktok: String((kept.tiktok || {}).channel || '') };
+    saved = { twitch: String((kept.twitch || {}).channel || ''), tiktok: String((kept.tiktok || {}).channel || ''),
+      show: (kept.tiktok || {}).show === true };
+    $('[data-cp="ttshow"]').checked = saved.show;
     const st = await getJSON('/api/chat/status');
     if (st) { services = st.services || []; setMention(); }
     paintState();

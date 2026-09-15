@@ -482,7 +482,10 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
 
   // ------------------------------------------------ 9. only your own live
   // TikTok's live page offers other lives, and an ended one can move on to
-  // another. Nothing from there may reach this stream.
+  // another. Nothing from there may reach this stream. A long wait first, so
+  // the reader stays where it is put here (9b says why it would not for long).
+  await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 60 });
+  await sleep(1200);                                   // a tick on the live: the wait starts over at 60
   ops.push({ go: '/@someoneelse/live' });              // moving within the page, as TikTok does
   await sleep(1500);
   st = await tiktokStatus();
@@ -508,6 +511,27 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     sockets.room.length > roomsBefore && await n('Loaded') === 0 && st && st.page && st.page.own === false,
     J({ sockets: sockets.room.length, page: st && st.page }));
 
+  // ------------------------------------ 9b. hidden, it goes back by itself
+  // Nobody can steer a hidden reader, so when TikTok moves on to another live
+  // it opens the streamer's own page again after the wait (_reopen_due).
+  ops.push({ load: '/@probe/live' });                  // home, on the live
+  for (let i = 0; i < 60; i++) { await sleep(250); st = await tiktokStatus(); if (st && st.page && st.page.own && st.page.live) break; }
+  await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 3 });
+  await sleep(1200);                                   // a tick on the live: the wait starts over at 3
+  const looks0 = (((await tiktokStatus()) || {}).page || {}).looks || 0;
+  const homeLoads = pageLoads;
+  ops.push({ go: '/@someoneelse/live' });
+  let back = null;
+  for (let i = 0; i < 80; i++) {
+    await sleep(250); back = await tiktokStatus();
+    if (back && back.page && back.page.own === true && back.page.looks > looks0 && back.page.live) break;
+  }
+  check('hidden, the reader goes back to the streamer\'s own live by itself',
+    back && back.page && back.page.own === true && back.page.looks > looks0 && pageLoads > homeLoads, J(back && back.page));
+  toRoom(G({ from: user(405, 'Returned', 'returned'), streak: false }));
+  await sleep(2500);
+  check('and reads it again', await n('Returned') === 1);
+
   // ------------------------------------------ 10. opened before going live
   // The page shows no live and opens no room socket; the reader looks again
   // by itself (tiktok_chat.py _reopen_due), and finds the live once it starts.
@@ -529,6 +553,24 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   w = await tiktokStatus();
   check('once the live starts, the reader finds it and reads it', sockets.room.length > roomsNow &&
     w && w.page.live === true && w.page.waiting === false && await n('NowLive') === 1, J(w && w.page));
+
+  // --------------------------------------- 10b. Show the TikTok window
+  // Asking to see it saves the choice and starts the reader again - here still
+  // hidden, as the rig's always is - and it reads on; then back to hidden.
+  const showRes = await post('/api/chat/tiktok/window', { show: true });
+  const kept = ((((await getJ('/api/config')) || {}).chat || {}).tiktok || {}).show;
+  check('asking to see the TikTok window keeps the choice - and the rig\'s still shows none',
+    showRes.ok && showRes.show === true && showRes.shown === false && kept === true, J({ showRes, kept }));
+  let again = null;
+  for (let i = 0; i < 80; i++) {
+    await sleep(250); again = await tiktokStatus();
+    if (again && again.state === 'joined' && again.page && again.page.live) break;
+  }
+  toRoom(G({ from: user(601, 'AfterRestart', 'afterrestart'), streak: false }));
+  await sleep(2500);
+  check('the reader started again, and reads', await n('AfterRestart') === 1, J(again && again.page));
+  const hideRes = await post('/api/chat/tiktok/window', { show: false });
+  check('and hidden again', hideRes.ok && hideRes.show === false && hideRes.shown === false, J(hideRes));
 
   // ------------------------------------------------------------ 11. stop
   await post('/api/chat/disconnect', { service: 'tiktok' });
