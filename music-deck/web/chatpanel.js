@@ -144,15 +144,19 @@ const ChatPanel = (() => {
     const ti = $('[data-cp="ttname"]');
     if (tt && document.activeElement !== ti && !ti.value) ti.value = tt.channel || '';
     const pg = (tt && tt.page) || {};
+    // Signing in is optional: TikTok's page receives a live's chat and gifts
+    // signed out too - every real live the reader was checked on was read
+    // signed out - and a window never signed in holds no TikTok login at all.
+    const reading = pg.chat_from === 'socket' || pg.room;
     $('[data-cp="tthint"]').textContent = !tt
-      ? 'Opens TikTok in a window of its own. Sign in there yourself, and this reads your live\'s chat - nothing leaves this PC.'
+      ? 'Opens your TikTok live page in a window of its own and reads its chat and gifts - nothing leaves this PC. You do not have to sign in there.'
       : tt.state === 'failed' ? (tt.error || 'The TikTok window stopped.')
       : tt.state !== 'joined' ? 'Opening TikTok…'
-      : pg.signed_in === false ? 'Sign in to TikTok in the window it opened. The chat is read once you are signed in and on your live page.'
-      // No chat list and no Log in button: the page is still loading, or the
+      // Nothing heard and no chat list: the page is still loading, or the
       // window is on some other page. Which one cannot be told, so say both.
-      : !pg.room ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'
-      : 'Reading your live chat. Leave the TikTok window open - it can sit behind everything, and it stays muted.';
+      : !reading ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'
+      : 'Reading your live chat and gifts. Leave the TikTok window open - it can sit behind everything, and it stays muted.' +
+        (pg.signed_in === false ? ' Signed out is fine; sign in there only if your live does not show without it.' : '');
   }
 
   /* --------------------------------------------------------------- wiring */

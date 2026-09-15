@@ -732,6 +732,59 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## What the reader costs (2026-09-15)
+
+The user's standing budget is about five per cent of the PC for the whole app,
+and the TikTok reader runs for a whole stream - a Chrome with TikTok's live
+page in it. So it was measured on real lives (`tools/ui/ttcost.py`: headless,
+signed out, counts only). Before this change: the reader's Chrome at about half
+of one core - 51 to 59 per cent - which on this 16-core PC is 3.4 per cent of
+the machine, and 1.2 GB of memory. The Python side, reading every DevTools
+event, 0.1 to 0.3 per cent of a core.
+
+**Where it goes.** Not the video: the page's video is paused (`OBSERVER`) and
+nothing streams - the page downloaded about 1 MB a minute. It is TikTok's page
+itself: its renderer at about 40 per cent of a core, drawing animations -
+floating hearts, gift banners, the list - and the GPU process at about 10.
+
+**What was tried, and how.** Three levers, none of which clicks anything or
+touches the account. A live's activity changes minute to minute, so the first
+round, one lever after another, was misleading: it showed two levers halving
+the cost that, measured again, did not. From then on each lever ran side by
+side with the shipped reader, on the same live at the same moment, and a pair
+of two shipped readers measured the noise: about five points.
+- **Reduced motion** (`Emulation.setEmulatedMedia`, the request the Windows
+  setting makes): 57 to 32 per cent of a core, and 51 to 20 on another room,
+  with the same chat lines and frames. On a room with chat off - nothing
+  moving - it made no difference, as it should not.
+- **Every animation stopped** (`Animation.setPlaybackRate` 0): 55 to 24 - as
+  good or better, and not used. It freezes every CSS animation at its first
+  frame, and a sign-in dialog that fades in would then never appear.
+- **Chrome's CPU throttling**: over a whole core - DevTools throttles by keeping
+  the thread busy, not idle - and together with the others it stopped the chat.
+- The first two together saved nothing, three times over. Why is TikTok's
+  page's business; one lever is enough.
+
+So the reader asks for reduced motion (`tiktok_chat.py`), and a test fails if
+either of the other two ever appears. Checked in the shipped code, not just as
+a lever: `ttcost.py --pair`, the reader as it ships beside the same reader
+without the request, on one live at the same moment - 20 per cent of a core
+against 55, 1.3 per cent of the PC against 3.4, 954 MB against 1.26 GB, and the
+same 13 chat lines. The window the user sees is drawn, on a
+165 Hz screen, so it costs more than the headless floor measured here - and
+headless numbers have misled before: stepping animations at 30 fps looked big
+headless on 2026-09-10 and changed nothing on the real window. Reduced motion
+differs in kind - fewer things move at all, rather than moving in steps - but
+that is a reason to expect, not a measurement: the real window's number is the
+one this could not take, because no test window goes on the user's screen. Memory
+stays about 1.2 GB; no lever for it was found that does not weaken the page's
+site isolation, which protects the very session it would be saving memory in.
+
+**Signing in is optional.** Every real live the reader was checked on was read
+signed out - chat, gifts, handles, flags - so the chat panel no longer tells
+the user to sign in: a window that was never signed in holds no TikTok login
+at all. It says to sign in only if the user's live does not show without it.
+
 ## Followers and up (2026-09-15)
 
 T7 was written as text to speech *for followers*, and could not be: nothing

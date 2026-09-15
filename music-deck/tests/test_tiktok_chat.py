@@ -197,7 +197,8 @@ class WhatItMayDoInThePage(unittest.TestCase):
             src = f.read()
         asked = set(re.findall(r'\("([A-Z][A-Za-z]+\.[A-Za-z]+)",', src))
         self.assertEqual(asked, {"Runtime.enable", "Page.enable", "Network.enable", "Runtime.addBinding",
-                                 "Page.addScriptToEvaluateOnNewDocument", "Page.navigate"})
+                                 "Page.addScriptToEvaluateOnNewDocument", "Page.navigate",
+                                 "Emulation.setEmulatedMedia"})
         self.assertIn('("Page.navigate", {"url": url})', src)
         self.assertIn("url = self.live_url()", src)
         for never in ("Cookies", "Storage.", "getResponseBody", "setRequestInterception", "Fetch.",
@@ -285,6 +286,19 @@ class WhatItMayDoInThePage(unittest.TestCase):
         a._payload(line)
         self.assertEqual(len(got), 1, "the room socket is heard from: the page's copy is not sent")
         self.assertEqual(a.status()["page"]["chat_from"], "socket")
+
+    def test_it_asks_for_reduced_motion_and_nothing_heavier(self):
+        """Measured on real lives, side by side (DECISIONS, "What the reader
+        costs"): reduced motion took the reader's Chrome from about half a core
+        to a third or less. Chrome's CPU throttling did the opposite - over a
+        whole core - and, with the others, stopped the chat; pausing every
+        animation saved as much but would freeze a sign-in dialog mid-fade.
+        So: the one, and neither of the others."""
+        with open(tt.__file__, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('{"name": "prefers-reduced-motion", "value": "reduce"}', src)
+        for never in ("setCPUThrottlingRate", "Animation.setPlaybackRate", "setWebLifecycleState"):
+            self.assertNotIn(never, src, never)
 
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))

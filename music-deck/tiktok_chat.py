@@ -450,6 +450,14 @@ class TikTokAdapter(chat.Adapter):
             for method, params in (("Runtime.enable", {}), ("Page.enable", {}),
                                    ("Network.enable", {"maxTotalBufferSize": 1_000_000,
                                                        "maxResourceBufferSize": 100_000}),
+                                   # What the reader costs is TikTok's page: its
+                                   # animations. Asking for reduced motion - as
+                                   # the Windows setting would - took the reader's
+                                   # Chrome from about half a core to a third or
+                                   # less on real lives, side by side, with the
+                                   # same chat (DECISIONS, "What the reader costs").
+                                   ("Emulation.setEmulatedMedia", {"features": [
+                                       {"name": "prefers-reduced-motion", "value": "reduce"}]}),
                                    ("Runtime.addBinding", {"name": BINDING}),
                                    ("Page.addScriptToEvaluateOnNewDocument", {"source": OBSERVER}),
                                    ("Page.navigate", {"url": url})):

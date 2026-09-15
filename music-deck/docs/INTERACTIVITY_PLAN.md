@@ -154,8 +154,9 @@ a third party - still your call.
 **Your call, made 2026-09-15: (3), your own logged-in page. Built.** In the
 chat panel (the deck's Chat... and the Live view), type your TikTok username
 and press **Open TikTok**. A Chrome window of its own opens on your live page;
-sign in there yourself - the app never sees your password - and the chat of
-your live flows into the same pipeline Twitch uses, so `!tts`, command layers,
+you do not have to sign in - it reads your live signed out, as every real live
+it was checked on was read (if you ever do, you sign in there yourself and the
+app never sees your password) - and the chat of your live flows into the same pipeline Twitch uses, so `!tts`, command layers,
 polls and roles all work for TikTok viewers. The panel says what the window can
 see: signed in or not, your live page's chat found or not. Leave the window
 open; it can sit behind everything and it is muted, so your own stream is never
