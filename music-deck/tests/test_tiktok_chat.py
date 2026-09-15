@@ -686,5 +686,40 @@ class Hidden(unittest.TestCase):
         self.assertEqual(started, [])
 
 
+class TheLive(unittest.TestCase):
+    """Which live it is, passed on for the coin ledger (gifts.py begin)."""
+
+    WS = "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/?aid=1988&room_id={}&x=1"
+
+    def told(self, fn):
+        was = tt.TikTokAdapter.on_room
+        tt.TikTokAdapter.on_room = fn
+        self.addCleanup(setattr, tt.TikTokAdapter, "on_room", was)
+
+    def test_the_live_is_passed_on_once_and_only_from_the_streamers_page(self):
+        told = []
+        self.told(told.append)
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@someoneelse/live"}})
+        a._event("Network.webSocketCreated", {"requestId": "1", "url": self.WS.format("7000000000000000009")})
+        self.assertEqual(told, [], "a stranger's live starts no new count")
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+        a._event("Network.webSocketCreated", {"requestId": "2", "url": self.WS.format("7000000000000000001")})
+        a._event("Network.webSocketCreated", {"requestId": "3", "url": self.WS.format("7000000000000000001")})
+        self.assertEqual(told, ["7000000000000000001"], "once per live")
+        a._event("Network.webSocketCreated", {"requestId": "4", "url": self.WS.format("7000000000000000002")})
+        self.assertEqual(told[-1], "7000000000000000002")
+
+    def test_a_failing_ledger_never_stops_the_reader(self):
+        def fail(_rid):
+            raise RuntimeError("no")
+        self.told(fail)
+        logged = []
+        a = tt.TikTokAdapter("probe", lambda m: None, logged.append)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+        a._event("Network.webSocketCreated", {"requestId": "2", "url": self.WS.format("7000000000000000001")})
+        self.assertTrue(a.room.sockets and logged)
+
+
 if __name__ == "__main__":
     unittest.main()

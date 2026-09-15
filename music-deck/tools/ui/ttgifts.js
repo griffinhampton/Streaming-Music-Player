@@ -143,7 +143,7 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   // liveNow): an offline live page opens none, as TikTok's does.
   fetch('/live-state').then((r) => r.json()).then((s) => {
     if (!s.live) return;
-    const room = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/webcast/im/ws_proxy/ws_reuse_supplement/?room=1');
+    const room = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/webcast/im/ws_proxy/ws_reuse_supplement/?room_id=' + encodeURIComponent(s.room));
     room.binaryType = 'arraybuffer';
   });
   const other = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/ws/v2?x=1');
@@ -178,10 +178,11 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   })();
 </script></body></html>`;
 let liveNow = true;            // is the streamer "live": does the page open its room socket
+let roomNow = '7000000000000000001';   // which live: the room id in the room socket's address
 let pageLoads = 0;             // loads of the streamer's own live page
 const fixture = http.createServer((req, res) => {
   if (req.url === '/ops') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J(ops)); return; }
-  if (req.url === '/live-state') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J({ live: liveNow })); return; }
+  if (req.url === '/live-state') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J({ live: liveNow, room: roomNow })); return; }
   if (req.url.split('?')[0] === '/@probe/live') pageLoads++;
   // Stand-ins for TikTok's image servers, and for what the app must refuse
   // from them: a redirect, and a page that calls itself a PNG.
@@ -544,15 +545,24 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     w && w.page && w.page.own === true && w.page.live === false && w.page.waiting === true, J(w && w.page));
   check('and has opened the page again by itself', w && w.page.looks >= 1 && pageLoads > loads0 + 1,
     J({ looks: w && w.page.looks, loads: pageLoads - loads0 }));
+  // And it is a new live, as TikTok gives each: the coin count starts again
+  // by itself, and the one before is kept as the last stream's (gifts.py).
+  const countBefore = (await getJ('/api/gifts/ledger')).coins;
+  roomNow = '7000000000000000002';
   liveNow = true;
   const roomsNow = sockets.room.length;
   for (let i = 0; i < 240 && sockets.room.length <= roomsNow; i++) await sleep(250);
   await sleep(1500);
-  toRoom(G({ from: user(501, 'NowLive', 'nowlive'), streak: false }));
+  toRoom(G({ from: user(501, 'NowLive', 'nowlive'), streak: false, coins: 7 }));
   await sleep(2500);
   w = await tiktokStatus();
   check('once the live starts, the reader finds it and reads it', sockets.room.length > roomsNow &&
     w && w.page.live === true && w.page.waiting === false && await n('NowLive') === 1, J(w && w.page));
+  const ledNew = await getJ('/api/gifts/ledger');
+  check('a new live starts a new coin count by itself, and keeps the last stream\'s',
+    ledNew.live === true && ledNew.coins === 7 && ledNew.senders === 1 && countBefore > 0 &&
+    ledNew.last && ledNew.last.coins === countBefore,
+    J({ coins: ledNew.coins, senders: ledNew.senders, last: ledNew.last && ledNew.last.coins, before: countBefore }));
 
   // --------------------------------------- 10b. Show the TikTok window
   // Asking to see it saves the choice and starts the reader again - here still
@@ -566,9 +576,13 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     await sleep(250); again = await tiktokStatus();
     if (again && again.state === 'joined' && again.page && again.page.live) break;
   }
-  toRoom(G({ from: user(601, 'AfterRestart', 'afterrestart'), streak: false }));
+  toRoom(G({ from: user(601, 'AfterRestart', 'afterrestart'), streak: false, coins: 3 }));
   await sleep(2500);
   check('the reader started again, and reads', await n('AfterRestart') === 1, J(again && again.page));
+  const ledKept = await getJ('/api/gifts/ledger');
+  check('the same live, found again after the restart, keeps its coin count',
+    ledKept.coins === 10 && ledKept.last && ledKept.last.coins === countBefore,
+    J({ coins: ledKept.coins, last: ledKept.last && ledKept.last.coins }));
   const hideRes = await post('/api/chat/tiktok/window', { show: false });
   check('and hidden again', hideRes.ok && hideRes.show === false && hideRes.shown === false, J(hideRes));
 

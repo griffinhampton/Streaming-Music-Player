@@ -1918,6 +1918,18 @@ tiktok_chat.TikTokAdapter.on_gift = tiktok_gift
 # a restart until the streamer resets it; and the reader asks it who has gifted.
 LEDGER = gifts.GiftLedger(os.path.join(CACHE, "gift-ledger.json"))
 tiktok_chat.TikTokAdapter.gifted = LEDGER.coins_from
+
+
+def tiktok_live_found(room_id):
+    """The streamer's live, by TikTok's room id (tiktok_chat's on_room): a live
+    other than the one the coin ledger is counting starts a new count, and
+    the one before is kept as the last stream's (gifts.py begin)."""
+    if LEDGER.begin(room_id):
+        last = LEDGER.snapshot(0).get("last") or {}
+        _log(f"gifts: a new live - the coin count starts again (the last stream: {last.get('coins', 0)} coins)")
+
+
+tiktok_chat.TikTokAdapter.on_room = tiktok_live_found
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()

@@ -328,8 +328,10 @@ goal and a top-gifters list.
 
 **Coins.** Every gift counts as its price times how many were sent - a Rose x5
 is 5 coins. The Live view's **Gifts** box shows the coins this stream, the gifts
-and who gave most; press **Reset the count** when a new stream starts. The totals
-stay on this PC, across restarts, until you reset them.
+and who gave most. **A new live starts a new count by itself** - TikTok gives
+every live an id of its own - and the box keeps the last stream's totals below.
+Restarting the app mid-stream keeps counting the same live; **Reset the count**
+starts it again by hand.
 
 **On stream**, from the Canvas Builder's Add grid:
 
@@ -370,8 +372,8 @@ checks the reader against a real live and says which part stopped matching.
   app reads what arrives in it, on this PC, and sends nothing of its own -
   apart from fetching each gift sender's picture from TikTok's image servers,
   once, so the stream page never has to. A reader you never signed in holds no
-  TikTok login. The coin totals keep viewers' names on this PC until you press
-  **Reset the count**.
+  TikTok login. The coin totals keep viewers' names on this PC: this stream's
+  gifters, and the last stream's top five, until the next live starts.
 - **A scene export** holds the scene's pictures and fonts. Look at what is in a
   scene before you give it away.
 

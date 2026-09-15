@@ -257,6 +257,21 @@ class TheRoom(unittest.TestCase):
         self.assertFalse(webcast.is_webcast("ws://10.0.0.2/webcast/im/x", allow_local=True))
         self.assertFalse(webcast.is_webcast("ws://127.0.0.1:6791/ws/v2", allow_local=True))
 
+    def test_the_live_is_known_by_its_room_id(self):
+        """Every real live's room socket named its room id, 19 digits - the
+        number every message on it carries in its header too."""
+        r = webcast.Room("probe", clock=Clock())
+        self.assertEqual(r.room_id, "")
+        r.opened("1", self.WS)                         # no id in this one
+        self.assertEqual(r.room_id, "")
+        r.opened("3", self.DM + "&room_id=7000000000000000009")
+        self.assertEqual(r.room_id, "", "never from another socket")
+        r.opened("4", "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/?aid=1988&room_id=7000000000000000001&x=1")
+        self.assertEqual(r.room_id, "7000000000000000001")
+        for bad in ("abc", "7000000000000000001x", "1" * 26, ""):
+            r.opened("5", "wss://webcast-ws.us.tiktok.com/webcast/im/x/?room_id=" + bad)
+            self.assertEqual(r.room_id, "7000000000000000001", bad)
+
     def test_a_gift_on_the_room_socket_arrives_as_post_gift_takes_it(self):
         out = self.room().frame("1", 2, b64(gift_frame(streak=False, coins=5)))
         self.assertEqual(out, [{"kind": "gift", "user": "Amy", "handle": "amy", "gift": "Rose", "count": 1, "coins": 5,

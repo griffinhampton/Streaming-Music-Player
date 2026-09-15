@@ -87,6 +87,66 @@ class TheLedger(unittest.TestCase):
             led = gifts.GiftLedger(self.path, clock=self.clock)
             self.assertEqual((led.snapshot()["coins"], led.snapshot()["senders"]), (0, 0), text)
 
+    LIVE1, LIVE2 = "7000000000000000001", "7000000000000000002"
+
+    def test_a_new_live_starts_a_new_count_and_keeps_the_last(self):
+        """TikTok gives every live a room id of its own (19 digits, seen on real
+        lives); a different one than the count is for is a new live."""
+        self.assertTrue(self.led.begin(self.LIVE1))
+        self.led.record("amy", "Amy", 5)
+        self.led.record("bob", "Bob", 20)
+        self.assertFalse(self.led.begin(self.LIVE1), "the same live: nothing changes")
+        self.assertEqual(self.led.snapshot()["coins"], 25)
+        started = self.clock.t
+        self.clock.t += 3600
+        self.assertTrue(self.led.begin(self.LIVE2))
+        snap = self.led.snapshot()
+        self.assertEqual((snap["coins"], snap["gifts"], snap["senders"], self.led.coins_from("amy")), (0, 0, 0, 0))
+        self.assertEqual((snap["since"], snap["live"]), (self.clock.t, True))
+        last = snap["last"]
+        self.assertEqual((last["coins"], last["gifts"], last["senders"], last["since"], last["until"]),
+                         (25, 2, 2, started, self.clock.t))
+        self.assertEqual([t["handle"] for t in last["top"]], ["bob", "amy"])
+
+    def test_nothing_counted_leaves_no_last_stream(self):
+        self.led.begin(self.LIVE1)
+        self.led.begin(self.LIVE2)
+        self.assertIsNone(self.led.snapshot()["last"])
+
+    def test_a_restart_mid_live_keeps_counting(self):
+        self.led.begin(self.LIVE1)
+        self.led.record("amy", "Amy", 5)
+        self.led.save()
+        again = gifts.GiftLedger(self.path, clock=self.clock)
+        self.assertFalse(again.begin(self.LIVE1), "the same live, found again after a restart")
+        self.assertEqual((again.coins_from("amy"), again.snapshot()["live"]), (5, True))
+
+    def test_the_last_stream_is_kept_across_a_restart(self):
+        self.led.begin(self.LIVE1)
+        self.led.record("amy", "Amy", 5)
+        self.led.begin(self.LIVE2)
+        again = gifts.GiftLedger(self.path, clock=self.clock)
+        self.assertEqual(again.snapshot()["last"]["coins"], 5)
+
+    def test_only_a_room_id_is_taken(self):
+        for bad in ("", None, "abc", "70000000000000000a1", "1" * (gifts.ROOM_MAX + 1), " 7000"):
+            self.assertFalse(self.led.begin(bad), repr(bad))
+        self.assertFalse(self.led.snapshot()["live"])
+
+    def test_reset_by_hand_keeps_the_live(self):
+        self.led.begin(self.LIVE1)
+        self.led.record("amy", "Amy", 5)
+        self.led.reset()
+        self.assertFalse(self.led.begin(self.LIVE1), "still this live: found again, it is not a new one")
+        self.assertEqual((self.led.snapshot()["coins"], self.led.snapshot()["last"]), (0, None))
+
+    def test_a_damaged_room_or_last_stream_is_dropped_and_the_rest_kept(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump({"coins": 3, "gifts": 1, "room": "not an id", "last": {"coins": "many"}}, f)
+        led = gifts.GiftLedger(self.path, clock=self.clock)
+        snap = led.snapshot()
+        self.assertEqual((snap["coins"], snap["live"], snap["last"]), (3, False, None))
+
     def test_senders_are_bounded_but_the_total_is_not(self):
         old = gifts.MAX_SENDERS
         self.addCleanup(setattr, gifts, "MAX_SENDERS", old)

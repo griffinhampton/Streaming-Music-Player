@@ -12,8 +12,13 @@ and the command gate - someone who has gifted this stream counts as a gifter
 (commands.py, the "follower" rung: followers and gifters).
 
 Saved to the cache as it goes - at most every SAVE_EVERY seconds, and on quit -
-so a restart mid-stream keeps the totals; a new stream starts with Reset. It
-holds viewers' names on this PC only, for as long as the streamer keeps it.
+so a restart mid-stream keeps the totals. A new live starts a new count by
+itself: TikTok gives every live a room id of its own, which the reader passes
+on when the streamer's room socket opens (begin). The same id is the same live
+- a restart, the page opened again - and changes nothing; a different one is a
+new live, so what was counted is kept as the last stream's and the count
+starts again. Reset starts it again by hand. It holds viewers' names on this PC
+only: this stream's senders, and the last stream's top few.
 Senders beyond MAX_SENDERS are not kept one by one; the totals still count them.
 """
 
@@ -25,6 +30,28 @@ import time
 SAVE_EVERY = 2.0
 MAX_SENDERS = 5000
 TOP = 5
+ROOM_MAX = 25          # TikTok's room ids are 19 digits (seen 2026-09-15)
+
+
+def _room(value):
+    """A room id as TikTok writes one - digits, and not too many - or ""."""
+    value = str(value or "")
+    return value if value.isdigit() and len(value) <= ROOM_MAX else ""
+
+
+def _last(d):
+    """The last stream's totals as kept on disk, or None if missing or damaged."""
+    if not isinstance(d, dict):
+        return None
+    try:
+        top = [{"handle": str(t.get("handle") or "")[:40], "name": str(t.get("name") or "")[:40],
+                "coins": max(0, int(t.get("coins") or 0)), "gifts": max(0, int(t.get("gifts") or 0))}
+               for t in list(d.get("top") or [])[:TOP] if isinstance(t, dict)]
+        return {"since": float(d.get("since") or 0), "until": float(d.get("until") or 0),
+                "coins": max(0, int(d.get("coins") or 0)), "gifts": max(0, int(d.get("gifts") or 0)),
+                "senders": max(0, int(d.get("senders") or 0)), "top": top}
+    except (TypeError, ValueError, AttributeError):
+        return None
 
 
 class GiftLedger:
@@ -34,6 +61,8 @@ class GiftLedger:
         self._lock = threading.Lock()
         self._saved_at = 0.0
         self._dirty = False
+        self.room = ""             # the live this count is for: TikTok's room id, once known
+        self.last = None           # the last stream's totals, kept when a new live began
         self._load()
 
     def _blank(self):
@@ -61,6 +90,11 @@ class GiftLedger:
         except (TypeError, ValueError, AttributeError):
             return                                   # a damaged file: start clean rather than half-read
         self.since, self.coins, self.gifts, self.senders = since, max(0, coins), max(0, gifts), senders
+        self.room, self.last = _room(d.get("room")), _last(d.get("last"))
+
+    def _top(self, top):
+        best = sorted(self.senders.items(), key=lambda kv: (-kv[1]["coins"], -kv[1]["last"]))[:max(0, int(top))]
+        return [{"handle": h, "name": s["name"], "coins": s["coins"], "gifts": s["gifts"]} for h, s in best]
 
     def record(self, handle, name, coins, count=1):
         """One finished gift of `coins` in all (`count` of them). Returns the
@@ -88,6 +122,26 @@ class GiftLedger:
         self.save(force=False)
         return total
 
+    def begin(self, room):
+        """The streamer's live, by TikTok's room id, as the reader found it.
+        The live this count is already for changes nothing. Any other is a new
+        live: what was counted is kept as the last stream's, and the count
+        starts again. True when it did."""
+        room = _room(room)
+        if not room:
+            return False
+        with self._lock:
+            if room == self.room:
+                return False
+            if self.coins or self.gifts:
+                self.last = {"since": self.since, "until": self.clock(), "coins": self.coins,
+                             "gifts": self.gifts, "senders": len(self.senders), "top": self._top(TOP)}
+            self._blank()
+            self.room = room
+            self._dirty = True
+        self.save(force=True)
+        return True
+
     def coins_from(self, handle):
         """What this sender has gifted since the ledger began: 0 for nobody."""
         with self._lock:
@@ -96,12 +150,14 @@ class GiftLedger:
 
     def snapshot(self, top=TOP):
         with self._lock:
-            best = sorted(self.senders.items(), key=lambda kv: (-kv[1]["coins"], -kv[1]["last"]))[:max(0, int(top))]
             return {"since": self.since, "coins": self.coins, "gifts": self.gifts, "senders": len(self.senders),
-                    "top": [{"handle": h, "name": s["name"], "coins": s["coins"], "gifts": s["gifts"]} for h, s in best]}
+                    "top": self._top(top), "live": bool(self.room),
+                    "last": dict(self.last, top=list(self.last["top"])) if self.last else None}
 
     def reset(self):
-        """A new stream: every total back to nothing, and said so on disk."""
+        """By hand: every total back to nothing, and said so on disk. The live
+        it counts for stays the one it was, so the reader finding that live
+        again does not count as a new one."""
         with self._lock:
             self._blank()
             self._dirty = True
@@ -114,7 +170,8 @@ class GiftLedger:
             now = self.clock()
             if not self._dirty or (not force and now - self._saved_at < SAVE_EVERY):
                 return False
-            text = json.dumps({"since": self.since, "coins": self.coins, "gifts": self.gifts, "senders": self.senders})
+            text = json.dumps({"since": self.since, "coins": self.coins, "gifts": self.gifts, "senders": self.senders,
+                               "room": self.room, "last": self.last})
             self._dirty = False
             self._saved_at = now
         tmp = self.path + ".part"

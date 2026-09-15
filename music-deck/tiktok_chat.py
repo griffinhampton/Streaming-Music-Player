@@ -491,6 +491,10 @@ class TikTokAdapter(chat.Adapter):
     # server.py - so a gifter is known the moment their gift lands, not only
     # once TikTok's own flag says so. Called through the class, like on_gift.
     gifted = None
+    # The streamer's live, by TikTok's room id, for the coin ledger (gifts.py
+    # begin): passed on when the room socket on their own page opens, once per
+    # live. Called through the class, like on_gift.
+    on_room = None
     reopen_first = 60        # REOPEN_MAX says why
 
     def __init__(self, channel, on_message, log=None):
@@ -518,6 +522,7 @@ class TikTokAdapter(chat.Adapter):
         self.headless = type(self).headless
         self._proc = None
         self._bid = ""               # its Chrome's browser id, once started (reader_on)
+        self._told = ""              # the live last passed on (on_room)
         self._tab = ""
         self._port = None
 
@@ -583,6 +588,19 @@ class TikTokAdapter(chat.Adapter):
             return gifted(handle) > 0
         except Exception:
             return False
+
+    def _room_found(self):
+        """Pass the live on to the coin ledger (on_room), once per live, and
+        only from the streamer's own page: a stranger's live - TikTok moves an
+        ended one on - must not start a new count."""
+        rid, tell = self.room.room_id, type(self).on_room
+        if not rid or rid == self._told or not tell or not self._own():
+            return
+        self._told = rid
+        try:
+            tell(rid)
+        except Exception as exc:
+            self.log(f"chat: tiktok: the coin count could not be told of the live: {exc}")
 
     def _navigated(self, url):
         was = self._own()
@@ -748,6 +766,7 @@ class TikTokAdapter(chat.Adapter):
                 self._payload(params.get("payload") or "")
         elif method == "Network.webSocketCreated":
             self.room.opened(params.get("requestId"), params.get("url"))
+            self._room_found()
         elif method == "Network.webSocketClosed":
             self.room.closed(params.get("requestId"))
         elif method == "Page.frameNavigated":

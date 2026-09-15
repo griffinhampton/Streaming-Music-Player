@@ -985,6 +985,36 @@ signed out - chat, gifts, handles, flags - so the chat panel no longer tells
 the user to sign in: a window that was never signed in holds no TikTok login
 at all. It says to sign in only if the user's live does not show without it.
 
+## A new live, a new count (2026-09-15)
+
+"Needs N coins gifted this stream", the Coin goal and Top gifters all mean
+this stream, but the ledger only knew where a stream began when the streamer
+pressed Reset. Forget it, and last stream's gifters walk through this stream's
+coin gates, and the goal starts part-full.
+
+**How a live is known.** Checked on real lives first, counts only. The room
+socket's address names the live - a `room_id` of 19 digits - on every live that
+opened one (five of six rooms; the sixth had ended): one id per room, and every
+chat and gift message on it carried the same number in its header (94 of 94).
+Opened twice, one throwaway profile after the other, four lives gave the same id
+both times - so a restart or a page opened again is the same live.
+
+**What it does.** The reader passes the id on when the room socket on the
+streamer's own page opens, once per live (`tiktok_chat._room_found`; never from
+a stranger's live). The ledger (`gifts.begin`): the live it is already counting
+changes nothing; any other is a new live, so the totals so far are kept as the
+last stream's - coins, gifts, gifters, when, and the top five - and the count
+starts again. It is kept on disk with the rest, so a restart mid-stream carries
+on counting. Reset by hand still clears the count and leaves the live as it
+was. The Live view says "this live, since ..." and shows the last stream under
+the totals.
+
+**Checked** in `tests/test_gifts.py`, `test_webcast.py` and
+`test_tiktok_chat.py`, and on the rig by `ttgifts.js`: the fixture's room
+socket names a room id; a new one when the live "starts" leaves the count at
+that live's first gift, with the last stream holding everything before it; and
+the reader started again on the same live keeps counting.
+
 ## The reader, hidden (2026-09-15)
 
 The reader's Chrome opened as a window on the user's screen, while every check

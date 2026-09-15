@@ -33,7 +33,7 @@ import re
 import time
 import zlib
 from collections import OrderedDict
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 MAX_INFLATED = 4 * 1024 * 1024
 MAX_B64 = 8 * 1024 * 1024
@@ -341,11 +341,18 @@ class Room:
         self.gifts = 0
         self.chats = 0
         self.heard = float("-inf")
+        # Which live this is: TikTok's room id, from the room socket's address
+        # - 19 digits on every real live, and the same number every message on
+        # it carries in its header (common, field 3; seen 2026-09-15).
+        self.room_id = ""
 
     def opened(self, request_id, url):
         if request_id and is_webcast(url, self.allow_local):
             self.sockets.add(request_id)
             self.heard = self.clock()
+            rid = dict(parse_qsl(urlparse(url).query)).get("room_id") or ""
+            if rid.isdigit() and len(rid) <= 25:
+                self.room_id = rid
 
     def closed(self, request_id):
         self.sockets.discard(request_id)

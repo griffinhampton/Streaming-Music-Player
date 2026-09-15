@@ -305,13 +305,19 @@ async function paintGifts() {
     li.textContent = `${t.name || t.handle} · ${n(t.coins)} coin${t.coins === 1 ? '' : 's'}`;
     return li;
   }));
-  $('lvGiftSince').textContent = d.since ? 'counting since ' + new Date(d.since * 1000).toLocaleString([],
-    { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  $('lvGiftSince').textContent = d.since ? (d.live ? 'this live, since ' : 'counting since ') +
+    new Date(d.since * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  // The stream before, kept when a new live started a new count (gifts.py begin).
+  const last = d.last, lastEl = $('lvGiftLast');
+  lastEl.hidden = !last;
+  lastEl.textContent = !last ? ''
+    : `Last stream: ${n(last.coins)} coin${last.coins === 1 ? '' : 's'} from ${n(last.senders)} gifter${last.senders === 1 ? '' : 's'}` +
+      ((last.top || []).length ? ' - most from ' + last.top.slice(0, 3).map((t) => t.name || t.handle).join(', ') : '');
 }
 let gifts = null;
 setInterval(() => { if (!document.hidden) paintGifts(); }, 3000);
 $('lvGiftReset').addEventListener('click', async () => {
-  if (!confirm('Start the coin count again for a new stream? The totals so far are cleared.')) return;
+  if (!confirm('Start the coin count again now? A new live starts one by itself; this clears the totals so far.')) return;
   await fetch('/api/gifts/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
   paintGifts();
 });
