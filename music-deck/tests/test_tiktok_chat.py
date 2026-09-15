@@ -181,6 +181,9 @@ class WhatItMayDoInThePage(unittest.TestCase):
         self.assertIn("all.find((x) => x.querySelector(MSG))", o)
         self.assertIn("while (row.parentElement && row.parentElement !== m && !row.nextElementSibling)", o)
         self.assertIn("#header-login-button", o)
+        # And measured again against the room socket: the first break-words
+        # holds the name too, so the words are the last one that does not.
+        self.assertIn("[...m.querySelectorAll('.break-words')].filter((b) => !who || !b.contains(who))", o)
         self.assertIn("/^log ?in$/i.test((b.textContent || '').trim())", o)
 
     def test_what_it_asks_of_devtools_only_reads(self):
@@ -222,6 +225,57 @@ class WhatItMayDoInThePage(unittest.TestCase):
         self.assertEqual([(g["user"], g["gift"], g["coins"]) for g in got], [("Evil", "Rose", 1)])
         self.assertEqual(a.status()["page"]["gifts"], 1)
         self.assertTrue(a.status()["page"]["socket"])
+
+    def socket_adapter(self):
+        import base64
+        got = []
+        a = tt.TikTokAdapter("probe", got.append)
+        a._event("Network.webSocketCreated", {"requestId": "9", "url":
+                 "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/"})
+
+        def say(frame):
+            a._event("Network.webSocketFrameReceived", {"requestId": "9", "response": {
+                "opcode": 2, "payloadData": base64.b64encode(frame).decode()}})
+        return a, got, say
+
+    def test_the_streamer_is_the_broadcaster_by_handle_from_the_room_socket(self):
+        """The room socket gives every line its sender's @handle, which TikTok
+        sets and nobody can copy - so the streamer's own lines are theirs, and
+        a viewer who takes the streamer's display name is still nobody."""
+        from test_webcast import chat_frame, user
+        a, got, say = self.socket_adapter()
+        say(chat_frame(text="!mine", frm=user(1, "Whatever I Call Myself", "probe")))
+        say(chat_frame(text="!mine", frm=user(2, "probe", "copycat")))
+        self.assertEqual([(m["user"]["name"], m["user"]["login"], chat_rank(m)) for m in got],
+                         [("Whatever I Call Myself", "probe", "broadcaster"), ("probe", "copycat", "everyone")])
+        self.assertEqual(got[0]["command"], "mine")
+
+    def test_a_moderator_by_tiktoks_own_flag(self):
+        from test_webcast import chat_frame, user
+        a, got, say = self.socket_adapter()
+        say(chat_frame(text="hi", frm=user(3, "Mo", "mo"), flags=(1, 2, 3, 4, 5)))
+        say(chat_frame(text="hi", frm=user(4, "Su", "su"), flags=(1, 2, 3, 4)))
+        self.assertEqual([chat_rank(m) for m in got], ["mod", "everyone"])
+
+    def test_the_pages_drawing_is_only_the_fallback(self):
+        """Chat comes from the room socket. The page's own drawing is used only
+        when no room socket is heard - never in the first PAGE_WAIT seconds,
+        when TikTok draws the backlog before its socket is up."""
+        import json
+        import time
+        got = []
+        a = tt.TikTokAdapter("probe", got.append)
+        line = json.dumps({"t": "chat", "name": "Amy", "text": "hello"})
+        a._payload(line)
+        self.assertEqual(got, [], "in the first seconds after the page opens")
+        a._opened = time.monotonic() - tt.PAGE_WAIT - 1
+        a._payload(line)
+        self.assertEqual(len(got), 1, "no room socket, after the wait: the fallback")
+        self.assertEqual(a.status()["page"]["chat_from"], "page")
+        a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")
+        a._payload(line)
+        self.assertEqual(len(got), 1, "the room socket is heard from: the page's copy is not sent")
+        self.assertEqual(a.status()["page"]["chat_from"], "socket")
 
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))

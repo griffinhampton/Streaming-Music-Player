@@ -86,18 +86,23 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
 <div data-e2e="live-chat-container"><div class="list"></div></div>
 <script>
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // The words sit in a break-words element inside another break-words that
+  // also holds the name's row (measured on a real room, 2026-09-15) - which is
+  // how the first version read every line as the name and the words together.
   function line(o) {
     const avatar = '<img class="avatar" src="/a.png">';
     return '<div data-e2e="chat-message" class="relative flex">' +
       '<div class="flex self-start py-2"><div class="w-24 h-24 flex">' +
         (o.login ? '<a href="/@' + esc(o.login) + '">' + avatar + '</a>' : avatar) + '</div></div>' +
       '<div class="flex flex-col justify-center">' +
-        '<div class="w-full flex items-center"><div class="inline-flex items-center overflow-x-hidden">' +
-          '<span class="inline-flex flex-shrink-0 py-1"><img src="/img/' + esc(o.badge || 'grade') + '_badge_1.png"><span class="text-[10px]">7</span></span>' +
-          '<div data-e2e="message-owner-name" class="flex overflow-hidden inline">' + esc(o.name) + '</div>' +
-        '</div></div>' +
-        // o.plain drops break-words, so the structural rule has to find the words.
-        '<div class="w-full ' + (o.plain ? '' : 'break-words ') + 'align-middle">' + esc(o.text) + '</div>' +
+        '<div class="w-full break-words align-middle">' +
+          '<div class="inline-flex"><div class="inline-flex items-center overflow-x-hidden">' +
+            '<span class="inline-flex flex-shrink-0 py-1"><img src="/img/' + esc(o.badge || 'grade') + '_badge_1.png"><span class="text-[10px]">7</span></span>' +
+            '<div data-e2e="message-owner-name" class="flex overflow-hidden inline">' + esc(o.name) + '</div>' +
+          '</div></div>' +
+          // o.plain drops the class, so the structural rule has to find the words.
+          '<div data-fx="words" class="' + (o.plain ? 'w-full' : 'w-full break-words') + '">' + esc(o.text) + '</div>' +
+        '</div>' +
       '</div>' +
       '<div data-e2e="more-action-button" class="moreActionButton w-16 h-16"><svg></svg></div></div>';
   }
@@ -111,7 +116,7 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
       const slot = list.querySelector('[data-index="' + op.from + '"]');
       slot.setAttribute('data-index', String(op.index));
       slot.querySelector('[data-e2e="message-owner-name"]').textContent = op.name;
-      slot.querySelector('[data-e2e="message-owner-name"]').closest('.flex-col').lastElementChild.textContent = op.text;
+      slot.querySelector('[data-fx="words"]').textContent = op.text;
     }
     // The Log in button is the plain kind - no id, only the words - which is
     // the one a real room page drew that the first signed-in check missed.
@@ -191,6 +196,12 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   // button is drawn; the first version of that read a blank page as signed in.
   check('it never says signed in before the page has drawn itself', !early.some((p) => p.signed_in === true && !p.room),
     J(early.map((p) => [p.room, p.signed_in]).slice(0, 6)));
+  // Chat comes from the room socket now; the page's drawing is the fallback,
+  // never in the first seconds after the page opens - when TikTok draws its
+  // backlog - and only when no room socket is heard. This fixture has none.
+  ops.push({ op: 'add', index: 30, name: 'Early', text: 'drawn in the first seconds' });
+  for (let i = 0; i < 100; i++) { await sleep(250); st = await tiktokStatus(); if (st && st.page && st.page.chat_from === 'page') break; }
+  check('with no room socket, the page\'s drawing takes over after the wait', st && st.page && st.page.chat_from === 'page', J(st && st.page));
   check('and says the page is signed out while the Log in button is there', st && st.page && st.page.signed_in === false, J(st && st.page));
   check('the reader window answers on its own DevTools port (the floor for stopping)', await readerAlive());
 
@@ -198,6 +209,8 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   await sleep(1500);
   const backlog = (await chatNow()).filter((m) => /backlog/.test(m.text));
   check('what was on screen at attach is history - not sent', backlog.length === 0, J(backlog));
+  check('a line drawn in the first seconds, when TikTok draws its backlog, is not sent either',
+    (await chatNow()).filter((m) => m.user.name === 'Early').length === 0);
 
   const log0 = (await logNow()).length;
   // No logins: TikTok's lines carry none. Amy's words have no break-words

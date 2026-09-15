@@ -57,6 +57,14 @@ NAME_RE = re.compile(r"^[a-z0-9._]{2,24}$")
 BINDING = "__asdTikTok"
 START_TIMEOUT = 25
 MAX_FRAME = 16 * 1024 * 1024
+# Chat comes from the room socket (webcast.py), which carries each sender's
+# @handle and marks the backlog. The page's own drawing of the chat is the
+# fallback, used only when no room socket has been heard from: never in the
+# first PAGE_WAIT seconds after the page opens - when TikTok draws its backlog,
+# before its socket is up - and never while the socket was heard from within
+# SOCKET_FRESH seconds.
+PAGE_WAIT = 15
+SOCKET_FRESH = 60
 
 # Muted, so the live page's own sound never reaches Desktop sound; and kept
 # awake behind other windows, or Chrome throttles the page and the chat stalls.
@@ -93,7 +101,13 @@ OBSERVER = r"""(() => {
     // (break-words) right after the row holding the name. So after the class
     // names, the rule is structural - the first element after the name's row,
     // never past the line itself - which holds whatever the classes are called.
-    let body = m.querySelector('.break-words') || m.querySelector("[class*='-DivComment']") ||
+    // Measured again later that day against the room socket's copy of the
+    // same lines: the first break-words element holds the name's row as well
+    // as the words, which sit in a second break-words inside it - so every
+    // line came out as the name and the words. The words are the last such
+    // element that does not hold the name.
+    const marked = [...m.querySelectorAll('.break-words')].filter((b) => !who || !b.contains(who));
+    let body = marked.pop() || m.querySelector("[class*='-DivComment']") ||
       m.querySelector('.live-shared-ui-chat-list-chat-message-comment');
     if (!body && who) {
       let row = who;
@@ -387,12 +401,22 @@ class TikTokAdapter(chat.Adapter):
         super().__init__((channel or "").strip().lstrip("@#"), on_message, log)
         self.page = {"room": False, "signed_in": None, "path": ""}
         self.room = webcast.Room(self.channel, allow_local=self.allow_local_base)
+        self._opened = time.monotonic()
         self._proc = None
         self._tab = ""
         self._port = None
 
     def status(self):
-        return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts))
+        return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts,
+                                                chat_from=self._chat_from()))
+
+    def _chat_from(self):
+        """Where chat is being read from: the room socket, the page's drawing
+        (the fallback), or not decided yet."""
+        now = time.monotonic()
+        if now - self.room.heard < SOCKET_FRESH:
+            return "socket"
+        return "" if now - self._opened < PAGE_WAIT else "page"
 
     def live_url(self):
         if not NAME_RE.match(self.channel):
@@ -428,6 +452,7 @@ class TikTokAdapter(chat.Adapter):
                                    ("Page.addScriptToEvaluateOnNewDocument", {"source": OBSERVER}),
                                    ("Page.navigate", {"url": url})):
                 cdp.send(method, params)
+            self._opened = time.monotonic()
             self._set("joined")
             self.log(f"chat: tiktok: reading @{self.channel}")
             tick = time.monotonic()
@@ -437,7 +462,7 @@ class TikTokAdapter(chat.Adapter):
                     self._event(msg.get("method"), msg.get("params") or {})
                 if time.monotonic() - tick >= 1:
                     tick = time.monotonic()
-                    self._gifts(self.room.due())
+                    self._room_events(self.room.due())
         except OSError as exc:
             if not self._stop.is_set():
                 closed = "closed" in str(exc).lower() or "refused" in str(exc).lower()
@@ -506,14 +531,27 @@ class TikTokAdapter(chat.Adapter):
             self.room.closed(params.get("requestId"))
         elif method == "Network.webSocketFrameReceived":
             r = params.get("response") or {}
-            self._gifts(self.room.frame(params.get("requestId"), r.get("opcode"), r.get("payloadData") or ""))
+            self._room_events(self.room.frame(params.get("requestId"), r.get("opcode"), r.get("payloadData") or ""))
 
-    def _gifts(self, finished):
+    def _room_events(self, events):
+        """Chat lines and finished gifts from the room socket.
+
+        A line's sender comes with their @handle, which TikTok sets and nobody
+        can copy - so the streamer's own lines are the broadcaster's, found by
+        handle, and a viewer who copies the streamer's display name is still
+        nobody. A moderator is TikTok's own flag for this room (webcast.chat)."""
         post = type(self).on_gift
-        for g in finished:
+        for e in events:
+            if e["kind"] == "chat":
+                msg = to_message(self.channel, {"name": e["user"], "login": e["handle"], "text": e["text"],
+                                                "role": "moderator" if e["mod"] else ""})
+                if msg:
+                    self.messages += 1
+                    self.on_message(msg)
+                continue
             # Names are chat, and chat is text (chat.inert): no control or
             # direction characters onto the stream.
-            g = dict(g, user=chat.inert(g["user"])[:40] or "Someone", gift=chat.inert(g["gift"])[:40] or "a gift")
+            g = dict(e, user=chat.inert(e["user"])[:40] or "Someone", gift=chat.inert(e["gift"])[:40] or "a gift")
             if post:
                 try:
                     post(g)
@@ -533,6 +571,8 @@ class TikTokAdapter(chat.Adapter):
                          "path": str(p.get("path") or "")[:120]}
             return
         if p.get("t") == "chat":
+            if self._chat_from() != "page":
+                return               # the room socket is the source (PAGE_WAIT, SOCKET_FRESH)
             msg = to_message(self.channel, p)
             if msg:
                 self.messages += 1

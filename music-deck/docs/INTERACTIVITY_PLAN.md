@@ -192,6 +192,16 @@ its own port now - and checked on a real live with the reader itself: 45 chat
 lines, TikTok's room socket, and a real gift. `tools/ui/ttrealreader.py` is
 that check, and the one to run if chat ever stops arriving.
 
+**And you, found by your @handle (2026-09-15).** Chat now comes from TikTok's
+room socket, where every line carries the sender's @handle - which TikTok sets
+and nobody can copy. So your own lines count as you, and broadcaster-only
+commands work from TikTok chat; a viewer who copies your display name is still
+nobody; and a moderator is TikTok's own flag for your room. The page's drawing
+is only the fallback now, for if the socket ever stops being heard - and it
+had its own fault, found by comparing the two: it read every line as the name
+and the words together, so a command typed in TikTok chat could never have run.
+Fixed as well.
+
 ### T5. TikTok chat, through the pipeline that exists
 
 Once T4 has a source, this is one `Adapter` subclass: translate a comment into
@@ -249,9 +259,7 @@ TikTok's room socket is read - never its messaging socket, which on a signed-in
 page carries your private messages. Checked on a real live with the reader as it
 ships: the room socket found, 147 messages decoded and none bad, and a real gift
 posted (Heart Me, 1 coin). Still to come: the sender's picture (a gift shows
-their initial for now), and chat from the same socket, where every line carries
-the sender's @handle - which would let the app tell your own messages from a
-viewer who copies your display name.
+their initial for now). Chat from the same socket came next - see the end of T4.
 
 ### T7. Text to speech, for followers
 

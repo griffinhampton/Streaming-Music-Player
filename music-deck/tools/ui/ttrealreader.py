@@ -61,7 +61,8 @@ def main():
             time.sleep(10)
         st, r = a.status(), a.room
         report = {"state": st["state"], "failed": bool(st["error"]), "chatListFound": st["page"]["room"],
-                  "signedIn": st["page"]["signed_in"], "roomSocket": st["page"]["socket"], "chatLines": lines[0],
+                  "signedIn": st["page"]["signed_in"], "roomSocket": st["page"]["socket"],
+                  "chatFrom": st["page"]["chat_from"], "chatLines": lines[0],
                   "framesDecoded": r.frames, "framesBad": r.bad, "seconds": round(time.monotonic() - t0),
                   "gifts": [{"gift": g["gift"], "count": g["count"], "coins": g["coins"]} for g in gifts]}
     finally:
@@ -70,8 +71,8 @@ def main():
         shutil.rmtree(profile, ignore_errors=True)
     print(json.dumps(report))
     ok = report["roomSocket"] and report["framesDecoded"] > 0 and report["framesBad"] == 0 and \
-        (report["chatLines"] > 0 or report["gifts"])
-    print("the reader reads this live: the room socket, and chat or a gift" if ok
+        report["chatFrom"] == "socket" and (report["chatLines"] > 0 or report["gifts"])
+    print("the reader reads this live: chat from the room socket, and chat or a gift" if ok
           else "the reader does NOT read this live - the numbers above say which part")
     return 0 if ok else 1
 

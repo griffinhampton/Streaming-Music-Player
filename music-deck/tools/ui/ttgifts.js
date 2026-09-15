@@ -98,6 +98,10 @@ const push = (msgs, o = {}) => {
     B(8, o.gzip === false ? body : zlib.gzipSync(body)));
 };
 const G = (o) => push([wrap('WebcastGiftMessage', giftMsg(o), o)], o);
+// A chat line: sender (2), words (3), TikTok's identity flags (18; 5 = moderator).
+const chatMsg = (o) => M(B(2, o.from), B(3, o.text), o.flags ? B(18, M(...o.flags.map((f) => I(f, 1)))) : null);
+const C = (o) => push([wrap('WebcastChatMessage', chatMsg(o), o)], o);
+const ops = [];
 
 /* ---- the fixture: a live page with two sockets, and the server end of both. */
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture live</title></head><body>
@@ -111,8 +115,25 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   const other = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/ws/v2?x=1');
   room.binaryType = other.binaryType = 'arraybuffer';
   other.onmessage = () => other.send('got it');
+  // And the page drawing chat lines, as TikTok's does, in the real shape -
+  // which the reader must not also send while the room socket is heard.
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const list = document.querySelector('[data-e2e="live-chat-container"] .list');
+  function draw(o) {
+    const d = document.createElement('div'); d.setAttribute('data-index', String(o.index));
+    d.innerHTML = '<div data-e2e="chat-message"><div class="w-full break-words"><div><div>' +
+      '<div data-e2e="message-owner-name">' + esc(o.name) + '</div></div></div>' +
+      '<div class="w-full break-words">' + esc(o.text) + '</div></div></div>';
+    list.appendChild(d);
+  }
+  let at = 0;
+  (async function tick() {
+    try { const all = await (await fetch('/ops')).json(); for (; at < all.length; at++) draw(all[at]); } catch (_) {}
+    setTimeout(tick, 250);
+  })();
 </script></body></html>`;
 const fixture = http.createServer((req, res) => {
+  if (req.url === '/ops') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J(ops)); return; }
   if (/^\/@[a-z0-9._]+\/live/.test(req.url)) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(FIXTURE); return; }
   res.writeHead(404); res.end();
 });
@@ -154,6 +175,12 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     guard.ok === false && guard.refused === true, J(guard));
   if (!(guard.ok === false && guard.refused === true)) { console.log('\nnot a guarded rig - stopping'); process.exit(1); }
 
+  const before = (await getJ('/api/config')).commands || {};
+  await post('/api/commands/save', { commands: [
+    { name: 'hello', action: 'say', response: 'hi {user}' },
+    { name: 'modonly', action: 'say', role: 'mod', response: 'ok' },
+    { name: 'mine', action: 'say', role: 'broadcaster', response: 'yours' },
+  ], symbol: '!', budget: { count: 5, seconds: 0 } });
   await new Promise((r) => fixture.listen(FIXTURE_PORT, '127.0.0.1', r));
   const pointed = await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}` });
   check('the rig points its reader at the fixture', pointed.ok, J(pointed));
@@ -258,6 +285,36 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('nothing was thrown on the stream page', stage.errors.length === 0, stage.errors.slice(0, 2).join(' | '));
   await closePage(stage);
 
+  // ------------------------------------------ 7. chat from the room socket
+  const chatNow = async () => ((await getJ('/api/chat/recent?n=300')).messages || []).filter((m) => m.service === 'tiktok');
+  const logNow = async () => (await getJ('/api/commands/recent?n=300')).log || [];
+  const log0 = (await logNow()).length;
+  toRoom(C({ from: user(201, 'Whatever I Call Myself', 'probe'), text: '!mine' }));
+  toRoom(C({ from: user(202, 'probe', 'copycat'), text: '!mine' }));
+  toRoom(C({ from: user(203, 'ModMo', 'modmo'), text: '!modonly', flags: [1, 2, 3, 4, 5] }));
+  toRoom(C({ from: user(204, 'Plain', 'plain'), text: '!modonly', flags: [1, 2, 3, 4] }));
+  toRoom(C({ from: user(205, 'Old', 'old'), text: '!hello', history: true }));
+  // The page draws the host's line too, as TikTok's does, and a line of its own.
+  ops.push({ index: 40, name: 'Whatever I Call Myself', text: '!mine' });
+  ops.push({ index: 41, name: 'DrawnOnly', text: 'only on the page' });
+  await sleep(3000);
+  const lines = await chatNow();
+  const host = lines.filter((m) => m.user.name === 'Whatever I Call Myself');
+  check('a chat line from the room socket arrives, with the sender\'s @handle as their login',
+    host.length >= 1 && host[0].user.login === 'probe' && host[0].text === '!mine', J(host));
+  check('and only once - the page\'s drawing of the same line is not sent too', host.length === 1, String(host.length));
+  check('a line only the page drew is not sent while the room socket is heard', !lines.some((m) => m.user.name === 'DrawnOnly'));
+  const log = (await logNow()).slice(log0);
+  const out = (who, cmd) => (log.find((e) => e.user === who && e.command === cmd) || {}).outcome;
+  check('the streamer, found by @handle, runs a broadcaster-only command', out('Whatever I Call Myself', 'mine') === 'ran',
+    J(log.map((e) => [e.user, e.command, e.outcome])));
+  check('a viewer with the streamer\'s display name and another handle is nobody (the control)', out('probe', 'mine') === 'denied');
+  check('a moderator, by TikTok\'s own flag, runs a mod-only command', out('ModMo', 'modonly') === 'ran');
+  check('a follower, gift-giver and subscriber without it does not (the control)', out('Plain', 'modonly') === 'denied');
+  check('a line from before the page joined is not replayed', !lines.some((m) => m.user.name === 'Old') && !out('Old', 'hello'));
+  st = await tiktokStatus();
+  check('the reader says chat is coming from the room socket', st && st.page && st.page.chat_from === 'socket', J(st && st.page));
+
   // ------------------------------------------------------------ 7. stop
   await post('/api/chat/disconnect', { service: 'tiktok' });
   await sleep(3000);
@@ -267,6 +324,9 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   await post('/api/debug/tiktok-page', { base: '' });
   await post('/api/live/scene', { id: '' });
   await post(`/api/scenes/${sc.id}/delete`, {});
+  await post('/api/commands/save', {
+    commands: before.list || [], symbol: before.symbol || '!', budget: before.budget || { count: 5, seconds: 30 },
+  });
   sockets.room.concat(sockets.other).forEach((s) => s.destroy());
   fixture.close();
 

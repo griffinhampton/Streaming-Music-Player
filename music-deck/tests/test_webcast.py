@@ -70,6 +70,15 @@ def gift_frame(history=False, mid=None, **kw):
     return push([wrap(webcast.GIFT, gift_payload(**kw), history=history, mid=mid)])
 
 
+def chat_payload(text="hello", frm=AMY, flags=()):
+    """A WebcastChatMessage: sender (2), words (3), identity flags (18)."""
+    return M(B(1, M(B(1, webcast.CHAT))), B(2, frm), B(3, text), B(18, M(*[I(f, 1) for f in flags])) if flags else b"")
+
+
+def chat_frame(history=False, mid=None, **kw):
+    return push([wrap(webcast.CHAT, chat_payload(**kw), history=history, mid=mid)])
+
+
 def b64(raw):
     return base64.b64encode(raw).decode()
 
@@ -104,7 +113,7 @@ class TheWire(unittest.TestCase):
         would end the reader."""
         rnd = random.Random(1509)
         good = gift_frame(count=3, end=True)
-        plain = push([wrap(webcast.GIFT, gift_payload())], gz=False)
+        plain = push([wrap(webcast.GIFT, gift_payload()), wrap(webcast.CHAT, chat_payload(flags=(4, 5)))], gz=False)
         for i in range(3000):
             if i % 3 == 0:
                 raw = bytes(rnd.randrange(256) for _ in range(rnd.randrange(80)))
@@ -117,6 +126,8 @@ class TheWire(unittest.TestCase):
                 for method, payload, _mid, _history in webcast.messages(raw):
                     if method == webcast.GIFT:
                         webcast.gift(payload)
+                    if method == webcast.CHAT:
+                        webcast.chat(payload)
             except webcast.Bad:
                 pass
 
@@ -247,7 +258,7 @@ class TheRoom(unittest.TestCase):
 
     def test_a_gift_on_the_room_socket_arrives_as_post_gift_takes_it(self):
         out = self.room().frame("1", 2, b64(gift_frame(streak=False, coins=5)))
-        self.assertEqual(out, [{"user": "Amy", "handle": "amy", "gift": "Rose", "count": 1, "coins": 5}])
+        self.assertEqual(out, [{"kind": "gift", "user": "Amy", "handle": "amy", "gift": "Rose", "count": 1, "coins": 5}])
 
     def test_the_other_sockets_are_never_read(self):
         """The control. im-ws is TikTok's messaging socket: on a signed-in
@@ -288,6 +299,59 @@ class TheRoom(unittest.TestCase):
         r = self.room()
         r.closed("1")
         self.assertEqual(r.frame("1", 2, b64(gift_frame(streak=False))), [])
+
+
+class TheChat(unittest.TestCase):
+    """Chat from the room socket: the words exactly, and the sender's @handle."""
+
+    def room(self):
+        r = webcast.Room("probe", clock=Clock())
+        r.opened("1", TheRoom.WS)
+        r.opened("2", TheRoom.DM)
+        return r
+
+    def test_a_line_arrives_with_its_handle(self):
+        out = self.room().frame("1", 2, b64(chat_frame(text="!hello there")))
+        self.assertEqual(out, [{"kind": "chat", "user": "Amy", "handle": "amy", "text": "!hello there", "mod": False}])
+
+    def test_a_moderator_is_flag_5_and_nothing_else(self):
+        """Checked on real lives: 5 was on the one line the page drew a
+        moderator badge on, and on none of the others. 1-4 are gift-giver,
+        subscriber, mutual follow and follower by the community's definitions
+        - and none of them is taken for a role."""
+        r = self.room()
+        self.assertTrue(r.frame("1", 2, b64(chat_frame(flags=(1, 2, 3, 4, 5))))[0]["mod"])
+        for flags in ((1, 2, 3, 4), (4,), (6,), ()):
+            self.assertFalse(r.frame("1", 2, b64(chat_frame(flags=flags)))[0]["mod"], flags)
+
+    def test_history_is_not_replayed(self):
+        """The backlog: what was said before the page joined, flagged by TikTok."""
+        self.assertEqual(self.room().frame("1", 2, b64(chat_frame(history=True))), [])
+
+    def test_the_same_line_twice_is_one(self):
+        r = self.room()
+        frame = b64(chat_frame(mid=77))
+        self.assertEqual(len(r.frame("1", 2, frame) + r.frame("1", 2, frame)), 1)
+
+    def test_an_empty_line_is_nothing(self):
+        self.assertEqual(self.room().frame("1", 2, b64(chat_frame(text="   "))), [])
+
+    def test_chat_on_the_other_sockets_is_never_read(self):
+        r = self.room()
+        self.assertEqual(r.frame("2", 2, b64(chat_frame())), [])
+        self.assertEqual(r.chats, 0)
+
+    def test_heard_is_when_the_room_socket_last_opened_or_spoke(self):
+        clock = Clock()
+        r = webcast.Room("probe", clock=clock)
+        self.assertEqual(r.heard, float("-inf"))
+        r.opened("9", "wss://evil.example/webcast/im/")
+        self.assertEqual(r.heard, float("-inf"))
+        r.opened("1", TheRoom.WS)
+        self.assertEqual(r.heard, 1000.0)
+        clock.t = 1050.0
+        r.frame("1", 2, b64(chat_frame()))
+        self.assertEqual((r.heard, r.chats), (1050.0, 1))
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ MAX_INFLATED = 4 * 1024 * 1024
 MAX_B64 = 8 * 1024 * 1024
 GZIP = bytes([0x1F, 0x8B])
 GIFT = "WebcastGiftMessage"
+CHAT = "WebcastChatMessage"
 HANDLE = re.compile(r"^[a-z0-9._]{2,24}$")
 _HOST = re.compile(r"webcast[a-z0-9-]*(\.[a-z0-9-]+)*\.tiktok\.com")
 
@@ -171,6 +172,20 @@ def gift(payload):
             "user": user(_bytes(fs, 7)), "to": user(to)["handle"] if to else ""}
 
 
+def chat(payload):
+    """A WebcastChatMessage: the sender (2), the words (3), and what TikTok
+    says about the sender in this room (18). Of those flags only one is used:
+    5, a moderator of this room. Checked against the page on real lives: the
+    one flag on every line the page drew a moderator badge on, and on none of
+    the others. The rest - 1, 2, 3, 4, which the community's definitions call
+    gift-giver, subscriber, mutual follow and follower - are not used: the page
+    never showed a subscriber badge to check 2 against, and a role nobody has
+    checked is not one to hand out."""
+    fs = fields(payload)
+    ident = fields(_bytes(fs, 18))
+    return {"user": user(_bytes(fs, 2)), "text": _text(fs, 3, 500), "mod": _int(ident, 5) == 1}
+
+
 def is_webcast(url, allow_local=False):
     """The one socket whose frames are read: TikTok's webcast room socket,
     wss://webcast...tiktok.com/webcast/im/... Every other socket on the page
@@ -284,30 +299,38 @@ class Seen:
 # ------------------------------------------------------------ one page
 
 class Room:
-    """One live page's webcast traffic, in; finished gifts, out. Fed by the
-    reader's DevTools events: which sockets are TikTok's room socket, and the
-    frames they receive."""
+    """One live page's webcast traffic, in; chat lines and finished gifts, out.
+    Fed by the reader's DevTools events: which sockets are TikTok's room
+    socket, and the frames they receive. `heard` is when the room socket last
+    opened or delivered, which is how the reader knows the page's own drawing
+    of the chat is not needed."""
 
     def __init__(self, channel, allow_local=False, clock=time.monotonic):
         self.channel = channel
         self.allow_local = allow_local
+        self.clock = clock
         self.sockets = set()
         self.seen = Seen()
         self.combos = Combos(clock)
         self.frames = 0
         self.bad = 0
         self.gifts = 0
+        self.chats = 0
+        self.heard = float("-inf")
 
     def opened(self, request_id, url):
         if request_id and is_webcast(url, self.allow_local):
             self.sockets.add(request_id)
+            self.heard = self.clock()
 
     def closed(self, request_id):
         self.sockets.discard(request_id)
 
     def frame(self, request_id, opcode, data):
-        """One frame the page received. Finished gifts, in the shape
-        server.py's post_gift takes; [] for everything else."""
+        """One frame the page received, as events: {"kind": "chat", ...} for
+        a line of chat, with the sender's @handle, and {"kind": "gift", ...}
+        for a finished gift, in the shape server.py's post_gift takes; [] for
+        everything else."""
         if request_id not in self.sockets or opcode != 2:
             return []
         if len(data) > MAX_B64:
@@ -319,11 +342,15 @@ class Room:
             self.bad += 1
             return []
         self.frames += 1
+        self.heard = self.clock()
         out = []
         for method, payload, mid, history in msgs:
-            if method != GIFT or history or not self.seen.first(mid):
+            if method not in (GIFT, CHAT) or history or not self.seen.first(mid):
                 continue
             try:
+                if method == CHAT:
+                    out += self._said(chat(payload))
+                    continue
                 g = gift(payload)
             except Bad:
                 self.bad += 1
@@ -331,17 +358,26 @@ class Room:
             # Sent to a guest on a shared live, not to this page's host.
             if not g or (g["to"] and g["to"] != self.channel):
                 continue
-            out += self.combos.add(g)
-        return self._done(out)
+            out += self._done(self.combos.add(g))
+        return out
 
     def due(self):
         return self._done(self.combos.due())
+
+    def _said(self, c):
+        text = c["text"].strip()
+        if not text:
+            return []
+        self.chats += 1
+        u = c["user"]
+        return [{"kind": "chat", "user": u["name"] or u["handle"] or "Someone", "handle": u["handle"],
+                 "text": text, "mod": c["mod"]}]
 
     def _done(self, finished):
         out = []
         for g in finished:
             self.gifts += 1
-            out.append({"user": g["user"]["name"] or g["user"]["handle"] or "Someone",
+            out.append({"kind": "gift", "user": g["user"]["name"] or g["user"]["handle"] or "Someone",
                         "handle": g["user"]["handle"], "gift": g["name"] or "a gift",
                         "count": g["count"], "coins": min(g["coins"] * g["count"], 1_000_000)})
         return out
