@@ -323,7 +323,16 @@ class TheChat(unittest.TestCase):
 
     def test_a_line_arrives_with_its_handle(self):
         out = self.room().frame("1", 2, b64(chat_frame(text="!hello there")))
-        self.assertEqual(out, [{"kind": "chat", "user": "Amy", "handle": "amy", "text": "!hello there", "mod": False}])
+        self.assertEqual(out, [{"kind": "chat", "user": "Amy", "handle": "amy", "text": "!hello there", "mod": False,
+                                "follower": False}])
+
+    def test_a_follower_is_flag_4_and_nothing_else(self):
+        """Checked on real lives: absent from the lines of people who had not
+        followed yet, and on every line after TikTok announced their follow."""
+        r = self.room()
+        self.assertTrue(r.frame("1", 2, b64(chat_frame(flags=(4,))))[0]["follower"])
+        for flags in ((1, 2, 3), (5,), (3,), ()):
+            self.assertFalse(r.frame("1", 2, b64(chat_frame(flags=flags)))[0]["follower"], flags)
 
     def test_a_moderator_is_flag_5_and_nothing_else(self):
         """Checked on real lives: 5 was on the one line the page drew a

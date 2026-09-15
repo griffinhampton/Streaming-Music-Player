@@ -732,6 +732,36 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Followers and up (2026-09-15)
+
+T7 was written as text to speech *for followers*, and could not be: nothing
+said who follows. TikTok's room socket does - identity flag 4 on each chat line
+(`webcast.chat`). It was checked on real lives before it was used, against
+TikTok's own follow announcements (`WebcastSocialMessage` with the
+`pm_main_follow_message_viewer_2` template and action 1; a share is another
+template and action 3). Across eight rooms, of the people who followed during
+the live, the four who had chatted before had flag 4 on none of those lines, and
+the three who chatted after had it on every one - the same people, before and
+after. Few, because a follow and a line of chat from the same person inside two
+minutes is rare; but it is the flag changing when the thing it names does,
+which is the check that counts, and a wrong answer here would only let a
+non-follower past a gate that still has the voice's own limits behind it.
+Gift-giver, flag 1, was on every line of all nine people who chatted after
+sending a gift, but it is not a rung: a gifter need not follow, and a ladder
+has no side doors.
+
+**The rung.** `follower` sits between everyone and subscriber in `commands.py`'s
+`ROLES`, for every command and every layer's own - so a Voice layer set to
+"Followers and up" is T7 as first written. Twitch chat carries no follow status
+at all, so on Twitch the same gate lets in subscribers and up: the side to be
+wrong on. Stored commands name their role rather than its place on the ladder,
+so the new rung moved nobody's.
+
+**Checked** in `tests/test_commands.py`, `tests/test_webcast.py` and
+`tests/test_tiktok_chat.py`, and on the rig by `tools/ui/ttgifts.js`: a follower
+runs a followers-only command, and a gift-giver and subscriber who does not
+follow does not.
+
 ## The gift sender's picture (2026-09-15)
 
 The last part of T6. A gift message names its sender's picture - a link to

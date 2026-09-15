@@ -111,6 +111,9 @@ function makePng(size) {
 }
 const PIC = makePng(96);
 const picHits = [];
+// A picture path of this run's own: the rig keeps its picture cache between
+// runs, so a path used before is (rightly) never fetched again.
+const FACE = `/pic/face-${process.pid}-${Date.now()}.png`;
 const giftMsg = (o) => M(
   I(2, o.gid || 5655), I(5, o.count || 1), B(7, o.from),
   o.to ? B(8, o.to) : null, o.end ? I(9, 1) : null, o.group ? I(11, o.group) : null,
@@ -166,7 +169,7 @@ const fixture = http.createServer((req, res) => {
     picHits.push(p);
     if (p === '/pic/r.png') { res.writeHead(302, { Location: '/pic/redirected.png' }); res.end(); return; }
     if (p === '/pic/page.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end('<html>not a picture</html>'); return; }
-    if (p === '/pic/face.png' || p === '/pic/redirected.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(PIC); return; }
+    if (p.startsWith('/pic/face') || p === '/pic/redirected.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(PIC); return; }
   }
   if (/^\/@[a-z0-9._]+\/live/.test(req.url)) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(FIXTURE); return; }
   res.writeHead(404); res.end();
@@ -214,6 +217,7 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     { name: 'hello', action: 'say', response: 'hi {user}' },
     { name: 'modonly', action: 'say', role: 'mod', response: 'ok' },
     { name: 'mine', action: 'say', role: 'broadcaster', response: 'yours' },
+    { name: 'fans', action: 'say', role: 'follower', response: 'thanks for following' },
   ], symbol: '!', budget: { count: 5, seconds: 0 } });
   await new Promise((r) => fixture.listen(FIXTURE_PORT, '127.0.0.1', r));
   const pointed = await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}` });
@@ -328,6 +332,8 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   toRoom(C({ from: user(203, 'ModMo', 'modmo'), text: '!modonly', flags: [1, 2, 3, 4, 5] }));
   toRoom(C({ from: user(204, 'Plain', 'plain'), text: '!modonly', flags: [1, 2, 3, 4] }));
   toRoom(C({ from: user(205, 'Old', 'old'), text: '!hello', history: true }));
+  toRoom(C({ from: user(206, 'Fan', 'fan'), text: '!fans', flags: [4] }));
+  toRoom(C({ from: user(207, 'NotFan', 'notfan'), text: '!fans', flags: [1, 2, 3] }));
   // The page draws the host's line too, as TikTok's does, and a line of its own.
   ops.push({ index: 40, name: 'Whatever I Call Myself', text: '!mine' });
   ops.push({ index: 41, name: 'DrawnOnly', text: 'only on the page' });
@@ -346,6 +352,8 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('a moderator, by TikTok\'s own flag, runs a mod-only command', out('ModMo', 'modonly') === 'ran');
   check('a follower, gift-giver and subscriber without it does not (the control)', out('Plain', 'modonly') === 'denied');
   check('a line from before the page joined is not replayed', !lines.some((m) => m.user.name === 'Old') && !out('Old', 'hello'));
+  check('a follower, by TikTok\'s own flag, runs a followers-only command', out('Fan', 'fans') === 'ran');
+  check('a gift-giver and subscriber who does not follow does not (the control)', out('NotFan', 'fans') === 'denied');
   st = await tiktokStatus();
   check('the reader says chat is coming from the room socket', st && st.page && st.page.chat_from === 'socket', J(st && st.page));
 
@@ -358,7 +366,7 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   await stage2.send('Page.bringToFront');
   await sleep(2500);
   picHits.length = 0;
-  toRoom(G({ from: user(301, 'Pixie', 'pixie', [`${P}/face.png?x-expires=1&x-signature=a`]), streak: false }));
+  toRoom(G({ from: user(301, 'Pixie', 'pixie', [`http://127.0.0.1:${FIXTURE_PORT}${FACE}?x-expires=1&x-signature=a`]), streak: false }));
   let face = null;
   for (let i = 0; i < 50 && !(face && face.w); i++) {
     face = await stage2.ev(`(() => { const el = document.querySelector('[data-id="gift"]');
@@ -370,9 +378,9 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('the sender\'s picture is on the coin, loaded from this app', face && /^\/avatar\/[0-9a-f]{16}\.png$/.test(face.src) && face.w === 96, J(face));
   const px = (await from('Pixie'))[0];
   check('the gift carries a local address for it, never TikTok\'s link', px && /^\/avatar\/[0-9a-f]{16}\.png$/.test(px.detail.avatar), J(px && px.detail));
-  toRoom(G({ from: user(301, 'Pixie', 'pixie', [`${P}/face.png?x-expires=2&x-signature=b`]), streak: false, gid: 5656, name: 'Heart' }));
+  toRoom(G({ from: user(301, 'Pixie', 'pixie', [`http://127.0.0.1:${FIXTURE_PORT}${FACE}?x-expires=2&x-signature=b`]), streak: false, gid: 5656, name: 'Heart' }));
   await sleep(2500);
-  check('the same picture under a newly signed link is fetched once, not again', picHits.filter((h) => h === '/pic/face.png').length === 1, J(picHits));
+  check('the same picture under a newly signed link is fetched once, not again', picHits.filter((h) => h === FACE).length === 1, J(picHits));
   toRoom(G({ from: user(302, 'Redi', 'redi', [`${P}/r.png`]), streak: false }));
   toRoom(G({ from: user(303, 'Pagey', 'pagey', [`${P}/page.png`]), streak: false }));
   toRoom(G({ from: user(304, 'Faraway', 'faraway', ['https://example.com/face.png']), streak: false }));

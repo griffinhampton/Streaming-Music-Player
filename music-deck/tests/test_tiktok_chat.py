@@ -255,8 +255,16 @@ class WhatItMayDoInThePage(unittest.TestCase):
         from test_webcast import chat_frame, user
         a, got, say = self.socket_adapter()
         say(chat_frame(text="hi", frm=user(3, "Mo", "mo"), flags=(1, 2, 3, 4, 5)))
-        say(chat_frame(text="hi", frm=user(4, "Su", "su"), flags=(1, 2, 3, 4)))
+        say(chat_frame(text="hi", frm=user(4, "Su", "su"), flags=(1, 2, 3)))
         self.assertEqual([chat_rank(m) for m in got], ["mod", "everyone"])
+
+    def test_a_follower_by_tiktoks_own_flag(self):
+        from test_webcast import chat_frame, user
+        a, got, say = self.socket_adapter()
+        say(chat_frame(text="hi", frm=user(5, "Fan", "fan"), flags=(4,)))
+        say(chat_frame(text="hi", frm=user(6, "Gifter", "gifter"), flags=(1, 2, 3)))
+        say(chat_frame(text="hi", frm=user(7, "ModFan", "modfan"), flags=(4, 5)))
+        self.assertEqual([chat_rank(m) for m in got], ["follower", "everyone", "mod"])
 
     def test_the_pages_drawing_is_only_the_fallback(self):
         """Chat comes from the room socket. The page's own drawing is used only

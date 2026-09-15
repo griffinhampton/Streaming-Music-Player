@@ -27,7 +27,7 @@ const CmdPanel = (() => {
   const getJSON = (url) => fetch(url, { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
 
   let el = null, anchor = null, timer = null;
-  let roles = ['everyone', 'subscriber', 'vip', 'mod', 'broadcaster'];
+  let roles = ['everyone', 'follower', 'subscriber', 'vip', 'mod', 'broadcaster'];
   let actions = ['say', 'scene'];
   let rows = [];              // what is on screen, saved or not
   // What starts a command, as the server last accepted it. Every label here

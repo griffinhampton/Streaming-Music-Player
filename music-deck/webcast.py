@@ -187,16 +187,20 @@ def gift(payload):
 
 def chat(payload):
     """A WebcastChatMessage: the sender (2), the words (3), and what TikTok
-    says about the sender in this room (18). Of those flags only one is used:
-    5, a moderator of this room. Checked against the page on real lives: the
-    one flag on every line the page drew a moderator badge on, and on none of
-    the others. The rest - 1, 2, 3, 4, which the community's definitions call
-    gift-giver, subscriber, mutual follow and follower - are not used: the page
-    never showed a subscriber badge to check 2 against, and a role nobody has
-    checked is not one to hand out."""
+    says about the sender in this room (18). Two of those flags are used, each
+    checked on real lives before it was:
+      5 - a moderator of this room: on the line the page drew a moderator
+          badge on, and on none of about a hundred others.
+      4 - follows the streamer: absent from every line of people who had not
+          yet followed, and on every line after they followed, the same
+          people, lined up against TikTok's own follow announcement.
+    The rest - 1, 2, 3, gift-giver, subscriber and mutual follow by the
+    community's definitions - are not used. 2 was never there to check, and a
+    role nobody has checked is not one to hand out."""
     fs = fields(payload)
     ident = fields(_bytes(fs, 18))
-    return {"user": user(_bytes(fs, 2)), "text": _text(fs, 3, 500), "mod": _int(ident, 5) == 1}
+    return {"user": user(_bytes(fs, 2)), "text": _text(fs, 3, 500), "mod": _int(ident, 5) == 1,
+            "follower": _int(ident, 4) == 1}
 
 
 def is_webcast(url, allow_local=False):
@@ -384,7 +388,7 @@ class Room:
         self.chats += 1
         u = c["user"]
         return [{"kind": "chat", "user": u["name"] or u["handle"] or "Someone", "handle": u["handle"],
-                 "text": text, "mod": c["mod"]}]
+                 "text": text, "mod": c["mod"], "follower": c["follower"]}]
 
     def _done(self, finished):
         out = []

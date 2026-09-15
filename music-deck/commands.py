@@ -44,14 +44,17 @@ LOG_KEEP = 300              # what the Live view can look back over
 NAME_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]{0,31}$")
 MAX_RESPONSE = 400
 
-# The ladder. Anything at or above the gate may run the command.
-ROLES = ("everyone", "subscriber", "vip", "mod", "broadcaster")
+# The ladder. Anything at or above the gate may run the command. "follower" is
+# TikTok's: its room socket says who follows the streamer (webcast.chat, checked
+# on real lives). Twitch chat carries no follow status at all, so there a
+# followers-only command lets in subscribers and up - the safe way round.
+ROLES = ("everyone", "follower", "subscriber", "vip", "mod", "broadcaster")
 RANK = {name: i for i, name in enumerate(ROLES)}
 
-# Twitch's badge names, mapped onto it. A founder is an early subscriber, so it
-# would be wrong to leave them below one.
+# Badge names, mapped onto it: Twitch's, and "follower" from the TikTok reader.
+# A founder is an early subscriber, so it would be wrong to leave them below one.
 BADGE_ROLE = {"broadcaster": "broadcaster", "moderator": "mod", "vip": "vip",
-              "subscriber": "subscriber", "founder": "subscriber"}
+              "subscriber": "subscriber", "founder": "subscriber", "follower": "follower"}
 
 ACTIONS = ("say", "scene", "queue", "poll", "gif", "sound", "stop")
 

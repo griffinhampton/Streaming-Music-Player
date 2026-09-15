@@ -271,8 +271,11 @@ child process, JSON lines in, audio out of the PC's speakers, which the stream
 already captures. No model download, no network, and it is the same shape the
 captions bridge proved.
 
-"Following" has to come from the same event source as T4; until then the gate
-falls back to "anyone" or "gifters only", which need no follower list.
+"Following" has to come from the same event source as T4. **It does now
+(2026-09-15):** TikTok's room socket says who follows you, so a Voice layer's
+"Who may run it" can be **Followers and up** - checked on real lives against
+TikTok's own follow announcements before it was used. On Twitch, whose chat
+never says who follows, that setting lets in subscribers and up.
 
 TTS reads viewer-written text aloud, so it ships with the abuse controls in the
 same step, not after: a length cap, a rate limit per user, a queue with a

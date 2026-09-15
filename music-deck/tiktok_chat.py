@@ -377,6 +377,8 @@ def to_message(channel, p):
         badges.append("moderator/1")
     elif role == "subscriber":
         badges.append("subscriber/1")
+    elif role == "follower":
+        badges.append("follower/1")
     return chat.message("tiktok", channel, text, user={"id": login, "login": login, "name": name}, badges=badges)
 
 
@@ -539,12 +541,14 @@ class TikTokAdapter(chat.Adapter):
         A line's sender comes with their @handle, which TikTok sets and nobody
         can copy - so the streamer's own lines are the broadcaster's, found by
         handle, and a viewer who copies the streamer's display name is still
-        nobody. A moderator is TikTok's own flag for this room (webcast.chat)."""
+        nobody. A moderator and a follower are TikTok's own flags for this room
+        (webcast.chat)."""
         post = type(self).on_gift
         for e in events:
             if e["kind"] == "chat":
+                role = "moderator" if e["mod"] else "follower" if e.get("follower") else ""
                 msg = to_message(self.channel, {"name": e["user"], "login": e["handle"], "text": e["text"],
-                                                "role": "moderator" if e["mod"] else ""})
+                                                "role": role})
                 if msg:
                     self.messages += 1
                     self.on_message(msg)

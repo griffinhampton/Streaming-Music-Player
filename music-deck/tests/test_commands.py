@@ -32,6 +32,13 @@ class Ladder(unittest.TestCase):
         self.assertEqual(commands.rank_of(["moderator/1"]), commands.RANK["mod"])
         self.assertEqual(commands.rank_of(["broadcaster/1"]), commands.RANK["broadcaster"])
 
+    def test_a_follower_sits_between_everyone_and_a_subscriber(self):
+        """TikTok's reader says who follows (webcast.chat); Twitch never does,
+        so on Twitch a followers-only gate lets in subscribers and up."""
+        self.assertEqual(commands.rank_of(["follower/1"]), commands.RANK["follower"])
+        self.assertLess(commands.RANK["everyone"], commands.RANK["follower"])
+        self.assertLess(commands.RANK["follower"], commands.RANK["subscriber"])
+
     def test_a_founder_is_not_left_below_a_subscriber(self):
         self.assertEqual(commands.rank_of(["founder/0"]), commands.RANK["subscriber"])
 
@@ -119,6 +126,13 @@ class Running(unittest.TestCase):
     def test_a_mod_passes_a_subscriber_gate(self):
         self.eng.load([{"name": "subs", "action": "say", "role": "subscriber", "response": "x"}])
         self.assertEqual(self.eng.handle(msg("!subs", badges=["moderator/1"]))["outcome"], "ran")
+
+    def test_a_followers_gate(self):
+        """The rung TikTok's follower flag reaches - and everything above it."""
+        self.eng.load([{"name": "fans", "action": "say", "role": "follower", "response": "x"}])
+        self.assertEqual(self.eng.handle(msg("!fans", login="amy"))["outcome"], "denied")
+        self.assertEqual(self.eng.handle(msg("!fans", badges=["follower/1"], login="bob"))["outcome"], "ran")
+        self.assertEqual(self.eng.handle(msg("!fans", badges=["subscriber/1"], login="cy"))["outcome"], "ran")
 
     def test_the_command_cooldown_holds_for_everyone(self):
         self.assertEqual(self.eng.handle(msg("!slow", login="amy"))["outcome"], "ran")
