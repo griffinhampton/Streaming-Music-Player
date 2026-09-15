@@ -1044,7 +1044,12 @@ and on the rig: `tiktokchat.js` - the reader runs hidden, and stopping closes
 it within three seconds, which only the request to quit can do, since ending
 it waits five; `ttgifts.js` - moved on to another live, the hidden reader goes
 back to the streamer's own by itself and reads it again; the switch keeps the
-choice, the rig's stays hidden, and the reader starts again and reads.
+choice, the rig's stays hidden, and the reader starts again and reads. And on
+real lives with the reader as it now ships (`tools/ui/ttrealreader.py`, three
+public rooms, 90 seconds each, signed out): on the streamer's own page every
+time, the room socket found and 90 to 98 frames decoded with none bad, chat
+read from the socket where anyone chatted (3 and 5 lines; in one room nobody
+did), and after each stop no reader Chrome and no profile left behind.
 
 ## Followers and up (2026-09-15)
 
