@@ -93,7 +93,9 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
   .lv-col.lv-chat { grid-column: span 2; min-height: 320px; }
 }
 
-/* Who gifted the most coins this stream (gifts.py), under the coin tiles. */
-.lv-top { margin: 6px 0 2px; padding-left: 22px; font-size: 13px; color: var(--fg); }
-.lv-top li { margin: 2px 0; overflow-wrap: anywhere; }
-.lv-top:empty { display: none; }
+/* Who gifted the most coins this stream (gifts.py), under the coin tiles. Its
+   own class: it was .lv-top for a while, which is the page's top bar - and it
+   took the bar's flex row and border, running its lines together. */
+.lv-gifters { margin: 6px 0 2px; padding-left: 22px; font-size: 13px; color: var(--fg); }
+.lv-gifters li { margin: 2px 0; overflow-wrap: anywhere; }
+.lv-gifters:empty { display: none; }
