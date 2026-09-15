@@ -35,6 +35,9 @@ const ChatPanel = (() => {
   let ws = null, retry = null;
   let msgs = [];                         // newest last
   let blocked = [];                      // logins, from config.chat.blocked
+  // The channel each service last connected to, kept in config by the connect
+  // route - offered again rather than asked for every stream. Public names.
+  let saved = { twitch: '', tiktok: '' };
   const hidden = new Set();              // message ids, this session only
   let services = [];                     // from the state snapshot
   let paused = false, unseen = 0;
@@ -137,12 +140,12 @@ const ChatPanel = (() => {
     $('[data-cp="go"]').hidden = !!tw;
     $('[data-cp="stop"]').hidden = !tw;
     const input = $('[data-cp="channel"]');
-    if (tw && document.activeElement !== input && !input.value) input.value = tw.channel || '';
+    if (document.activeElement !== input && !input.value) input.value = (tw && tw.channel) || saved.twitch || '';
     const live = !!tt && tt.state !== 'failed';
     $('[data-cp="ttgo"]').hidden = live;
     $('[data-cp="ttstop"]').hidden = !live;
     const ti = $('[data-cp="ttname"]');
-    if (tt && document.activeElement !== ti && !ti.value) ti.value = tt.channel || '';
+    if (document.activeElement !== ti && !ti.value) ti.value = (tt && tt.channel) || saved.tiktok || '';
     const pg = (tt && tt.page) || {};
     // Signing in is optional: TikTok's page receives a live's chat and gifts
     // signed out too - every real live the reader was checked on was read
@@ -328,6 +331,8 @@ const ChatPanel = (() => {
     place();
     const cfg = await getJSON('/api/config');
     blocked = (((cfg || {}).chat || {}).blocked || []).filter((n) => typeof n === 'string');
+    const kept = (cfg || {}).chat || {};
+    saved = { twitch: String((kept.twitch || {}).channel || ''), tiktok: String((kept.tiktok || {}).channel || '') };
     const st = await getJSON('/api/chat/status');
     if (st) { services = st.services || []; setMention(); }
     paintState();

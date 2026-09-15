@@ -295,6 +295,13 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   await sleep(3000);
   check('stopping closes the reader\'s window', !(await readerAlive()));
   check('and the service is gone from the hub', (await tiktokStatus()) === null);
+  // The username is kept (config.chat.tiktok), so the panel offers it again
+  // next time rather than asking for it every stream.
+  const again = await openPage(`${RIG}/liveview.html`);
+  await sleep(3000);
+  const offered = await again.ev(`document.querySelector('#chatPanel [data-cp="ttname"]').value`);
+  check('next time, the panel offers the TikTok username it used', offered === 'probe', J(offered));
+  await closePage(again);
 
   // -------------------------------------------------- put the rig back as found
   await post('/api/debug/tiktok-page', { base: '' });

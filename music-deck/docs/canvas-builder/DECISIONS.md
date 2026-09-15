@@ -1096,8 +1096,10 @@ line carries the sender's @handle ("Chat from the room socket", above).
 timeout in the middle of one cannot put the stream out of step.
 
 **The chat panel** has a TikTok row beside Twitch's and a line saying what the
-window can see (`chatpanel.js:147`): signed in or not, the live page's chat
-found or not. That state rides the state feed (`chat.py:498`) - it changes when
+window can see (`chatpanel.js:156`): signed in or not, the live page's chat
+found or not. It offers the username last used - the connect route keeps each
+service's channel in config, and a handle is public - so the streamer does not
+type it every stream. That state rides the state feed (`chat.py`'s `snapshot`) - it changes when
 the user does something in the window, never per message, so it cannot turn
 into a broadcast per chat line.
 
