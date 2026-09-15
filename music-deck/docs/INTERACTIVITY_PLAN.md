@@ -273,7 +273,9 @@ for: Followers & gifters** in the Commands panel, chat commands work for the
 people who follow you on TikTok or have gifted you, and nobody else. And any
 command can have a price - "needs 100 coins gifted" in its row, or on a layer's
 own command such as the Voice layer's `!tts` - which your mods and you never
-pay.
+pay. And for your audience, two layers in the Add grid: **Coin goal**, a bar
+filling toward a number you choose, and **Top gifters**, who gave most - both
+counting from the Live view's last Reset.
 
 ### T7. Text to speech, for followers
 

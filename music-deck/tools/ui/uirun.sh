@@ -64,7 +64,7 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 RIGPORT=8799
 mkdir -p "$O/uishots"
 
-ALL="chatui onair onstream ctlgate scrollprobe inkcenter framelayer voicetrig soundpanel pickertest keyleak scenebeacon capcheck t1shot fxgif fxsound addpalette fxflood layercmd ttsprobe giftprobe tiktokchat ttgifts"
+ALL="chatui onair onstream ctlgate scrollprobe inkcenter framelayer voicetrig soundpanel pickertest keyleak scenebeacon capcheck t1shot fxgif fxsound addpalette fxflood layercmd ttsprobe giftprobe tiktokchat ttgifts coinlayers"
 
 run_one() {
   name="$1"
@@ -92,6 +92,7 @@ run_one() {
     giftprobe)   js="$N/giftprobe.js";          port=9400; extra="";           win=1600,900 ;;
     tiktokchat)  js="$N/tiktokchat.js";         port=9401; extra="";           win=1400,900 ;;
     ttgifts)     js="$N/ttgifts.js";            port=9402; extra="";           win=1400,900 ;;
+    coinlayers)  js="$N/coinlayers.js";         port=9403; extra="";           win=1600,900 ;;
     *) echo "unknown probe: '$name'"; echo "one of: $ALL"; return 2 ;;
   esac
 

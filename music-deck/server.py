@@ -2910,6 +2910,10 @@ class Handler(BaseHTTPRequestHandler):
             # preview. Real gifts arrive from TikTok (T6) through post_gift().
             if not TEST_RIG:
                 return self._json({"ok": False, "error": "test hook: the test rig only"}, 403)
+            # With a handle, as a TikTok gift comes: its coins go in the ledger
+            # first - tiktok_gift's order - so coin layers and gates see them.
+            if data.get("handle"):
+                LEDGER.record(data.get("handle"), data.get("user"), data.get("coins"), data.get("count", 1))
             ev = post_gift(data.get("user"), data.get("gift"), data.get("coins"),
                            data.get("count", 1), data.get("avatar", ""))
             return self._json({"ok": True, "event": ev})

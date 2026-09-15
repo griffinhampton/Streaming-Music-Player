@@ -1302,6 +1302,142 @@ TYPES.gift = {
   destroy(entry) { this.clear(entry); },
 };
 
+/* The coins gifted this stream, on stream (gifts.py's ledger): a goal bar, and
+   who gave most. Both draw /api/gifts/ledger - read when the layer appears,
+   again a moment after every gift that comes down the alert socket (declaring
+   alert() is what opens it for them), and every LEDGER_POLL_MS besides, so a
+   Reset in the Live view shows within seconds. One read serves every coin
+   layer on the page. Names are chatters': set as text, never as markup.
+   Neither holds an event, so Stop effects leaves them be (test_takedown.py). */
+const LEDGER_POLL_MS = 10000;
+const coinLayers = new Set();
+const coinsText = (n) => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString();
+let ledgerLast = null, ledgerSoon = 0, ledgerBusy = false;
+async function readLedger() {
+  if (ledgerBusy) return;
+  ledgerBusy = true;
+  try {
+    const r = await fetch('/api/gifts/ledger?top=10', { cache: 'no-store' });
+    if (r.ok) ledgerLast = await r.json();
+  } catch (_) { /* the next read */ }
+  ledgerBusy = false;
+  for (const entry of [...coinLayers]) {
+    // A layer taken out of the scene is retired without its destroy(); one
+    // that is no longer on the page leaves the set here, whichever way it went.
+    if (!entry.el.isConnected) { coinLayers.delete(entry); continue; }
+    if (TYPES[entry.type]) TYPES[entry.type].show(entry, ledgerLast);
+  }
+}
+function readLedgerSoon() {
+  clearTimeout(ledgerSoon);
+  ledgerSoon = setTimeout(readLedger, 300);        // a burst of gifts is one read
+}
+setInterval(() => { if (coinLayers.size) readLedger(); }, LEDGER_POLL_MS);
+function coinCard(entry, sel) {
+  const p = entry.layer.props || {};
+  const card = entry.el.querySelector(sel);
+  card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+  card.style.fontSize = px(Number(p.size) || 30);
+  card.style.color = p.color || '#ffffff';
+  card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+  card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+}
+
+TYPES.goal = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="goal-card"><div class="goal-head"><b class="goal-title"></b>' +
+      '<span class="goal-num"></span></div><div class="goal-track"><i></i></div></div>';
+    entry.reached = null;
+    coinLayers.add(entry);
+    this.update(entry);
+    if (!ledgerLast) readLedger();
+  },
+  /* The settings, with the same fallbacks the inspector shows (TYPE_DEFAULTS). */
+  opts(entry) {
+    const p = entry.layer.props || {};
+    const t = Math.floor(Number(p.target));
+    return { target: Number.isFinite(t) && t > 0 ? Math.min(t, 100000000) : 1000,
+             title: String(p.title ?? 'Coin goal'), done: String(p.done ?? 'Goal reached!') };
+  },
+  update(entry) {
+    coinLayers.add(entry);                          // back from hidden: it counts again
+    coinCard(entry, '.goal-card');
+    entry.el.style.setProperty('--goal-bar', (entry.layer.props || {}).bar || '#f5b50a');
+    this.show(entry, ledgerLast);
+  },
+  show(entry, d) {
+    const g = this.opts(entry);
+    const coins = Math.max(0, Math.floor(Number((d || {}).coins) || 0));
+    const reached = coins >= g.target;
+    entry.el.querySelector('.goal-title').textContent = reached && g.done ? g.done : g.title;
+    entry.el.querySelector('.goal-num').textContent = `${coinsText(coins)} / ${coinsText(g.target)}`;
+    entry.el.querySelector('.goal-track > i').style.width = `${Math.min(100, (coins / g.target) * 100)}%`;
+    entry.el.classList.toggle('reached', reached);
+    // A cheer the moment it is reached - once, and not on the first read of a
+    // goal that was already met when the page opened.
+    if (reached && entry.reached === false && !isUltra()) {
+      entry.el.classList.remove('cheer');
+      void entry.el.offsetWidth;                    // so the animation starts over
+      entry.el.classList.add('cheer');
+      clearTimeout(entry.cheerT);
+      entry.cheerT = setTimeout(() => entry.el.classList.remove('cheer'), 2400);
+    }
+    if (d) entry.reached = reached;
+  },
+  alert(entry, ev) { if (ev.kind === 'gift') readLedgerSoon(); },
+  destroy(entry) { coinLayers.delete(entry); clearTimeout(entry.cheerT); },
+};
+
+TYPES.topgifters = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="top-card"><b class="top-title"></b><ol class="top-rows"></ol></div>';
+    coinLayers.add(entry);
+    this.update(entry);
+    if (!ledgerLast) readLedger();
+  },
+  opts(entry) {
+    const p = entry.layer.props || {};
+    return { count: Math.max(1, Math.min(10, Math.round(Number(p.count) || 3))), title: String(p.title ?? 'Top gifters'),
+             showcoins: p.showcoins !== false, hideempty: p.hideempty !== false };
+  },
+  update(entry) {
+    coinLayers.add(entry);
+    coinCard(entry, '.top-card');
+    entry.el.style.setProperty('--top-accent', (entry.layer.props || {}).accent || '#f5b50a');
+    this.show(entry, ledgerLast);
+  },
+  show(entry, d) {
+    const g = this.opts(entry);
+    let top = ((d || {}).top || []).slice(0, g.count);
+    // In the editor an empty list would be nothing to style.
+    const sample = PREVIEW && !top.length;
+    if (sample) top = [{ name: 'Amy', coins: 1000 }, { name: 'Bob', coins: 500 }, { name: 'Cy', coins: 99 }].slice(0, g.count);
+    entry.el.querySelector('.top-title').textContent = g.title;
+    entry.el.querySelector('.top-rows').replaceChildren(...top.map((t, i) => {
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'top-n';
+      n.textContent = String(i + 1);
+      const who = document.createElement('span');
+      who.className = 'top-who';
+      who.textContent = t.name || t.handle || 'Someone';
+      li.append(n, who);
+      if (g.showcoins) {
+        const c = document.createElement('span');
+        c.className = 'top-coins';
+        c.textContent = coinsText(t.coins);
+        li.append(c);
+      }
+      return li;
+    }));
+    entry.el.classList.toggle('sample', sample);
+    entry.el.classList.toggle('empty', !top.length);
+    entry.el.classList.toggle('hide-empty', g.hideempty);
+  },
+  alert(entry, ev) { if (ev.kind === 'gift') readLedgerSoon(); },
+  destroy(entry) { coinLayers.delete(entry); },
+};
+
 /* Polls (S14): the bars people are voting on.
 
    The tally comes down the same alert socket S15 opened - which is why this

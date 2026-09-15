@@ -1022,6 +1022,15 @@ const ADD = [
     props: { mode: 'both', min: 0, only: '', target: '', seconds: 4, max: 5, max_objects: 30,
              object_size: 64, object: '', face: '', coin: 220,
              size: 28, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
+  // The coins gifted this stream (gifts.py's ledger), for the audience: a bar
+  // toward a goal, and who gave most. The props are what their opts() fall
+  // back to, so a layer from this grid looks the way the runtime would draw it.
+  { type: 'goal', label: 'Coin goal', sub: 'a bar filling with the coins gifted this stream', w: 900, h: 140,
+    props: { title: 'Coin goal', target: 1000, done: 'Goal reached!', size: 30, color: '#ffffff',
+             bg: 'rgba(0, 0, 0, .55)', bar: '#f5b50a', radius: 14 } },
+  { type: 'topgifters', label: 'Top gifters', sub: 'who gifted the most coins this stream', w: 520, h: 300,
+    props: { title: 'Top gifters', count: 3, showcoins: true, hideempty: true, size: 28, color: '#ffffff',
+             bg: 'rgba(0, 0, 0, .55)', accent: '#f5b50a', radius: 14 } },
   // S15's and S14's layers. Both have had a full inspector and a working
   // runtime since the day they shipped, and no way at all to create one - the
   // only route was the API, which is how the test rig made them. The defaults

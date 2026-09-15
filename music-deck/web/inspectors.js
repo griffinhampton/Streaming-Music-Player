@@ -17,7 +17,8 @@ let feedState = null;                          // the latest snapshot: designs, 
 const openSecs = new Set(['type', 'scene-bg', 'scene-format']); // which sections are open - a view choice
 const TYPE_NAME = { text: 'Text', image: 'Picture or video', background: 'Background', shape: 'Shape',
   component: 'Window', camera: 'Camera', capture: 'Screen or window', reactive: 'You, talking',
-  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll', speak: 'Voice', gift: 'Gift' };
+  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll', speak: 'Voice', gift: 'Gift',
+  goal: 'Coin goal', topgifters: 'Top gifters' };
 const COMP_NAME = { np: 'Now Playing', lyrics: 'Lyrics', queue: 'Queue', captions: 'Captions' };
 // Where each component's design lives in the snapshot (as embedhost.js reads it), and its scope in the deck.
 const DESIGN_KEY = { np: 'nowplaying', lyrics: 'lyrics_cfg', queue: 'queue_cfg', captions: 'captions_cfg' };
@@ -74,6 +75,10 @@ const TYPE_DEFAULTS = {
   // scene.js TYPES.gift.opts() falls back to exactly these.
   gift: { 'props.mode': 'both', 'props.min': 0, 'props.only': '', 'props.target': '', 'props.seconds': 4,
     'props.max_objects': 30, 'props.object_size': 64, 'props.coin': 220 },
+  // scene.js TYPES.goal.opts() and TYPES.topgifters.opts() fall back to exactly these.
+  goal: { 'props.title': 'Coin goal', 'props.target': 1000, 'props.done': 'Goal reached!', 'props.bar': '#f5b50a' },
+  topgifters: { 'props.title': 'Top gifters', 'props.count': 3, 'props.showcoins': true, 'props.hideempty': true,
+    'props.accent': '#f5b50a' },
 };
 function defaultOf(l, path) {
   const t = TYPE_DEFAULTS[l.type];
@@ -276,6 +281,31 @@ const TYPE_SECTIONS = {
         ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
       ${cColor('Words', 'props.color')}
       ${cColor('Behind', 'props.bg')}`),
+  goal: (l) => section('type', 'Coin goal', `
+      <p class="hint">A bar filling with the coins gifted this stream, toward a number you choose. It counts
+        what the Live view's Gifts box counts, from its last "Reset the count".</p>
+      ${cText('Title', 'props.title', 'maxlength="60" spellcheck="false"')}
+      ${cNum('Goal (coins)', 'props.target', l.id, 'data-min="1" data-max="100000000"')}
+      ${cText('Title once it is reached', 'props.done', 'maxlength="60" spellcheck="false"')}
+      ${fontField('props.font', 'Default (Segoe UI)')}
+      <div class="field two">${cNum('Size', 'props.size', l.id, 'data-min="8" data-max="200"')}
+        ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
+      ${cColor('Words', 'props.color')}
+      ${cColor('Behind', 'props.bg')}
+      ${cColor('Bar', 'props.bar')}`),
+  topgifters: (l) => section('type', 'Top gifters', `
+      <p class="hint">Who gifted the most coins this stream, from the Live view's last "Reset the count".
+        Names are shown as the words people chose for themselves, and nothing more.</p>
+      ${cText('Title', 'props.title', 'maxlength="60" spellcheck="false"')}
+      ${cNum('How many', 'props.count', l.id, 'data-min="1" data-max="10"')}
+      ${cCheck('Show their coins', 'props.showcoins')}
+      ${cCheck('Hidden until someone has gifted', 'props.hideempty')}
+      ${fontField('props.font', 'Default (Segoe UI)')}
+      <div class="field two">${cNum('Size', 'props.size', l.id, 'data-min="8" data-max="200"')}
+        ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
+      ${cColor('Words', 'props.color')}
+      ${cColor('Behind', 'props.bg')}
+      ${cColor('Numbers', 'props.accent')}`),
   text: (l) => section('type', 'Text', `
       <label class="field"><span>Words</span><textarea class="input" rows="3" ${A('props.text')} data-kind="str"></textarea></label>
       <div class="vars" role="group" aria-label="Insert live text">${['title', 'artist', 'album', 'source', 'elapsed', 'duration', 'time', 'date', 'caption', 'caption_live']

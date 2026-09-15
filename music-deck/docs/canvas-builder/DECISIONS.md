@@ -732,6 +732,40 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## The coins, on stream: a goal and the top gifters (2026-09-15)
+
+Coins counted only in the Live view are the streamer's; the audience sees
+nothing. Two layers from the Add grid put them on stream (`scene.js`,
+`TYPES.goal` and `TYPES.topgifters`), both drawing the same ledger as the Live
+view (`gifts.py`), from its last "Reset the count".
+
+- **Coin goal**: a bar filling toward a number the streamer chooses, "800 /
+  1,000", and a second title once it is reached ("Goal reached!") with a
+  short cheer - once, the moment it is crossed, not on every read after, and
+  not on a page that opened with the goal already met.
+- **Top gifters**: who gave most, in coin order, up to ten, with or without
+  their coins; hidden until someone has gifted, so a fresh stream shows no
+  empty box. Names are chatters' and are set as text - a name made of markup
+  arrives as its characters, and the rig checks that nothing runs.
+
+**How they learn.** One read of `/api/gifts/ledger` serves every coin layer on
+a page: when one appears, a moment after every gift that comes down the alert
+socket - a burst of gifts is one read - and every ten seconds besides, so a
+Reset shows without a gift to prompt it. The scene page reads its own server,
+never anything remote. Neither holds an event, so Stop effects leaves them up
+(`tests/test_takedown.py` would fail if either grew a `takeDown`).
+
+For the rig, `/api/debug/gift` takes a handle too: its coins go in the ledger
+before the gift is posted, the same order as a TikTok gift's (`tiktok_gift`).
+
+**Checked** on the rig by `tools/ui/coinlayers.js` (new): 0 of 1,000 and a
+hidden list to start; two gifts move the goal to 800 and the bar to 80 per cent
+within a second or two - the gift woke it, not the ten-second read - and list
+Bob above Amy; a markup name is its characters and nothing runs; past the goal
+it says so, fills, and cheers once; Stop effects leaves both up; a Reset brings
+both back to nothing. `addpalette` for the grid, `giftprobe` for the gift layer
+beside them.
+
 ## A price in coins (2026-09-15)
 
 The next step of "understanding how many coins were gifted": coins as a

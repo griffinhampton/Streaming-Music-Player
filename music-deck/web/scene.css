@@ -155,6 +155,30 @@ body.see-through { background: transparent; }
 /* The poll layer (S14). Same trick as the alert layer: the card carries the
    showing and hiding, because applyBox writes el.style.opacity inline and an
    inline style would beat anything here. */
+/* The coins gifted this stream (gifts.py): a goal bar, and who gave most. */
+.type-goal .goal-card, .type-topgifters .top-card {
+  box-sizing: border-box; width: 100%; height: 100%; padding: .5em .8em; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; gap: .35em;
+  transition: opacity 240ms ease;
+}
+.goal-head { display: flex; justify-content: space-between; align-items: baseline; gap: .6em; }
+.goal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-num { font-variant-numeric: tabular-nums; opacity: .9; font-size: .85em; white-space: nowrap; }
+.goal-track { position: relative; height: .55em; border-radius: 999px; background: rgba(255, 255, 255, .18); overflow: hidden; }
+.goal-track > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit;
+  background: var(--goal-bar, #f5b50a); transition: width 400ms ease; }
+.type-goal.cheer .goal-card { animation: goal-cheer 800ms ease 3; }
+@keyframes goal-cheer { 50% { transform: scale(1.04); } }
+:root.ultra .goal-track > i { transition: none; }
+.top-title { font-size: 1.05em; }
+.top-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25em; }
+.top-rows li { display: grid; grid-template-columns: 1.4em minmax(0, 1fr) auto; gap: .45em; align-items: baseline; }
+.top-n { color: var(--top-accent, #f5b50a); font-weight: 700; font-variant-numeric: tabular-nums; }
+.top-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-coins { font-variant-numeric: tabular-nums; opacity: .85; font-size: .85em; }
+.type-topgifters.sample .top-card { opacity: .55; }
+.type-topgifters.empty.hide-empty .top-card { opacity: 0; }
+
 .type-poll { display: grid; place-items: center; }
 .type-poll .poll-card {
   display: flex; flex-direction: column; gap: .35em;
