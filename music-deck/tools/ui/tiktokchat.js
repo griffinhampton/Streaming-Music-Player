@@ -7,8 +7,10 @@
 // does with such a page: the rig's reader opens a Chrome of its own (headless
 // on the rig), connects to it over DevTools, injects its read-only script, and
 // hands each chat line to the same pipeline Twitch uses - commands, roles and
-// all. The fixture is served by this script and drawn in TikTok's shape: the
-// data-e2e attributes, a -DivComment, badge images, recycled [data-index] slots.
+// all. The fixture is served by this script and drawn in the shape TikTok's
+// real room page had on 2026-09-15: the data-e2e attributes, the words after
+// the name's row, badge images, recycled [data-index] slots, no profile links.
+// Whether the real page still has that shape is tools/ui/ttreal.js's question.
 //
 // Controls:
 //   a new line arrives       - the backlog on screen at attach does NOT
@@ -73,34 +75,47 @@ const closePage = async (p) => {
    Like TikTok, it draws what people typed as text (esc), so the reader sees
    the literal characters - which is what an attack on it would look like. */
 const ops = [];
+// Drawn in the shape TikTok's real room page had on 2026-09-15, as recorded
+// by tools/ui/ttreal.js's first run: the list under live-chat-container (no
+// chat-room any more), an avatar, a row holding a level badge and the name,
+// the words in a utility-classed element after that row, a more-actions button
+// - and no profile link on a line. The one line here with a link is the
+// streamer's, kept only so that path stays tested; TikTok draws none today.
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture live</title></head><body>
-<div id="top"><button data-e2e="top-login-button">Log in</button></div>
-<div class="x-DivChatRoomContent" data-e2e="chat-room">
-  <div data-index="1"><div data-e2e="chat-message"><div><img src="/a.png"></div><div>
-    <div class="x-DivUserInfo"><a href="/@olduser"><span data-e2e="message-owner-name">Old User</span></a></div>
-    <div class="x-DivComment">!hello from the backlog</div></div></div></div>
-</div>
+<div class="header"><button class="login"><div>Log in</div></button></div>
+<div data-e2e="live-chat-container"><div class="list"></div></div>
 <script>
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function line(o) {
-    return '<div data-e2e="chat-message"><div><img src="/a.png">' +
-      (o.badge ? '<img class="x-ImgBadgeChatMessage" src="/img/' + esc(o.badge) + '_badge_1.png">' : '') +
-      '</div><div><div class="x-DivUserInfo">' +
-      (o.login ? '<a href="/@' + esc(o.login) + '">' : '<span>') +
-      '<span data-e2e="message-owner-name">' + esc(o.name) + '</span>' + (o.login ? '</a>' : '</span>') +
-      '</div><div class="x-DivComment">' + esc(o.text) + '</div></div></div>';
+    const avatar = '<img class="avatar" src="/a.png">';
+    return '<div data-e2e="chat-message" class="relative flex">' +
+      '<div class="flex self-start py-2"><div class="w-24 h-24 flex">' +
+        (o.login ? '<a href="/@' + esc(o.login) + '">' + avatar + '</a>' : avatar) + '</div></div>' +
+      '<div class="flex flex-col justify-center">' +
+        '<div class="w-full flex items-center"><div class="inline-flex items-center overflow-x-hidden">' +
+          '<span class="inline-flex flex-shrink-0 py-1"><img src="/img/' + esc(o.badge || 'grade') + '_badge_1.png"><span class="text-[10px]">7</span></span>' +
+          '<div data-e2e="message-owner-name" class="flex overflow-hidden inline">' + esc(o.name) + '</div>' +
+        '</div></div>' +
+        // o.plain drops break-words, so the structural rule has to find the words.
+        '<div class="w-full ' + (o.plain ? '' : 'break-words ') + 'align-middle">' + esc(o.text) + '</div>' +
+      '</div>' +
+      '<div data-e2e="more-action-button" class="moreActionButton w-16 h-16"><svg></svg></div></div>';
   }
+  const list = document.querySelector('[data-e2e="live-chat-container"] .list');
+  // The backlog: on screen before the reader attaches, so it must never be sent.
+  const old = document.createElement('div'); old.setAttribute('data-index', '1');
+  old.innerHTML = line({ name: 'Old User', text: '!hello from the backlog' }); list.appendChild(old);
   function apply(op) {
-    const room = document.querySelector('[data-e2e="chat-room"]');
-    if (op.op === 'add') { const d = document.createElement('div'); d.setAttribute('data-index', String(op.index)); d.innerHTML = line(op); room.appendChild(d); }
+    if (op.op === 'add') { const d = document.createElement('div'); d.setAttribute('data-index', String(op.index)); d.innerHTML = line(op); list.appendChild(d); }
     if (op.op === 'recycle') {
-      const slot = room.querySelector('[data-index="' + op.from + '"]');
+      const slot = list.querySelector('[data-index="' + op.from + '"]');
       slot.setAttribute('data-index', String(op.index));
       slot.querySelector('[data-e2e="message-owner-name"]').textContent = op.name;
-      slot.querySelector('a').setAttribute('href', '/@' + op.login);
-      slot.querySelector('.x-DivComment').textContent = op.text;
+      slot.querySelector('[data-e2e="message-owner-name"]').closest('.flex-col').lastElementChild.textContent = op.text;
     }
-    if (op.op === 'signin') { const b = document.querySelector('[data-e2e="top-login-button"]'); if (b) b.remove(); }
+    // The Log in button is the plain kind - no id, only the words - which is
+    // the one a real room page drew that the first signed-in check missed.
+    if (op.op === 'signin') { const b = document.querySelector('.header .login'); if (b) b.remove(); }
   }
   let at = 0;
   async function tick() {
@@ -176,16 +191,19 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('what was on screen at attach is history - not sent', backlog.length === 0, J(backlog));
 
   const log0 = (await logNow()).length;
-  ops.push({ op: 'add', index: 2, name: 'Amy', login: 'amy', text: 'hello from tiktok' });
-  ops.push({ op: 'add', index: 3, name: 'Bob', login: 'bob', text: '!hello' });
-  ops.push({ op: 'add', index: 4, name: 'Cy', login: 'cy', text: '!modonly' });
-  ops.push({ op: 'add', index: 5, name: 'Mo', login: 'mo', badge: 'moderator', text: '!modonly' });
+  // No logins: TikTok's lines carry none. Amy's words have no break-words
+  // class, so only the structural rule can find them.
+  ops.push({ op: 'add', index: 2, name: 'Amy', plain: true, text: 'hello from tiktok' });
+  ops.push({ op: 'add', index: 3, name: 'Bob', text: '!hello' });
+  ops.push({ op: 'add', index: 4, name: 'Cy', text: '!modonly' });
+  ops.push({ op: 'add', index: 5, name: 'Mo', badge: 'moderator', text: '!modonly' });
   ops.push({ op: 'add', index: 6, name: 'The Streamer', login: 'probe', text: '!mine' });
-  ops.push({ op: 'add', index: 7, name: 'probe', login: 'copycat', text: '!mine' });
+  ops.push({ op: 'add', index: 7, name: 'probe', text: '!mine' });
   await sleep(2500);
   const lines = await chatNow();
-  const amy = lines.find((m) => m.user.login === 'amy');
-  check('a new line arrives, through the same pipeline Twitch uses', amy && amy.text === 'hello from tiktok' && amy.user.name === 'Amy', J(amy));
+  const amy = lines.find((m) => m.user.name === 'Amy');
+  check('a new line arrives, through the same pipeline Twitch uses', amy && amy.text === 'hello from tiktok', J(amy));
+  check('the words were found by the line\'s structure, with no class to go on', !!amy);
   const log = (await logNow()).slice(log0);
   const o = (who, cmd) => (log.find((e) => e.user === who && e.command === cmd) || {}).outcome;
   check('a TikTok viewer runs a command', o('Bob', 'hello') === 'ran', J(log.map((e) => [e.user, e.command, e.outcome])));
@@ -196,9 +214,9 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('a viewer who copies the streamer\'s display name is nobody (the control)', o('probe', 'mine') === 'denied');
 
   // A slot TikTok recycles: rewritten in place, read once.
-  ops.push({ op: 'recycle', from: 2, index: 8, name: 'Dee', login: 'dee', text: 'a recycled line' });
+  ops.push({ op: 'recycle', from: 3, index: 8, name: 'Dee', text: 'a recycled line' });
   await sleep(2000);
-  const dee = (await chatNow()).filter((m) => m.user.login === 'dee');
+  const dee = (await chatNow()).filter((m) => m.user.name === 'Dee');
   check('a recycled slot is read as the new line it became, once', dee.length === 1 && dee[0].text === 'a recycled line', J(dee.map((m) => m.text)));
 
   ops.push({ op: 'signin' });
@@ -208,17 +226,17 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   // ------------------------------------------ 3. nothing a chatter types runs
   const EVIL_NAME = '<img src=x onerror=window.__pwned=1>';
   const EVIL_TEXT = '<script>window.__pwned=2</script><img src=x onerror="window.__pwned=3">';
-  ops.push({ op: 'add', index: 20, name: EVIL_NAME, login: 'evil1', text: '!hello' });
-  ops.push({ op: 'add', index: 21, name: 'Eve', login: 'evil2', text: EVIL_TEXT });
-  ops.push({ op: 'add', index: 22, name: 'Rev', login: 'evil3', text: 'abc' + String.fromCharCode(0x202E) + 'dcba' });
+  ops.push({ op: 'add', index: 20, name: EVIL_NAME, text: '!hello' });
+  ops.push({ op: 'add', index: 21, name: 'Eve', text: EVIL_TEXT });
+  ops.push({ op: 'add', index: 22, name: 'Rev', text: 'abc' + String.fromCharCode(0x202E) + 'dcba' });
   await sleep(3000);
   const evil = await chatNow();
-  const e2 = evil.find((m) => m.user.login === 'evil2');
+  const e2 = evil.find((m) => m.user.name === 'Eve');
   check('an attack line arrives as the literal characters typed', e2 && e2.text === EVIL_TEXT, J(e2 && e2.text));
-  const e3 = evil.find((m) => m.user.login === 'evil3');
+  const e3 = evil.find((m) => m.user.name === 'Rev');
   check('a direction override is stripped, so it cannot flip words on stream', e3 && e3.text === 'abcdcba', J(e3 && e3.text));
-  const e1 = evil.find((m) => m.user.login === 'evil1');
-  check('a display name made of markup is kept as text too', e1 && e1.user.name === EVIL_NAME, J(e1 && e1.user.name));
+  const e1 = evil.find((m) => m.user.name === EVIL_NAME);
+  check('a display name made of markup is kept as text too', !!e1, J(evil.map((m) => m.user.name)));
 
   // Everything the card shows while its queue plays through.
   const cards = new Set();

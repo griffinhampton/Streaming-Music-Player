@@ -81,8 +81,18 @@ OBSERVER = r"""(() => {
   function read(m) {
     const who = m.querySelector('[data-e2e="message-owner-name"]');
     const name = clean(who && (who.textContent || who.getAttribute('title')));
-    let body = m.querySelector("[class*='-DivComment']") || m.querySelector('.live-shared-ui-chat-list-chat-message-comment');
-    if (!body && who) { const info = who.closest("[class*='-DivUserInfo']"); body = info && info.nextElementSibling; }
+    // The words. Checked against TikTok's real page on 2026-09-15: the old
+    // -DivComment class is gone and the words sit in a utility-classed element
+    // (break-words) right after the row holding the name. So after the class
+    // names, the rule is structural - the first element after the name's row,
+    // never past the line itself - which holds whatever the classes are called.
+    let body = m.querySelector('.break-words') || m.querySelector("[class*='-DivComment']") ||
+      m.querySelector('.live-shared-ui-chat-list-chat-message-comment');
+    if (!body && who) {
+      let row = who;
+      while (row.parentElement && row.parentElement !== m && !row.nextElementSibling) row = row.parentElement;
+      body = row.parentElement && row.parentElement !== m ? row.nextElementSibling : null;
+    }
     const text = clean(body && body.textContent);
     if (!name || !text) return null;
     const link = m.querySelector('a[href*="/@"]');
@@ -103,7 +113,10 @@ OBSERVER = r"""(() => {
   };
   let room = null, watcher = null, last = '', lastAt = 0;
   function attach() {
-    const r = ROOMS.map((s) => document.querySelector(s)).find(Boolean) || null;
+    // Whichever container really holds chat lines; TikTok's page has had two
+    // at once (live-chat-container and public-screen-live-chat-slot).
+    const all = ROOMS.map((s) => document.querySelector(s)).filter(Boolean);
+    const r = all.find((x) => x.querySelector(MSG)) || all[0] || null;
     if (r === room) return;
     if (watcher) watcher.disconnect();
     watcher = null;
@@ -126,8 +139,15 @@ OBSERVER = r"""(() => {
     attach();
     // Nobody watches this window, so its video need not cost this PC anything.
     document.querySelectorAll('video').forEach((v) => { try { v.muted = true; if (!v.paused) v.pause(); } catch (_) {} });
-    const state = { t: 'status', room: !!room, signedIn: !document.querySelector('[data-e2e="top-login-button"]'),
-                    path: location.pathname };
+    // Signed out shows a Log in button, and TikTok draws it more than one way:
+    // on 2026-09-15 one real room page had button#header-login-button, the next
+    // a plain button that only says "Log in" - and the top-login-button first
+    // looked for was on neither, which is how a signed-out page read as signed
+    // in. So the words are checked as well as the names. (English words: the
+    // page follows the account's language, and this user's is English.)
+    const signedOut = !!document.querySelector('[data-e2e="top-login-button"], #header-login-button') ||
+      [...document.querySelectorAll('button')].some((b) => /^log ?in$/i.test((b.textContent || '').trim()));
+    const state = { t: 'status', room: !!room, signedIn: !signedOut, path: location.pathname };
     const k = JSON.stringify(state);
     if (k !== last || Date.now() - lastAt > 10000) { last = k; lastAt = Date.now(); send(state); }
   }

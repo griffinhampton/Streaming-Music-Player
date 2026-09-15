@@ -171,12 +171,17 @@ text. Proved by sending real attack lines - a `<script>`, an `<img onerror>`,
 a display name made of markup - through a page shaped like TikTok's: they arrive
 as the characters typed, and nothing runs, on stream or off.
 
-**The catch, as agreed:** the reader follows TikTok's page as it was drawn in
-September 2026, and TikTok changes its page when it likes. Tested against a
-fixture in that shape, not against TikTok itself - the first real test is your
-first live with the window open. If the panel says "chat found" and nothing
-arrives, or never finds the chat, that is the sign it needs updating. Gifts
-from the page are T6, next.
+**The catch, as agreed:** the reader follows TikTok's page, and TikTok changes
+its page when it likes. **Checked against the real thing, 2026-09-15:** run
+against a real public live, signed out and counting only, the first version
+found the chat list but not the words - TikTok had renamed what they sit in -
+and called a signed-out page signed in. Both fixed; after the fix it read 25
+lines in 35 s, every one with a name and the words. `tools/ui/ttreal.js` is that
+check, to run whenever the panel says "chat found" and nothing arrives. One
+thing the real page showed that cannot be fixed from here: a TikTok chat line
+carries no link to the sender's profile, so the app cannot tell your own
+messages from a viewer who copies your display name - and so nobody in TikTok
+chat counts as you. Run a broadcaster-only command from the deck.
 
 ### T5. TikTok chat, through the pipeline that exists
 
@@ -201,6 +206,33 @@ home"). So avatars are fetched **by the server**, cached as ordinary local
 assets, and referenced by asset id like everything else. That keeps the rule
 intact rather than punching a hole in it, and it also means a dead CDN cannot
 stall a layer mid-stream.
+
+**Where gifts actually are (checked 2026-09-15).** Not on the page. Watching a
+real public live, no gift ever appeared as something the page drew into its
+chat list: TikTok's page receives chat *and* gifts as binary messages on its own
+websocket (webcast, protobuf, gzip-wrapped) and draws only some of them. So
+gifts cannot come from the reader as it stands, which only reads what is drawn.
+
+**The design that keeps choice (3).** The reader already holds a DevTools
+connection to that page. DevTools can also *watch* the page's network - read
+only, the same way the Network tab does - and hand over each websocket message
+the page receives. The page has already done the signing that option (1) needed
+a third party for; the app only reads what arrived, on this PC. What it needs:
+- `Network.enable` on the reader's tab, keeping only frames from TikTok's
+  webcast socket, and only the ones the page itself received.
+- A small protobuf reader in the standard library (varints and length-prefixed
+  fields - no schema compiler, no dependency), unwrapping the push frame, the
+  gzip, and the list of messages inside, and picking out the gift message by
+  name: who sent it, which gift, its coin value, the repeat count, and whether
+  the combo has finished. Field numbers are facts about TikTok's messages, taken
+  the way the page's selectors were; they are checked against real frames before
+  anything is built on them, and tested on recorded frames, not guessed.
+- The combo rule above, then `post_gift()` - the gift layer (T8) already draws a
+  gift from exactly those fields.
+
+It is a bigger piece than the chat reader, and it breaks the same way - when
+TikTok changes its messages. It also offers a second source for chat that does
+not depend on the page's drawing at all, which is worth weighing once it works.
 
 ### T7. Text to speech, for followers
 

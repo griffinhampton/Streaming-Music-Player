@@ -743,13 +743,14 @@ LIVE page, running inside the app on this PC."*
 `cache/chrome-tiktok` - so the sign-in lives there and nowhere else, and the
 rebuild's safety copy skips it with the other `chrome*` folders - on
 `www.tiktok.com/@user/live`, with a DevTools port Chrome picks itself on
-127.0.0.1 (`:405`). It connects to that port, installs one binding, and injects
+127.0.0.1 (`:425`). It connects to that port, installs one binding, and injects
 `OBSERVER` (`:66`), which watches the chat list and hands each new line to the
-binding. The selectors are TikTok's page as drawn in September 2026, gathered
-as facts - `data-e2e="chat-message"`, `message-owner-name`, `-DivComment`,
-badge image names - from how Social Stream Ninja's open-source reader finds
-them; the code is this project's own. Each line becomes chat.py's one shape
-through an Adapter registered beside Twitch's (`:464`), so `!tts`, layer
+binding. The selectors were first gathered as facts - `data-e2e="chat-message"`,
+`message-owner-name`, `-DivComment`, badge image names - from how Social Stream
+Ninja's open-source reader finds them, and then checked against TikTok's real
+page, which had moved on (below); the code is this project's own. Each line
+becomes chat.py's one shape through an Adapter registered beside Twitch's
+(`:484`), so `!tts`, layer
 commands, polls and the role ladder work for TikTok viewers with no other
 change.
 
@@ -758,9 +759,9 @@ or requests of its own. The page is the user's, signed in as them, and a script
 that could press things there could press Go LIVE - `tests/test_tiktok_chat.py`
 fails on any of it. The window starts muted (`:56`), or the live page would play
 the user's own stream back into Desktop sound and the stream. What is on screen
-when it attaches is history, marked seen and never sent (`:113`): a reader that
+when it attaches is history, marked seen and never sent (`:126`): a reader that
 joined late must not replay ten minutes of `!tts`. It goes to TikTok and nowhere
-else (`:349`); the rig's hook that points it at a fixture (`server.py:2817`)
+else (`:365`); the rig's hook that points it at a fixture (`server.py:2817`)
 answers only with `TEST_RIG` and only for a 127.0.0.1 address, and the rig's
 reader never shows a window (`:1865`). Quitting the app closes the reader's
 window (`:3167`).
@@ -768,11 +769,15 @@ window (`:3167`).
 **Who is who.** A TikTok moderator's or subscriber's badge image reaches the
 ladder, so a mod-only command runs for a TikTok mod. The streamer is the
 broadcaster only when the page gave a real profile link naming them
-(`tiktok_chat.py:312`) - a display name is anybody's to set, and matching on it
-would let a viewer calling themselves the streamer through every gate.
+(`tiktok_chat.py:332`) - a display name is anybody's to set, and matching on it
+would let a viewer calling themselves the streamer through every gate. TikTok's
+real page, as checked, puts **no** profile link on a chat line, so today nobody
+in TikTok chat is the broadcaster - the streamer included. That is the side to
+fail on: a broadcaster-only command is run from the deck, not from TikTok chat,
+until TikTok gives the page something a viewer cannot copy.
 
 **The DevTools client** is the standard library's: a small RFC 6455 client
-(`:193`) whose reads never consume half a frame (`frame_end`, `:155`), so a
+(`:213`) whose reads never consume half a frame (`frame_end`, `:175`), so a
 timeout in the middle of one cannot put the stream out of step.
 
 **The chat panel** has a TikTok row beside Twitch's and a line saying what the
@@ -781,12 +786,37 @@ found or not. That state rides the state feed (`chat.py:498`) - it changes when
 the user does something in the window, never per message, so it cannot turn
 into a broadcast per chat line.
 
-**What is not tested, said plainly.** TikTok's real page. `tools/ui/
-tiktokchat.js` serves a fixture drawn in TikTok's shape - the attributes, the
-class fragments, badge images, recycled `[data-index]` slots - and the reader
-passes against it; whether TikTok still draws its page that way is only known
-the first time the user opens a live with the window open. The panel's "chat
-found" line is how a change will show.
+**Checked against TikTok's real page, 2026-09-15.** The first version had been
+tested only against a fixture drawn from secondhand facts, so it was run against
+one real public live room: `tools/ui/ttreal.js` - headless, muted, a throwaway
+profile, signed out, reporting counts and never a name or a message - takes
+`OBSERVER` exactly as it ships. That found three faults, each invisible to the
+fixture:
+- **The words.** `-DivComment` is gone; the words are in a utility-classed
+  element (`break-words`) after the row holding the name. The reader now takes
+  that class first and, failing every class, the first element after the name's
+  row, never past the line itself (`tiktok_chat.py:89`) - structure rather than
+  a name TikTok can change.
+- **Which list.** The page had two chat containers at once and the first one
+  found was empty; the reader takes whichever holds chat lines (`:118`).
+- **Signed in.** A signed-out page was reported signed in: the `top-login-button`
+  looked for was not there. TikTok draws that button more than one way - one
+  room had `button#header-login-button`, the next a plain button that only says
+  "Log in" - so the reader checks the words as well as the names (`:148`).
+  English words: the page follows the account's language, and this user's is
+  English.
+
+After the fix, 25 lines were handed over in 35 s, every one with a name and
+words. A second pass with the video left playing - in case pausing it, which
+saves this PC the decoding, also stopped the chat - handed over 29, the same
+kind of number: the pause stays. The fixture in `tools/ui/tiktokchat.js` is now
+drawn in the recorded shape, with a line whose words carry no class so only the
+structural rule can find them and a Log in button with only the words, and
+`tests/test_tiktok_chat.py` pins all three. `ttreal.js` fails if its signed-out
+profile reads as signed in. The signed-*in* side was not checked for real - that
+needs the user's own sign-in, which the reader never does for them - and TikTok
+will change its page again; running `ttreal.js` is how to find out it has,
+before a live does.
 
 ## Chat is text, and only ever text (2026-09-15)
 
@@ -795,7 +825,7 @@ scripts or code chatters might text out to be malicious!"*
 
 **Where chat goes, and why none of it can run.** The reader takes chat as
 `textContent`, hands it over as a JSON string that is only ever parsed as data
-(`tiktok_chat.py:429`), and the only script ever evaluated in the page is its
+(`tiktok_chat.py:449`), and the only script ever evaluated in the page is its
 own fixed one. The voice reads with the plain-text `Speak()` and gets its words
 as JSON on stdin, never on a command line. Every page draws chat as text: the
 audit went through every `innerHTML` in the pages that show chat, commands,

@@ -155,6 +155,20 @@ class WhatItMayDoInThePage(unittest.TestCase):
         """Or the live page plays your own stream back into Desktop sound."""
         self.assertIn("--mute-audio", tt.FLAGS)
 
+    def test_it_follows_the_real_page_as_recorded(self):
+        """Checked against TikTok's real room page on 2026-09-15
+        (tools/ui/ttreal.js): the list under live-chat-container, the words
+        found by structure after the name's row, and signed-out shown by a
+        Log in button - button#header-login-button on one room, a plain button
+        with only the words on the next. Each was a fault in the first version,
+        found only by looking at the real thing."""
+        o = tt.OBSERVER
+        self.assertIn('[data-e2e="live-chat-container"]', o)
+        self.assertIn("all.find((x) => x.querySelector(MSG))", o)
+        self.assertIn("while (row.parentElement && row.parentElement !== m && !row.nextElementSibling)", o)
+        self.assertIn("#header-login-button", o)
+        self.assertIn("/^log ?in$/i.test((b.textContent || '').trim())", o)
+
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))
 
