@@ -180,8 +180,17 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   const c = await post('/api/chat/connect', { service: 'tiktok', channel: '@probe' });
   check('connecting starts the reader', c.ok && c.status && c.status.channel === 'probe', J(c));
   let st = null;
-  for (let i = 0; i < 40; i++) { await sleep(500); st = await tiktokStatus(); if (st && st.page && st.page.room) break; }
+  const early = [];
+  for (let i = 0; i < 80; i++) {
+    await sleep(250); st = await tiktokStatus();
+    if (st && st.page) early.push(st.page);
+    if (st && st.page && st.page.room) break;
+  }
   check('it opened the page and found the chat list', st && st.state === 'joined' && st.page && st.page.room === true, J(st));
+  // The reader runs from the page's first moment (T6), before any Log in
+  // button is drawn; the first version of that read a blank page as signed in.
+  check('it never says signed in before the page has drawn itself', !early.some((p) => p.signed_in === true && !p.room),
+    J(early.map((p) => [p.room, p.signed_in]).slice(0, 6)));
   check('and says the page is signed out while the Log in button is there', st && st.page && st.page.signed_in === false, J(st && st.page));
   check('the reader window answers on its own DevTools port (the floor for stopping)', await readerAlive());
 

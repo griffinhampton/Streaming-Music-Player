@@ -10,8 +10,8 @@ the way the page draws it.
 How it reads, and what it never does:
 
   * A Chrome of its own (cache/chrome-tiktok), started with a DevTools port on
-    127.0.0.1 that Chrome picks itself (--remote-debugging-port=0) and writes
-    into the profile's DevToolsActivePort. This connects to that port, installs
+    127.0.0.1 - one free when chosen, never port 0 (free_port says why) -
+    written into the profile's DevToolsActivePort. This connects to that port, installs
     one binding, and injects OBSERVER, which watches the chat list and hands
     each new line to the binding. The page sends nothing anywhere else.
   * OBSERVER only reads. It never clicks, submits or navigates. The page is the
@@ -24,6 +24,12 @@ How it reads, and what it never does:
     reader that joined late must not replay ten minutes of !tts.
   * It goes where it is pointed and nowhere else: www.tiktok.com/@you/live.
     The rig points it at a local fixture instead (TEST_RIG only), headless.
+  * Gifts are never drawn into the chat list; the page receives them on its
+    own websocket to TikTok's webcast servers. So the connection also watches
+    the page's network, read only, and hands the frames of that one socket -
+    never any other - to webcast.py (T6). The tab opens blank and is sent to
+    the live page only once that watching has begun, or the socket would open
+    unseen, and the gifts with it.
 
 The fragile part, named plainly: the selectors are TikTok's page, which TikTok
 changes when it likes. They are all in OBSERVER, and the page reports what it
@@ -41,9 +47,10 @@ import struct
 import subprocess
 import time
 import urllib.request
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 import chat
+import webcast
 
 TIKTOK = "https://www.tiktok.com"
 NAME_RE = re.compile(r"^[a-z0-9._]{2,24}$")
@@ -147,7 +154,11 @@ OBSERVER = r"""(() => {
     // page follows the account's language, and this user's is English.)
     const signedOut = !!document.querySelector('[data-e2e="top-login-button"], #header-login-button') ||
       [...document.querySelectorAll('button')].some((b) => /^log ?in$/i.test((b.textContent || '').trim()));
-    const state = { t: 'status', room: !!room, signedIn: !signedOut, path: location.pathname };
+    // This runs from the first moment of the page (T6: the tab is watched
+    // before the page loads), when there is no Log in button to find yet and
+    // no chat list either. That is "not known yet", not "signed in".
+    const state = { t: 'status', room: !!room, signedIn: signedOut ? false : room ? true : null,
+                    path: location.pathname };
     const k = JSON.stringify(state);
     if (k !== last || Date.now() - lastAt > 10000) { last = k; lastAt = Date.now(); send(state); }
   }
@@ -282,8 +293,25 @@ class Cdp:
 
 # ------------------------------------------------------------ helpers
 
+def free_port():
+    """A DevTools port for the reader's window: one this PC has free now.
+
+    Not --remote-debugging-port=0, which has Chrome pick the port and write
+    it down itself - the obvious way, and the first version's. Checked on real
+    live pages on 2026-09-15: a Chrome launched that way loads TikTok's live
+    page but never enters the room - room/enter refused, no webcast socket,
+    no chat drawn - while the same Chrome given a fixed port, high or low,
+    reads it. Why is TikTok's business; the reader never asks for port 0."""
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
 def devtools_port(profile):
-    """The port Chrome chose, from the file it writes into its profile."""
+    """The reader window's port, from the file written into its profile."""
     try:
         with open(os.path.join(profile, "DevToolsActivePort"), encoding="utf-8") as f:
             return int(f.readline().strip())
@@ -351,16 +379,20 @@ class TikTokAdapter(chat.Adapter):
     headless = False
     base = TIKTOK
     allow_local_base = False
+    # A finished gift, for server.py's post_gift (T6). Called through the
+    # class, so it stays a plain function rather than becoming a method.
+    on_gift = None
 
     def __init__(self, channel, on_message, log=None):
         super().__init__((channel or "").strip().lstrip("@#"), on_message, log)
         self.page = {"room": False, "signed_in": None, "path": ""}
+        self.room = webcast.Room(self.channel, allow_local=self.allow_local_base)
         self._proc = None
         self._tab = ""
         self._port = None
 
     def status(self):
-        return dict(super().status(), page=dict(self.page))
+        return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts))
 
     def live_url(self):
         if not NAME_RE.match(self.channel):
@@ -382,23 +414,30 @@ class TikTokAdapter(chat.Adapter):
         self._set("connecting")
         cdp = None
         try:
-            self._port = self._open(url)
-            ws_url, self._tab = self._page(self._port)
+            self._port, ws_url, self._tab = self._open()
             cdp = Cdp(ws_url)
             cdp.sock.settimeout(1.0)
+            # The tab is blank until all of this is in place, so the page's
+            # first socket to TikTok - the one its gifts arrive on - opens in
+            # view. Network.enable reads, as DevTools' Network tab reads; its
+            # buffers are small because no response body is ever asked for.
             for method, params in (("Runtime.enable", {}), ("Page.enable", {}),
+                                   ("Network.enable", {"maxTotalBufferSize": 1_000_000,
+                                                       "maxResourceBufferSize": 100_000}),
                                    ("Runtime.addBinding", {"name": BINDING}),
                                    ("Page.addScriptToEvaluateOnNewDocument", {"source": OBSERVER}),
-                                   ("Runtime.evaluate", {"expression": OBSERVER})):
+                                   ("Page.navigate", {"url": url})):
                 cdp.send(method, params)
             self._set("joined")
             self.log(f"chat: tiktok: reading @{self.channel}")
+            tick = time.monotonic()
             while not self._stop.is_set():
                 msg = cdp.recv()
-                if msg and msg.get("method") == "Runtime.bindingCalled":
-                    params = msg.get("params") or {}
-                    if params.get("name") == BINDING:
-                        self._payload(params.get("payload") or "")
+                if msg:
+                    self._event(msg.get("method"), msg.get("params") or {})
+                if time.monotonic() - tick >= 1:
+                    tick = time.monotonic()
+                    self._gifts(self.room.due())
         except OSError as exc:
             if not self._stop.is_set():
                 closed = "closed" in str(exc).lower() or "refused" in str(exc).lower()
@@ -411,38 +450,75 @@ class TikTokAdapter(chat.Adapter):
             if self._stop.is_set():
                 self._close()
 
-    def _open(self, url):
-        """A running reader window gets one more tab; otherwise a new one."""
+    def _open(self):
+        """(port, DevTools address, tab id) of a blank tab: one more in the
+        reader's window if it is running, otherwise a new window's first."""
         os.makedirs(self.profile, exist_ok=True)
         port = devtools_port(self.profile)
         if port and _alive(port):
-            _http(port, "/json/new?" + quote(url, safe=""), method="PUT")
-            return port
+            t = json.loads(_http(port, "/json/new?about:blank", method="PUT"))
+            if not t.get("webSocketDebuggerUrl"):
+                raise OSError("the TikTok window would not open a tab")
+            return port, t["webSocketDebuggerUrl"], t.get("id", "")
+        port_file = os.path.join(self.profile, "DevToolsActivePort")
         try:
-            os.remove(os.path.join(self.profile, "DevToolsActivePort"))
+            os.remove(port_file)
         except OSError:
             pass
-        args = [self.browser, f"--user-data-dir={self.profile}", "--remote-debugging-port=0"] + FLAGS
+        port = free_port()
+        args = [self.browser, f"--user-data-dir={self.profile}", f"--remote-debugging-port={port}"] + FLAGS
         if self.headless:
             args.append("--headless=new")
-        args.append(url)
+        args.append("about:blank")
         self._proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        # Given a port, Chrome writes no port file of its own; this one is how
+        # the next Open TikTok finds the window that is already running.
+        with open(port_file, "w", encoding="utf-8") as f:
+            f.write(f"{port}\n")
         deadline = time.monotonic() + START_TIMEOUT
         while time.monotonic() < deadline and not self._stop.is_set():
-            port = devtools_port(self.profile)
-            if port and _alive(port):
-                return port
+            page = self._page(port) if _alive(port) else None
+            if page:
+                return (port,) + page
             time.sleep(0.25)
         raise OSError("the TikTok window did not start")
 
     def _page(self, port):
-        tabs = json.loads(_http(port, "/json/list"))
+        """A new window's one page, once DevTools lists it."""
+        try:
+            tabs = json.loads(_http(port, "/json/list"))
+        except (OSError, ValueError):
+            return None
         pages = [t for t in tabs if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
-        want = [t for t in pages if "/live" in str(t.get("url", ""))] or pages
-        if not want:
-            raise OSError("the TikTok window has no page")
-        return want[0]["webSocketDebuggerUrl"], want[0].get("id", "")
+        return (pages[0]["webSocketDebuggerUrl"], pages[0].get("id", "")) if pages else None
+
+    def _event(self, method, params):
+        """One DevTools event: a chat line or status from OBSERVER, or the
+        page's sockets opening, closing and receiving - which webcast.Room
+        sorts into its one room socket and everything it never reads."""
+        if method == "Runtime.bindingCalled":
+            if params.get("name") == BINDING:
+                self._payload(params.get("payload") or "")
+        elif method == "Network.webSocketCreated":
+            self.room.opened(params.get("requestId"), params.get("url"))
+        elif method == "Network.webSocketClosed":
+            self.room.closed(params.get("requestId"))
+        elif method == "Network.webSocketFrameReceived":
+            r = params.get("response") or {}
+            self._gifts(self.room.frame(params.get("requestId"), r.get("opcode"), r.get("payloadData") or ""))
+
+    def _gifts(self, finished):
+        post = type(self).on_gift
+        for g in finished:
+            # Names are chat, and chat is text (chat.inert): no control or
+            # direction characters onto the stream.
+            g = dict(g, user=chat.inert(g["user"])[:40] or "Someone", gift=chat.inert(g["gift"])[:40] or "a gift")
+            if post:
+                try:
+                    post(g)
+                except Exception as exc:
+                    self.log(f"chat: tiktok: a gift could not be shown: {exc}")
 
     def _payload(self, raw):
         try:
@@ -452,7 +528,8 @@ class TikTokAdapter(chat.Adapter):
         if not isinstance(p, dict):
             return
         if p.get("t") == "status":
-            self.page = {"room": bool(p.get("room")), "signed_in": bool(p.get("signedIn")),
+            signed = p.get("signedIn")
+            self.page = {"room": bool(p.get("room")), "signed_in": None if signed is None else bool(signed),
                          "path": str(p.get("path") or "")[:120]}
             return
         if p.get("t") == "chat":

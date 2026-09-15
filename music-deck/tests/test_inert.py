@@ -110,9 +110,11 @@ class TheReaderAndTheVoice(unittest.TestCase):
         s = src("tiktok_chat.py")
         self.assertNotRegex(s, r"(?<![\w.])(eval|exec)\(")
         self.assertIn("p = json.loads(raw)", s)
-        # And the only thing ever run in the user's page is the fixed script.
-        self.assertEqual(s.count('"Runtime.evaluate"'), 1)
-        self.assertIn('("Runtime.evaluate", {"expression": OBSERVER})', s)
+        # And the only thing ever run in the user's page is the fixed script,
+        # put there before the page loads (T6); nothing is evaluated after.
+        self.assertNotIn('"Runtime.evaluate"', s)
+        self.assertEqual(s.count('"Page.addScriptToEvaluateOnNewDocument"'), 1)
+        self.assertIn('("Page.addScriptToEvaluateOnNewDocument", {"source": OBSERVER})', s)
 
     def test_the_voice_reads_plain_text(self):
         ps = src("tts.ps1")

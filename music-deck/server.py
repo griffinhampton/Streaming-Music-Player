@@ -1863,6 +1863,17 @@ BROWSER = overlay_mod.find_browser()
 tiktok_chat.TikTokAdapter.browser = BROWSER
 tiktok_chat.TikTokAdapter.profile = os.path.join(CACHE, "chrome-tiktok")
 tiktok_chat.TikTokAdapter.headless = TEST_RIG
+
+
+def tiktok_gift(g):
+    """A finished gift from the TikTok reader's page (T6, webcast.py): a
+    one-off at once, a streak at its end with its total. Not held by Stop
+    effects' pause - that pause is for chat's commands, and a gift is not one;
+    the stop itself still takes a gift that is showing down."""
+    post_gift(g.get("user"), g.get("gift"), g.get("coins"), g.get("count", 1))
+
+
+tiktok_chat.TikTokAdapter.on_gift = tiktok_gift
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()

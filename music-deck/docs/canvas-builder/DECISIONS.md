@@ -732,6 +732,82 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Gifts from the page's own websocket (2026-09-15)
+
+T6. Gifts are never drawn into TikTok's chat list, so the chat reader could
+not see them. Watched on real live pages - headless, muted, throwaway profiles,
+signed out, recording shapes and counts only, the recordings deleted after -
+the page receives chat, gifts, likes and joins as protobuf on its own websocket
+to `webcast-ws...tiktok.com/webcast/im/`, and draws only some of it.
+
+**How it reads.** The reader's DevTools connection turns on `Network.enable`
+for its tab (`tiktok_chat.py:425`), which reads the page's traffic as DevTools'
+Network tab does, and hands each frame to `webcast.py`. The page has already
+done the request signing every other route sends to a third party; the app only
+reads what arrived, on this PC. The tab now opens blank and is sent to the live
+page (`:429`) only once all of that is in place - or the socket would open
+unseen, and the gifts with it. That also means the page script runs from the
+page's first moment, before any Log in button is drawn, so signed in is "not
+known yet" until the page has drawn its chat list or its button (`:155`), and
+the chat panel says it is waiting for the live page rather than guessing.
+
+**One socket, and no other.** `is_webcast` (`webcast.py:174`) passes only
+`wss` to a `webcast...tiktok.com` host under `/webcast/im/`. Every other socket
+on the page is dropped without being decoded - `im-ws` among them, TikTok's
+messaging socket, which on a signed-in page would carry the user's private
+messages. A unit test and the rig both send a gift down that other socket and
+check it never arrives.
+
+**Decoding, on the standard library.** No protobuf compiler, no schema file,
+no dependency. The field numbers come from the community's protobuf
+definitions and each one used was checked against real frames first: the push
+frame's type and gzip payload, each message's name, id and history flag, the
+gift message's id, streak total, end flag, streak id, sender and recipient, and
+the gift's own id, type, coin value and name. The bytes are treated as hostile:
+lengths checked before use, a number at most ten bytes, gzip inflated to 4 MB
+and no further (`:111`), only fixed paths walked. `tests/test_webcast.py`
+throws 3,000 random and damaged frames at it: an answer or `Bad`, never another
+exception, which would end the reader.
+
+**Streaks.** TikTok sends a streak as messages carrying the total so far and a
+last one flagged as the end - recorded for real, a Rose streak of one arrived as
+two messages. `Combos` (`:192`) lets only finished gifts out: a one-off at once,
+a streak at its end with its total, or its last total after eight quiet seconds
+if the end never comes; a late message after an end is dropped, not counted
+again. Ids already seen are skipped (a reconnecting socket can resend),
+history-flagged messages are never replayed, and a gift to a guest on a shared
+live is not the host's - decided by the recipient's @handle, which unlike a
+display name nobody can copy. Finished gifts go through `chat.inert` and
+`tiktok_gift` (`server.py:1868`) to `post_gift()`. Stop effects' pause does not
+hold gifts - that pause is for chat's commands, and a gift is not one - but the
+stop itself still takes a showing gift down.
+
+**Checked** in `tests/test_webcast.py`, and on the rig by `tools/ui/ttgifts.js`:
+a local page with two sockets, frames built field by field, 26 checks each with
+a control. And on a real live, with the reader exactly as it ships
+(`tools/ui/ttrealreader.py`): the room socket found, 147 frames decoded and none
+bad, 45 chat lines, and a real gift - Heart Me, 1 coin - posted.
+
+**Why the reader had never worked, and does now.** Run as it ships on real
+lives, the reader read nothing at all: TikTok's page loaded, but `room/enter`
+was refused, no webcast socket opened, and no chat was drawn. Not T6's doing -
+the reader as committed before it read nothing either. The earlier "checked
+against TikTok's real page" had run its page script in a Chrome of the check's
+own, so it could not see how the reader launches. A bisection on one room, one
+difference at a time with a control beside it, cleared the window size, the
+network buffers, the binding, the injected script, the profile, the tab and the
+window flags, and found it: `--remote-debugging-port=0`, Chrome choosing its own
+port. Given a fixed one - 9456, or a free one in the same high range - the same
+Chrome reads the room; given 0, never. Why TikTok's page cares is TikTok's
+business. The reader now picks a free port itself (`tiktok_chat.py:296`) and
+writes the port file Chrome no longer writes (`:469`); a test fails if port 0
+comes back. `ttreal.js` still answers its own question - does the script read
+TikTok's page - and says in its header that it cannot answer this one.
+
+**Not yet:** the sender's picture (a gift shows their initial for now), and
+chat from the same socket, where every line carries the sender's @handle - which
+would let the app tell the streamer's own messages from a copycat's.
+
 ## TikTok chat, from your own page (2026-09-15)
 
 T4 and T5. TikTok publishes no API for live-room chat, and Streamlabs' public
@@ -742,34 +818,34 @@ LIVE page, running inside the app on this PC."*
 **How it reads.** `tiktok_chat.py` opens a Chrome of its own, profile in
 `cache/chrome-tiktok` - so the sign-in lives there and nowhere else, and the
 rebuild's safety copy skips it with the other `chrome*` folders - on
-`www.tiktok.com/@user/live`, with a DevTools port Chrome picks itself on
-127.0.0.1 (`:425`). It connects to that port, installs one binding, and injects
-`OBSERVER` (`:66`), which watches the chat list and hands each new line to the
+`www.tiktok.com/@user/live`, with a DevTools port on 127.0.0.1 it picks itself
+(`:296`) - never port 0, for the reason in the section above. It connects to
+that port, installs one binding, and injects `OBSERVER` (`:73`), which watches the chat list and hands each new line to the
 binding. The selectors were first gathered as facts - `data-e2e="chat-message"`,
 `message-owner-name`, `-DivComment`, badge image names - from how Social Stream
 Ninja's open-source reader finds them, and then checked against TikTok's real
 page, which had moved on (below); the code is this project's own. Each line
 becomes chat.py's one shape through an Adapter registered beside Twitch's
-(`:484`), so `!tts`, layer
+(`:561`), so `!tts`, layer
 commands, polls and the role ladder work for TikTok viewers with no other
 change.
 
 **What it never does.** `OBSERVER` only reads: no clicks, submits, navigation
 or requests of its own. The page is the user's, signed in as them, and a script
 that could press things there could press Go LIVE - `tests/test_tiktok_chat.py`
-fails on any of it. The window starts muted (`:56`), or the live page would play
+fails on any of it. The window starts muted (`:63`), or the live page would play
 the user's own stream back into Desktop sound and the stream. What is on screen
-when it attaches is history, marked seen and never sent (`:126`): a reader that
+when it attaches is history, marked seen and never sent (`:133`): a reader that
 joined late must not replay ten minutes of `!tts`. It goes to TikTok and nowhere
-else (`:365`); the rig's hook that points it at a fixture (`server.py:2817`)
+else (`:397`); the rig's hook that points it at a fixture (`server.py:2828`)
 answers only with `TEST_RIG` and only for a 127.0.0.1 address, and the rig's
 reader never shows a window (`:1865`). Quitting the app closes the reader's
-window (`:3167`).
+window (`:3178`).
 
 **Who is who.** A TikTok moderator's or subscriber's badge image reaches the
 ladder, so a mod-only command runs for a TikTok mod. The streamer is the
 broadcaster only when the page gave a real profile link naming them
-(`tiktok_chat.py:332`) - a display name is anybody's to set, and matching on it
+(`tiktok_chat.py:360`) - a display name is anybody's to set, and matching on it
 would let a viewer calling themselves the streamer through every gate. TikTok's
 real page, as checked, puts **no** profile link on a chat line, so today nobody
 in TikTok chat is the broadcaster - the streamer included. That is the side to
@@ -777,7 +853,7 @@ fail on: a broadcaster-only command is run from the deck, not from TikTok chat,
 until TikTok gives the page something a viewer cannot copy.
 
 **The DevTools client** is the standard library's: a small RFC 6455 client
-(`:213`) whose reads never consume half a frame (`frame_end`, `:175`), so a
+(`:224`) whose reads never consume half a frame (`frame_end`, `:186`), so a
 timeout in the middle of one cannot put the stream out of step.
 
 **The chat panel** has a TikTok row beside Twitch's and a line saying what the
@@ -786,23 +862,25 @@ found or not. That state rides the state feed (`chat.py:498`) - it changes when
 the user does something in the window, never per message, so it cannot turn
 into a broadcast per chat line.
 
-**Checked against TikTok's real page, 2026-09-15.** The first version had been
-tested only against a fixture drawn from secondhand facts, so it was run against
-one real public live room: `tools/ui/ttreal.js` - headless, muted, a throwaway
-profile, signed out, reporting counts and never a name or a message - takes
-`OBSERVER` exactly as it ships. That found three faults, each invisible to the
+**The page script, checked against TikTok's real page, 2026-09-15.** The first
+version had been tested only against a fixture drawn from secondhand facts, so
+it was run against one real public live room: `tools/ui/ttreal.js` - headless,
+muted, a throwaway profile, signed out, reporting counts and never a name or a
+message - takes `OBSERVER` exactly as it ships, in a Chrome of its own. That is
+why it could not see the fault that mattered most, in how the reader launches
+its Chrome (the section above). It found three faults, each invisible to the
 fixture:
 - **The words.** `-DivComment` is gone; the words are in a utility-classed
   element (`break-words`) after the row holding the name. The reader now takes
   that class first and, failing every class, the first element after the name's
-  row, never past the line itself (`tiktok_chat.py:89`) - structure rather than
+  row, never past the line itself (`tiktok_chat.py:96`) - structure rather than
   a name TikTok can change.
 - **Which list.** The page had two chat containers at once and the first one
-  found was empty; the reader takes whichever holds chat lines (`:118`).
+  found was empty; the reader takes whichever holds chat lines (`:125`).
 - **Signed in.** A signed-out page was reported signed in: the `top-login-button`
   looked for was not there. TikTok draws that button more than one way - one
   room had `button#header-login-button`, the next a plain button that only says
-  "Log in" - so the reader checks the words as well as the names (`:148`).
+  "Log in" - so the reader checks the words as well as the names (`:155`).
   English words: the page follows the account's language, and this user's is
   English.
 
@@ -815,8 +893,9 @@ structural rule can find them and a Log in button with only the words, and
 `tests/test_tiktok_chat.py` pins all three. `ttreal.js` fails if its signed-out
 profile reads as signed in. The signed-*in* side was not checked for real - that
 needs the user's own sign-in, which the reader never does for them - and TikTok
-will change its page again; running `ttreal.js` is how to find out it has,
-before a live does.
+will change its page again; running `ttreal.js` is how to find out it has, and
+`ttrealreader.py`, which runs the reader itself, how to find out the reader
+still reads a live.
 
 ## Chat is text, and only ever text (2026-09-15)
 
@@ -825,8 +904,8 @@ scripts or code chatters might text out to be malicious!"*
 
 **Where chat goes, and why none of it can run.** The reader takes chat as
 `textContent`, hands it over as a JSON string that is only ever parsed as data
-(`tiktok_chat.py:449`), and the only script ever evaluated in the page is its
-own fixed one. The voice reads with the plain-text `Speak()` and gets its words
+(`tiktok_chat.py:525`), and the only script ever run in the page is its own
+fixed one, put there before the page loads. The voice reads with the plain-text `Speak()` and gets its words
 as JSON on stdin, never on a command line. Every page draws chat as text: the
 audit went through every `innerHTML` in the pages that show chat, commands,
 requests and polls, and found each escaping or setting the words as text after -
@@ -900,7 +979,7 @@ is on screen that should not be.
 sample gift to the editor's own preview frame by message
 (`inspectors.js:1104`), and the frame answers it only in preview
 (`scene.js:1825`) - it never calls the server, so it has no path to the bus.
-The rig's test route, `/api/debug/gift` (`server.py:2810`), posts a gift to
+The rig's test route, `/api/debug/gift` (`server.py:2840`), posts a gift to
 the bus and refuses unless `TEST_RIG` is set: gated on the flag rather than the
 port, because a gift that reached a real stream from a test hook would be a lie
 told to the people watching. `post_gift()` keeps the sender's picture only if it
@@ -950,7 +1029,7 @@ a guard on the request alone would wave the vault's address straight through.
 Every way of going live, the TikTok tab included, ends in that one method.
 `server.py:601` sets `TEST_RIG` from the rig's own config, read once at start
 so a page posting to `/api/config` cannot lift it; `:1838` switches the engine;
-`:3071` refuses TikTok's go-live and token routes outright on the rig, with a
+`:3136` refuses TikTok's go-live and token routes outright on the rig, with a
 403 - opening a live at TikTok happens *before* any stream starts, so the
 engine's guard alone would come too late for it. `rigrestart.ps1` writes
 `"test_rig": true` into a new rig (`:23`), stamps it into an old one on every
@@ -1387,7 +1466,7 @@ from `mimetypes.guess_type` with `image/png` as the fallback, and sets
 a machine without an `.ogg` association would serve a clip as a picture that
 the browser then refuses to sniff - a 200 that never plays, with nothing said
 anywhere. `OK_EXT` was already the authoritative map and the route ignored it;
-it asks the store first now (`server.py:2030`). It resolves correctly on this
+it asks the store first now (`server.py:2226`). It resolves correctly on this
 machine, which is the point: this ships as an .exe to other people's.
 
 **Three places would have drawn a broken picture, and one was expensive.**
@@ -1579,7 +1658,7 @@ had.
 ## A scene that could call home (2026-09-13)
 
 Scenes can be shared - `/api/scenes/import` takes a .zip somebody else made,
-and `server.py:1982` says so in as many words: "A picture can come from someone
+and `server.py:2228` says so in as many words: "A picture can come from someone
 else's scene now (an import)." The zip itself is well guarded: size caps, a
 member cap, password-protected files refused, names checked, `scene.json`
 required, and every asset re-stored locally after its magic bytes are read.

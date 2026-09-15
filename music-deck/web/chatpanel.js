@@ -149,7 +149,9 @@ const ChatPanel = (() => {
       : tt.state === 'failed' ? (tt.error || 'The TikTok window stopped.')
       : tt.state !== 'joined' ? 'Opening TikTok…'
       : pg.signed_in === false ? 'Sign in to TikTok in the window it opened. The chat is read once you are signed in and on your live page.'
-      : !pg.room ? 'Signed in. Open your live page in that window - the chat is read as soon as TikTok shows it.'
+      // No chat list and no Log in button: the page is still loading, or the
+      // window is on some other page. Which one cannot be told, so say both.
+      : !pg.room ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'
       : 'Reading your live chat. Leave the TikTok window open - it can sit behind everything, and it stays muted.';
   }
 

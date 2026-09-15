@@ -122,7 +122,21 @@ class WhereItGoes(unittest.TestCase):
         tt.TikTokAdapter.base = "http://127.0.0.1:6790"
         self.assertEqual(a.live_url(), "http://127.0.0.1:6790/@probe/live")
 
-    def test_the_port_comes_from_the_file_chrome_writes(self):
+    def test_it_never_asks_chrome_for_port_0(self):
+        """Launched with --remote-debugging-port=0, TikTok's real live page
+        never entered the room - no webcast socket, no chat drawn - while the
+        same Chrome with a fixed port read it (2026-09-15). The first version
+        asked for port 0 and read nothing on any real live; the fixture could
+        never have shown it. So the reader picks a free port itself."""
+        with open(tt.__file__, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('f"--remote-debugging-port={port}"', src)
+        self.assertIn("port = free_port()", src)
+        self.assertNotIn('"--remote-debugging-port=0"', src)
+        p = tt.free_port()
+        self.assertTrue(1024 <= p <= 65535, p)
+
+    def test_a_running_window_is_found_by_its_port_file(self):
         d = tempfile.mkdtemp()
         self.assertIsNone(tt.devtools_port(d))
         with open(os.path.join(d, "DevToolsActivePort"), "w") as f:
@@ -168,6 +182,46 @@ class WhatItMayDoInThePage(unittest.TestCase):
         self.assertIn("while (row.parentElement && row.parentElement !== m && !row.nextElementSibling)", o)
         self.assertIn("#header-login-button", o)
         self.assertIn("/^log ?in$/i.test((b.textContent || '').trim())", o)
+
+    def test_what_it_asks_of_devtools_only_reads(self):
+        """T6 added network watching. Everything the reader sends DevTools is
+        on this list: turning on events, one binding, OBSERVER, and a single
+        navigation - to live_url(), which only allows www.tiktok.com/@you/live.
+        It never asks for cookies (the sign-in is in them), a response body,
+        storage, or to stop or rewrite a request."""
+        with open(tt.__file__, encoding="utf-8") as f:
+            src = f.read()
+        asked = set(re.findall(r'\("([A-Z][A-Za-z]+\.[A-Za-z]+)",', src))
+        self.assertEqual(asked, {"Runtime.enable", "Page.enable", "Network.enable", "Runtime.addBinding",
+                                 "Page.addScriptToEvaluateOnNewDocument", "Page.navigate"})
+        self.assertIn('("Page.navigate", {"url": url})', src)
+        self.assertIn("url = self.live_url()", src)
+        for never in ("Cookies", "Storage.", "getResponseBody", "setRequestInterception", "Fetch.",
+                      "Input.", "Runtime.callFunctionOn", "sendMessageToTarget"):
+            self.assertNotIn(never, src, never)
+
+    def test_a_gift_from_the_page_reaches_post_gift_as_text(self):
+        """The DevTools events, in the order a page sends them, through the
+        adapter - and a name with a direction override comes out without it."""
+        import base64
+        from test_webcast import gift_payload, push, user, wrap
+        got = []
+        old = tt.TikTokAdapter.on_gift
+        self.addCleanup(setattr, tt.TikTokAdapter, "on_gift", old)
+        tt.TikTokAdapter.on_gift = got.append
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        room = "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/"
+        name = "Ev" + chr(0x202E) + "il"
+        frame = push([wrap("WebcastGiftMessage", gift_payload(streak=False, frm=user(7, name, "evil")))])
+        a._event("Network.webSocketFrameReceived", {"requestId": "9", "response": {
+            "opcode": 2, "payloadData": base64.b64encode(frame).decode()}})
+        self.assertEqual(got, [], "a frame from a socket it never saw open")
+        a._event("Network.webSocketCreated", {"requestId": "9", "url": room})
+        a._event("Network.webSocketFrameReceived", {"requestId": "9", "response": {
+            "opcode": 2, "payloadData": base64.b64encode(frame).decode()}})
+        self.assertEqual([(g["user"], g["gift"], g["coins"]) for g in got], [("Evil", "Rose", 1)])
+        self.assertEqual(a.status()["page"]["gifts"], 1)
+        self.assertTrue(a.status()["page"]["socket"])
 
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))

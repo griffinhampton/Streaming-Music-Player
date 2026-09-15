@@ -1,6 +1,13 @@
-// The TikTok reader, against one real public TikTok LIVE - counts only.
+// The TikTok reader's page script, against one real public TikTok LIVE -
+// counts only.
 //
 //   node ttreal.js <devtools port>
+//
+// What this does NOT test, learned the hard way (2026-09-15): the reader
+// itself. It runs OBSERVER in a Chrome of its own, so it could not see that
+// the reader launched its Chrome in a way TikTok's page never enters a room
+// from - and passed while the real reader read nothing on every real live.
+// tools/ui/ttrealreader.py runs the reader as it ships; believe that one.
 //
 // Not part of `uirun.sh all`, and run by hand: it goes to tiktok.com. The
 // reader follows TikTok's page, which TikTok changes when it likes; this is

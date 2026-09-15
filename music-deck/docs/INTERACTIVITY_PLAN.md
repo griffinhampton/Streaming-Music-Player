@@ -183,6 +183,15 @@ carries no link to the sender's profile, so the app cannot tell your own
 messages from a viewer who copies your display name - and so nobody in TikTok
 chat counts as you. Run a broadcaster-only command from the deck.
 
+**And the reader itself, checked later the same day - it had never worked.**
+That check ran the reader's page script in a Chrome of its own. Run exactly as
+it ships, the reader read nothing on any real live: it started its Chrome with a
+setting (`--remote-debugging-port=0`) that TikTok's page never enters a live
+room from. Found by trying one difference at a time, fixed - the reader picks
+its own port now - and checked on a real live with the reader itself: 45 chat
+lines, TikTok's room socket, and a real gift. `tools/ui/ttrealreader.py` is
+that check, and the one to run if chat ever stops arriving.
+
 ### T5. TikTok chat, through the pipeline that exists
 
 Once T4 has a source, this is one `Adapter` subclass: translate a comment into
@@ -233,6 +242,16 @@ a third party for; the app only reads what arrived, on this PC. What it needs:
 It is a bigger piece than the chat reader, and it breaks the same way - when
 TikTok changes its messages. It also offers a second source for chat that does
 not depend on the page's drawing at all, which is worth weighing once it works.
+
+**Built (2026-09-15), as designed.** Gifts reach the Gift layer from your own
+live page: a one-off at once, a streak once, at its end, with its total. Only
+TikTok's room socket is read - never its messaging socket, which on a signed-in
+page carries your private messages. Checked on a real live with the reader as it
+ships: the room socket found, 147 messages decoded and none bad, and a real gift
+posted (Heart Me, 1 coin). Still to come: the sender's picture (a gift shows
+their initial for now), and chat from the same socket, where every line carries
+the sender's @handle - which would let the app tell your own messages from a
+viewer who copies your display name.
 
 ### T7. Text to speech, for followers
 
