@@ -732,6 +732,46 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Opened before the live starts (2026-09-15)
+
+The likeliest first-stream snag: the streamer presses Open TikTok before going
+live. Watched on two real offline accounts' live pages: the page shows that
+the live has ended, opens no room socket - so nothing to read - yet still draws
+an empty chat list, and asks `check_alive` every five seconds. Two faults
+followed. The chat panel took "a chat list is there" for reading, and said
+"Reading your live chat and gifts" to someone not yet live. And whether
+TikTok's page moves on to the live by itself when it starts could not be seen -
+nobody goes live on cue - so a reader that waited on it might wait all stream.
+
+**Now the reader does not wait to find out** (`tiktok_chat.py`, `_reopen_due`).
+On the streamer's own page with no live since it loaded - no room socket
+heard, no line of chat read - it opens the page again after a minute, then
+twice as long each time up to five minutes, until the live is there; the wait
+starts over once it is. Never on someone else's page, and never while a text
+field in that window has focus: the page script now reports whether one does -
+which element, never what is in it - so a streamer signing in is not reloaded
+from under their typing. The panel says "reading" only once something is
+arriving, and otherwise that the page has no live on it yet and the reader will
+find it by itself.
+
+**Checked** in `tests/test_tiktok_chat.py` (the waits, their doubling and
+ceiling, typing, someone else's page, and the wait starting over once live) and
+on the rig by `tools/ui/ttgifts.js`, whose page opens no room socket while the
+streamer is "offline": the reader says it is waiting, opens the page again by
+itself, and when the live starts, finds it and reads a gift. And on real
+TikTok, with the reader as it ships: on an offline account's live page it
+counted the page as the account's own, said it was waiting, and opened it
+again after the first minute; on a real live it was live at once - 102 frames,
+chat from the room socket - and never looked again.
+
+**And a fault this turned up that was older.** The chat panel draws the
+reader's state from the hub's snapshot, which copied the page facts the page
+script reports and nothing the reader works out - so where chat came from,
+whether the window was on the streamer's own page, and now whether a live is
+there, never reached the panel. The "window is on another page" line of the
+section below could not have shown. The snapshot now carries the reader's
+whole status (`chat.py`), and a test holds it to that.
+
 ## Only your own live (2026-09-15)
 
 Found reading the reader over before the first real stream: it read whatever

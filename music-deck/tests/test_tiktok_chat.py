@@ -362,6 +362,65 @@ class WhatItMayDoInThePage(unittest.TestCase):
         b._payload(json.dumps({"t": "chat", "name": "Amy", "text": "hello"}))
         self.assertEqual(len(lines), before)
 
+    def test_a_page_with_no_live_on_it_is_opened_again_later(self):
+        """Opened before the streamer goes live, the page shows the live has
+        ended and opens no room socket; whether TikTok's page moves on to the
+        live by itself was not seen, so the reader looks again - later each
+        time, never under someone typing, never on someone else's page, and
+        never once there is a live."""
+        import time
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+        now, first = time.monotonic(), tt.TikTokAdapter.reopen_first
+        a._loaded_at = now - first + 5
+        self.assertFalse(a._reopen_due(now), "not yet")
+        a._loaded_at = now - first
+        self.assertTrue(a._reopen_due(now), "the first look")
+        self.assertFalse(a._reopen_due(now), "the page loaded again, and the wait has doubled")
+        a._loaded_at = now - 2 * first
+        self.assertTrue(a._reopen_due(now))
+        for _ in range(8):
+            a._loaded_at = now - tt.REOPEN_MAX
+            a._reopen_due(now)
+        self.assertEqual(a._wait, tt.REOPEN_MAX, "never longer than REOPEN_MAX")
+        self.assertEqual(a.looks, 2 + 8)
+        a.page["typing"] = True
+        a._loaded_at = now - 10 * tt.REOPEN_MAX
+        self.assertFalse(a._reopen_due(now), "never while the streamer is typing in the window")
+        a.page["typing"] = False
+        a._loaded_at = now - 10
+        a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")
+        self.assertFalse(a._reopen_due(now + 10 * tt.REOPEN_MAX), "a live: never")
+        self.assertEqual(a._wait, first, "and the wait starts over")
+        self.assertTrue(a.status()["page"]["live"])
+        self.assertFalse(a.status()["page"]["waiting"])
+        b = tt.TikTokAdapter("probe", lambda m: None)
+        b._event("Page.frameNavigated", {"frame": {"id": "m", "url": "https://www.tiktok.com/@someoneelse/live"}})
+        self.assertFalse(b._reopen_due(time.monotonic() + 10 * tt.REOPEN_MAX), "someone else's page: never")
+
+    def test_the_page_script_says_only_whether_a_field_has_focus(self):
+        """For the reopening's sake the page reports that the streamer is
+        typing - which element has focus, never what is in it."""
+        o = tt.OBSERVER
+        self.assertIn("const f = document.activeElement;", o)
+        for never in (".value", "innerText", "selectionStart"):
+            self.assertNotIn(never, o, never)
+
+    def test_the_hubs_snapshot_carries_what_the_reader_works_out(self):
+        """The chat panel draws from the hub's snapshot. It once copied only
+        the page script's facts, so where chat came from, the streamer's own
+        page and whether a live was there never reached the panel. And it
+        must not carry a counter that ticks per gift."""
+        hub = chat.ChatHub()
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        hub._adapters["tiktok"] = a
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+        page = hub.snapshot()["services"][0]["page"]
+        for key in ("own", "live", "waiting", "chat_from", "socket", "room", "signed_in"):
+            self.assertIn(key, page, key)
+        self.assertTrue(page["own"])
+        self.assertNotIn("gifts", page, "a counter that ticks per gift would put the state on the wire per gift")
+
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))
 

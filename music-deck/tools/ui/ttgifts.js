@@ -139,9 +139,15 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   // The room's socket, where TikTok sends gifts, and one shaped like TikTok's
   // messaging socket, which the reader must never read. The page answers each
   // frame on the second one, so the probe knows it arrived.
-  const room = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/webcast/im/ws_proxy/ws_reuse_supplement/?room=1');
+  // The room socket opens only while the streamer is "live" (the probe's
+  // liveNow): an offline live page opens none, as TikTok's does.
+  fetch('/live-state').then((r) => r.json()).then((s) => {
+    if (!s.live) return;
+    const room = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/webcast/im/ws_proxy/ws_reuse_supplement/?room=1');
+    room.binaryType = 'arraybuffer';
+  });
   const other = new WebSocket('ws://127.0.0.1:${FIXTURE_PORT}/ws/v2?x=1');
-  room.binaryType = other.binaryType = 'arraybuffer';
+  other.binaryType = 'arraybuffer';
   other.onmessage = () => other.send('got it');
   // And the page drawing chat lines, as TikTok's does, in the real shape -
   // which the reader must not also send while the room socket is heard.
@@ -171,8 +177,12 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
     setTimeout(tick, 250);
   })();
 </script></body></html>`;
+let liveNow = true;            // is the streamer "live": does the page open its room socket
+let pageLoads = 0;             // loads of the streamer's own live page
 const fixture = http.createServer((req, res) => {
   if (req.url === '/ops') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J(ops)); return; }
+  if (req.url === '/live-state') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J({ live: liveNow })); return; }
+  if (req.url.split('?')[0] === '/@probe/live') pageLoads++;
   // Stand-ins for TikTok's image servers, and for what the app must refuse
   // from them: a redirect, and a page that calls itself a PNG.
   if (req.url.startsWith('/pic/')) {
@@ -231,7 +241,7 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     { name: 'fans', action: 'say', role: 'follower', response: 'thanks for following' },
   ], symbol: '!', budget: { count: 5, seconds: 0 } });
   await new Promise((r) => fixture.listen(FIXTURE_PORT, '127.0.0.1', r));
-  const pointed = await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}` });
+  const pointed = await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 4 });
   check('the rig points its reader at the fixture', pointed.ok, J(pointed));
 
   // A Gift layer on air - coin and card, a second each, so a queue plays through.
@@ -440,7 +450,29 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     sockets.room.length > roomsBefore && await n('Loaded') === 0 && st && st.page && st.page.own === false,
     J({ sockets: sockets.room.length, page: st && st.page }));
 
-  // ------------------------------------------------------------ 10. stop
+  // ------------------------------------------ 10. opened before going live
+  // The page shows no live and opens no room socket; the reader looks again
+  // by itself (tiktok_chat.py _reopen_due), and finds the live once it starts.
+  liveNow = false;
+  const loads0 = pageLoads;
+  ops.push({ load: '/@probe/live' });
+  let w = null;
+  for (let i = 0; i < 100; i++) { await sleep(250); w = await tiktokStatus(); if (w && w.page && w.page.waiting) break; }
+  check('opened before the live starts, the reader says it is waiting for it',
+    w && w.page && w.page.own === true && w.page.live === false && w.page.waiting === true, J(w && w.page));
+  check('and has opened the page again by itself', w && w.page.looks >= 1 && pageLoads > loads0 + 1,
+    J({ looks: w && w.page.looks, loads: pageLoads - loads0 }));
+  liveNow = true;
+  const roomsNow = sockets.room.length;
+  for (let i = 0; i < 240 && sockets.room.length <= roomsNow; i++) await sleep(250);
+  await sleep(1500);
+  toRoom(G({ from: user(501, 'NowLive', 'nowlive'), streak: false }));
+  await sleep(2500);
+  w = await tiktokStatus();
+  check('once the live starts, the reader finds it and reads it', sockets.room.length > roomsNow &&
+    w && w.page.live === true && w.page.waiting === false && await n('NowLive') === 1, J(w && w.page));
+
+  // ------------------------------------------------------------ 11. stop
   await post('/api/chat/disconnect', { service: 'tiktok' });
   await sleep(3000);
   check('stopping closes the reader\'s window', !(await readerAlive()));

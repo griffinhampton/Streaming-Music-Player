@@ -147,7 +147,9 @@ const ChatPanel = (() => {
     // Signing in is optional: TikTok's page receives a live's chat and gifts
     // signed out too - every real live the reader was checked on was read
     // signed out - and a window never signed in holds no TikTok login at all.
-    const reading = pg.chat_from === 'socket' || pg.room;
+    // Reading means something is arriving: the room socket, or lines of chat.
+    // A chat list alone is not enough - an offline live page draws one too.
+    const reading = pg.live || pg.chat_from === 'socket';
     $('[data-cp="tthint"]').textContent = !tt
       ? 'Opens your TikTok live page in a window of its own and reads its chat and gifts - nothing leaves this PC. You do not have to sign in there.'
       : tt.state === 'failed' ? (tt.error || 'The TikTok window stopped.')
@@ -155,6 +157,9 @@ const ChatPanel = (() => {
       // The window moved to someone else's live (tiktok_chat.py _own): nothing
       // from there reaches the stream, and the streamer should know why.
       : pg.own === false && pg.path ? `The TikTok window is on another page. Chat and gifts are read only from your own live page (@${tt.channel}) - open it there again.`
+      // Opened before going live: the page has no live on it, and the reader
+      // looks again by itself (tiktok_chat.py _reopen_due).
+      : pg.waiting ? 'Your live page is open, but TikTok has no live on it yet. When your LIVE starts, the reader finds it by itself - it looks again every few minutes, nothing to press.'
       // Nothing heard and no chat list: the page is still loading, or the
       // window is on some other page. Which one cannot be told, so say both.
       : !reading ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'

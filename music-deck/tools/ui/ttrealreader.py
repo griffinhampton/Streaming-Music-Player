@@ -63,6 +63,10 @@ def main():
         report = {"state": st["state"], "failed": bool(st["error"]), "chatListFound": st["page"]["room"],
                   "signedIn": st["page"]["signed_in"], "roomSocket": st["page"]["socket"],
                   "chatFrom": st["page"]["chat_from"], "chatLines": lines[0],
+                  # Whether the page shows a live, and - if not - that the
+                  # reader is waiting and has opened it again (_reopen_due).
+                  "ownPage": st["page"]["own"], "live": st["page"]["live"], "waiting": st["page"]["waiting"],
+                  "looksAgain": st["page"]["looks"],
                   "framesDecoded": r.frames, "framesBad": r.bad, "seconds": round(time.monotonic() - t0),
                   "gifts": [{"gift": g["gift"], "count": g["count"], "coins": g["coins"]} for g in gifts]}
     finally:

@@ -65,6 +65,15 @@ MAX_FRAME = 16 * 1024 * 1024
 # SOCKET_FRESH seconds.
 PAGE_WAIT = 15
 SOCKET_FRESH = 60
+# Opened before the streamer is live, the live page shows the live has ended
+# and opens no room socket (seen 2026-09-15). Whether TikTok's page moves on to
+# the live by itself when it starts was not seen either way - it asks
+# check_alive every five seconds, about what is its business - so the reader
+# does not wait to find out: with no room socket since the page loaded, it
+# opens the page again after `reopen_first` seconds (a class attribute, which
+# the rig shortens), then twice as long each time up to REOPEN_MAX, and never
+# while the streamer is typing in that window.
+REOPEN_MAX = 300
 
 # Muted, so the live page's own sound never reaches Desktop sound; and kept
 # awake behind other windows, or Chrome throttles the page and the chat stalls.
@@ -171,8 +180,12 @@ OBSERVER = r"""(() => {
     // This runs from the first moment of the page (T6: the tab is watched
     // before the page loads), when there is no Log in button to find yet and
     // no chat list either. That is "not known yet", not "signed in".
+    // Whether a text field has focus - never what is in it - so the reader
+    // never opens the page again under someone typing (REOPEN_MAX).
+    const f = document.activeElement;
+    const typing = !!(f && f.matches && f.matches('input, textarea, [contenteditable=""], [contenteditable="true"]'));
     const state = { t: 'status', room: !!room, signedIn: signedOut ? false : room ? true : null,
-                    path: location.pathname };
+                    path: location.pathname, typing };
     const k = JSON.stringify(state);
     if (k !== last || Date.now() - lastAt > 10000) { last = k; lastAt = Date.now(); send(state); }
   }
@@ -398,6 +411,7 @@ class TikTokAdapter(chat.Adapter):
     # A finished gift, for server.py's post_gift (T6). Called through the
     # class, so it stays a plain function rather than becoming a method.
     on_gift = None
+    reopen_first = 60        # REOPEN_MAX says why
 
     def __init__(self, channel, on_message, log=None):
         super().__init__((channel or "").strip().lstrip("@#"), on_message, log)
@@ -409,13 +423,45 @@ class TikTokAdapter(chat.Adapter):
         self._main = ""
         self._at = ""
         self.elsewhere = 0
+        # Whether the page that last loaded has a live on it (_live), and when
+        # to look again if not (_reopen_due).
+        self._loaded_at = time.monotonic()
+        self._drawn_at = float("-inf")
+        self._wait = type(self).reopen_first
+        self._looking = False
+        self.looks = 0
         self._proc = None
         self._tab = ""
         self._port = None
 
     def status(self):
+        live = self._live()
+        # Once it has opened the page again it is plainly waiting, however
+        # recently that last load was.
+        waiting = self._own() and not live and (self._looking or time.monotonic() - self._loaded_at >= PAGE_WAIT)
         return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts,
-                                                chat_from=self._chat_from(), own=self._own()))
+                                                chat_from=self._chat_from(), own=self._own(), live=live,
+                                                waiting=waiting, looks=self.looks))
+
+    def _live(self):
+        """Has the page that last loaded shown a live - its room socket heard,
+        or (the fallback) a line of its chat read - since it loaded?"""
+        return self.room.heard >= self._loaded_at or self._drawn_at >= self._loaded_at
+
+    def _reopen_due(self, now):
+        """Time to open the streamer's own page again, because it has no live
+        on it (REOPEN_MAX)? Twice as long between looks each time; the wait
+        starts over once there is a live."""
+        if self._live():
+            self._wait = type(self).reopen_first
+            self._looking = False
+            return False
+        if not self._own() or self.page.get("typing") or now - self._loaded_at < self._wait:
+            return False
+        self._wait = min(self._wait * 2, REOPEN_MAX)
+        self.looks += 1
+        self._looking = True
+        return True
 
     def _own(self):
         """Is the window on the streamer's own live page?
@@ -493,6 +539,9 @@ class TikTokAdapter(chat.Adapter):
                 if time.monotonic() - tick >= 1:
                     tick = time.monotonic()
                     self._room_events(self.room.due())
+                    if self._reopen_due(tick):
+                        self.log("chat: tiktok: no live on the page yet - opening it again")
+                        cdp.send("Page.navigate", {"url": url})
         except OSError as exc:
             if not self._stop.is_set():
                 closed = "closed" in str(exc).lower() or "refused" in str(exc).lower()
@@ -564,6 +613,7 @@ class TikTokAdapter(chat.Adapter):
             if not f.get("parentId"):              # the page itself, not a frame inside it
                 self._main = f.get("id") or ""
                 self._navigated(f.get("url"))
+                self._loaded_at = time.monotonic()
         elif method == "Page.navigatedWithinDocument":
             if params.get("frameId") == self._main:
                 self._navigated(params.get("url"))
@@ -613,6 +663,7 @@ class TikTokAdapter(chat.Adapter):
         if p.get("t") == "status":
             signed = p.get("signedIn")
             self.page = {"room": bool(p.get("room")), "signed_in": None if signed is None else bool(signed),
+                         "typing": bool(p.get("typing")),
                          "path": str(p.get("path") or "")[:120]}
             return
         if p.get("t") == "chat":
@@ -621,6 +672,7 @@ class TikTokAdapter(chat.Adapter):
             msg = to_message(self.channel, p)
             if msg:
                 self.messages += 1
+                self._drawn_at = time.monotonic()
                 self.on_message(msg)
 
     def _close(self):

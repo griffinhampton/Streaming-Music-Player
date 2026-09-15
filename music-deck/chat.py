@@ -490,10 +490,17 @@ class ChatHub:
         with self._lock:
             ads = [{"service": a.service, "channel": a.channel, "state": a.state, "error": a.error}
                    for a in self._adapters.values()]
-            # What TikTok's reader window can see (tiktok_chat.py): a chat list
-            # or not, signed in or not. It changes when the user does something
-            # in that window, never per message - so it is safe on this feed.
+            # What TikTok's reader window can see (tiktok_chat.py) - and what the
+            # reader works out from it: where chat comes from, whether the
+            # window is on the streamer's own page, whether a live is there.
+            # Taken from its status(), not its raw `page`, which held only the
+            # page script's facts - so for a while none of the rest reached the
+            # chat panel. Each changes when something happens in that window,
+            # never per message; a counter that does tick per event (gifts)
+            # stays off, or every gift would put the whole state on the wire.
             for d, a in zip(ads, self._adapters.values()):
                 if isinstance(getattr(a, "page", None), dict):
-                    d["page"] = dict(a.page)
+                    page = a.status().get("page")
+                    page = page if isinstance(page, dict) else a.page
+                    d["page"] = {k: v for k, v in page.items() if k != "gifts"}
         return {"services": ads, "total": self.total}

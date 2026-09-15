@@ -2859,7 +2859,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "a local address only"}, 400)
             tiktok_chat.TikTokAdapter.base = base or tiktok_chat.TIKTOK
             tiktok_chat.TikTokAdapter.allow_local_base = bool(base)
-            return self._json({"ok": True, "base": tiktok_chat.TikTokAdapter.base})
+            # And how soon the reader looks again at a page with no live on it
+            # (tiktok_chat.REOPEN_MAX): a probe cannot wait a minute a time.
+            try:
+                first = max(2, min(60, int(data.get("reopen") or 60))) if base else 60
+            except (TypeError, ValueError):
+                first = 60
+            tiktok_chat.TikTokAdapter.reopen_first = first
+            return self._json({"ok": True, "base": tiktok_chat.TikTokAdapter.base, "reopen": first})
         if path == "/api/debug/gift":
             # A test hook for the Gift layer (T8), and the test rig's alone -
             # gated on TEST_RIG, not the port, because a gift that reached a
