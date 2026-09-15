@@ -1003,6 +1003,15 @@ Gift-giver, flag 1, was on every line of all nine people who chatted after
 sending a gift, but it is not a rung: a gifter need not follow, and a ladder
 has no side doors.
 
+**Mutual follows and subscribers.** Flag 4 alone decides the rung, so had
+TikTok ever marked a mutual follow (flag 3) or a subscriber (flag 2) without
+it, the streamer's friends and paying fans would be turned away as
+non-followers. Checked after the rung was built, in ten more rooms: of 389 live
+lines from 196 people, flag 3 was on 35 lines from 16 people and flag 2 on two
+lines from one (wearing TikTok's super-fan badge) - and flag 4 was on every one
+of them. The reader's own follower call matched flag 4 on all 389 lines. Both
+already reach the follower rung, so neither needs reading.
+
 **The rung.** `follower` sits between everyone and subscriber in `commands.py`'s
 `ROLES`, for every command and every layer's own - so a Voice layer set to
 "Followers and up" is T7 as first written. Twitch chat carries no follow status

@@ -200,8 +200,10 @@ def chat(payload):
           not only "this stream". The gift gate takes it beside the ledger's
           own count (gifts.py).
     The rest - 2 and 3, subscriber and mutual follow by the community's
-    definitions - are not used. 2 was never there to check, and a role nobody
-    has checked is not one to hand out."""
+    definitions - are not read, and need not be: in ten more rooms, 3 was on
+    35 lines from 16 people and 2 on two (wearing TikTok's super-fan badge),
+    and 4 was on every one. A mutual follow or a subscriber is already a
+    follower here, so nobody the streamer follows back is turned away."""
     fs = fields(payload)
     ident = fields(_bytes(fs, 18))
     return {"user": user(_bytes(fs, 2)), "text": _text(fs, 3, 500), "mod": _int(ident, 5) == 1,

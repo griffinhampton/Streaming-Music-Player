@@ -335,9 +335,12 @@ class TheChat(unittest.TestCase):
 
     def test_a_follower_is_flag_4_and_nothing_else(self):
         """Checked on real lives: absent from the lines of people who had not
-        followed yet, and on every line after TikTok announced their follow."""
+        followed yet, and on every line after TikTok announced their follow.
+        A mutual follow (3) and a subscriber (2) came with 4 on every real
+        line, so the shapes TikTok sends them in are followers through 4."""
         r = self.room()
-        self.assertTrue(r.frame("1", 2, b64(chat_frame(flags=(4,))))[0]["follower"])
+        for flags in ((4,), (3, 4), (1, 3, 4), (1, 2, 3, 4), (3, 4, 5)):
+            self.assertTrue(r.frame("1", 2, b64(chat_frame(flags=flags)))[0]["follower"], flags)
         for flags in ((1, 2, 3), (5,), (3,), ()):
             self.assertFalse(r.frame("1", 2, b64(chat_frame(flags=flags)))[0]["follower"], flags)
 
@@ -345,7 +348,7 @@ class TheChat(unittest.TestCase):
         """Checked on real lives: 5 was on the one line the page drew a
         moderator badge on, and on none of the others. 1-4 are gift-giver,
         subscriber, mutual follow and follower by the community's definitions
-        - and none of them is taken for a role."""
+        - and none of them makes a moderator."""
         r = self.room()
         self.assertTrue(r.frame("1", 2, b64(chat_frame(flags=(1, 2, 3, 4, 5))))[0]["mod"])
         for flags in ((1, 2, 3, 4), (4,), (6,), ()):
