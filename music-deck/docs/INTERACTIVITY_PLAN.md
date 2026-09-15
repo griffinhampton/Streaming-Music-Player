@@ -138,6 +138,19 @@ My recommendation is to check (2) first because it costs nothing new, then (3),
 and to treat (1) as the fallback. Say the word and T4 becomes "find out about
 (2)" rather than a design step.
 
+**(2) checked, 2026-09-15 - from the public docs, not with your token.** You
+asked whether your Streamlabs key, TikTok server link and live key make it work.
+The server link and live key are for *sending* the stream (they go in the LIVE
+panel's Stream key tab) and carry no chat at all. Streamlabs' public developer
+docs document no TikTok events: the Socket API lists Streamlabs donations and
+Twitch, YouTube and Mixer events, and a search of dev.streamlabs.com finds no
+TikTok page ([Socket API](https://dev.streamlabs.com/docs/socket-api),
+[developer docs](https://dev.streamlabs.com/)). Streamlabs' own apps may read
+TikTok through endpoints it does not publish, but probing undocumented endpoints
+with your token is the thing this plan said it would not do. So (2), as a public
+API, is out. That leaves (3), your own logged-in TikTok page on this PC, and (1),
+a third party - still your call.
+
 ### T5. TikTok chat, through the pipeline that exists
 
 Once T4 has a source, this is one `Adapter` subclass: translate a comment into
@@ -192,6 +205,17 @@ front. Followers-only waits on T4; until then the gate is the role ladder.
 Tested with real speech on the rig, 31 checks. See DECISIONS, "Chat, read out
 loud".
 
+**What it needs before it works on TikTok** (you asked, 2026-09-15):
+1. **TikTok chat.** The app reads Twitch chat today and nothing else
+   (`chat.py`'s only adapter), so a TikTok viewer's `!tts` is not heard until T4
+   picks a source and T5 plugs it in. After that, nothing else changes.
+2. **The voice has to be in the stream's sound.** The Voice layer plays
+   through the PC. Going live from the app, tick **Desktop sound** in the LIVE
+   panel's Sound section - it is **off by default**, and without it neither the
+   voice nor an Effect layer's clip is on stream. Going live through LIVE
+   Studio, its desktop audio capture has to be on.
+3. **The rebuilt app**, with a Voice layer on the scene you go live with.
+
 ## Group C - the effects layer
 
 ### T8. A Gift effects layer
@@ -221,6 +245,20 @@ The card-and-picture case is done; the physics-ish case is not. See DECISIONS,
 "A layer that shows something when something happens" - including the two
 faults it turned up: every picture picker in the app was hiding animated GIFs,
 and the first probe passed 8 of 8 while photographing an empty stage.
+
+**The gift layer, built (2026-09-15), ahead of the gifts themselves.** Add
+**Gift** from the grid: a coin that spins wearing the sender's picture (or
+their initial), one thing thrown per coin at a layer you pick - a camera, say -
+or both, with a card saying who sent what. Filters by minimum coins and by gift
+name, so one layer can take the small gifts and another the big ones. The
+throws are capped (30 in the air by default, never more than 60) and a gift
+past the cap throws the same number faster: 500 coins is a quick flurry, not
+500 elements. Stop effects takes all of it down at once. "Try it" in the
+inspector plays a sample in the editor only, and the rig's test route that
+posts a gift to the bus refuses to run anywhere but the test rig - a pretend
+gift must never reach an audience. Real gifts need T4's source and T6's combo
+counting and avatar caching; they will arrive through the same `post_gift()`
+this uses. 28 checks on the rig. See DECISIONS, "A gift, on stream".
 
 ### T9. Alert and poll layers you can actually add
 

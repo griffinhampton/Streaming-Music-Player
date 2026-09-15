@@ -1105,6 +1105,203 @@ TYPES.speak = {
   },
 };
 
+/* Gift (T8): what a gift looks like on stream.
+
+   A coin that spins wearing the sender's picture, one thing thrown at a
+   target for every coin, or both - and a card saying who sent what. Every
+   gift layer hears every gift (a gift is the stream's, not one layer's) and
+   keeps the ones it wants: at least so many coins, or only these gifts. So
+   one layer can take the small ones and another the big ones.
+
+   The throws are the costly part and the dangerous one. One element per
+   coin, flown by the Web Animations API - composited transforms, no script
+   per frame - capped at the layer's "most in the air", and never past
+   GIFT_HARD_CAP whatever the layer says. A gift bigger than the cap throws
+   the same number of things, faster: 5,000 coins is a flurry, not 5,000
+   elements and a frozen stream.
+
+   The sender's picture is a local asset id, never a remote URL: T6 fetches
+   avatars through the server, and assetUrl refuses anything else. */
+const GIFT_HARD_CAP = 60;
+TYPES.gift = {
+  create(entry) {
+    entry.el.innerHTML =
+      '<div class="gift-stage"><div class="gift-coin"><div class="gift-face"></div><div class="gift-back"></div></div>' +
+      '<div class="gift-card"><b class="gift-who"></b><span class="gift-what"></span></div></div>' +
+      '<div class="gift-fly"></div>';
+    entry.queue = [];
+    entry.showing = null;
+    entry.flying = new Set();
+    entry.timers = [];
+    entry.launched = 0; entry.peak = 0; entry.landed = []; entry.lastFlight = 0;
+    this.update(entry);
+  },
+  /* The settings, with the same fallbacks the inspector shows (TYPE_DEFAULTS). */
+  opts(entry) {
+    const p = entry.layer.props || {};
+    const n = (v, d, lo, hi) => {
+      const x = (v === undefined || v === '' || v === null) ? NaN : Number(v);
+      return Math.max(lo, Math.min(hi, Number.isFinite(x) ? x : d));
+    };
+    return {
+      mode: ['coin', 'throw', 'both'].includes(p.mode) ? p.mode : 'both',
+      min: n(p.min, 0, 0, 1e9),
+      seconds: n(p.seconds, 4, 1, 30),
+      max: Math.round(n(p.max, 5, 1, 20)),
+      cap: Math.round(n(p.max_objects, 30, 1, GIFT_HARD_CAP)),
+      size: n(p.object_size, 64, 16, 240),
+      coin: n(p.coin, 220, 60, 600),
+      only: String(p.only || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    };
+  },
+  update(entry) {
+    const p = entry.layer.props || {}, g = this.opts(entry);
+    const coin = entry.el.querySelector('.gift-coin');
+    coin.style.width = coin.style.height = px(g.coin);
+    coin.querySelector('.gift-face').style.fontSize = px(g.coin * 0.42);
+    const card = entry.el.querySelector('.gift-card');
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 28);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    if (PREVIEW && !entry.showing) {
+      this.paint(entry, { user: 'Amy', gift: 'Rose', count: 5, coins: 5 });
+      entry.el.classList.add('showing', 'sample');
+      entry.el.classList.toggle('with-coin', g.mode !== 'throw');
+    }
+  },
+  paint(entry, d) {
+    const p = entry.layer.props || {};
+    const face = entry.el.querySelector('.gift-face');
+    const pic = assetUrl(d.avatar) || assetUrl(p.face);
+    const who = String(d.user || 'Someone');
+    if (pic) {
+      let img = face.querySelector('img');
+      if (!img) { face.textContent = ''; img = document.createElement('img'); img.alt = ''; face.appendChild(img); }
+      if (img.getAttribute('src') !== pic) img.src = pic;
+    } else {
+      face.textContent = (who.trim()[0] || '?').toUpperCase();     // no picture: their initial
+    }
+    const coins = Math.max(0, Math.floor(Number(d.coins) || 0));
+    const count = Math.max(1, Math.floor(Number(d.count) || 1));
+    entry.el.querySelector('.gift-who').textContent = who;
+    entry.el.querySelector('.gift-what').textContent =
+      `sent ${d.gift || 'a gift'}${count > 1 ? ' × ' + count : ''} · ${coins} coin${coins === 1 ? '' : 's'}`;
+  },
+  alert(entry, ev, scene) {
+    if (ev.kind !== 'gift') return;
+    const d = ev.detail || {}, g = this.opts(entry);
+    const coins = Math.max(0, Math.floor(Number(d.coins) || 0));
+    if (coins < g.min) return;
+    if (g.only.length && !g.only.includes(String(d.gift || '').trim().toLowerCase())) return;
+    if (scene) entry.scene = scene;                 // for the target, which is another layer
+    entry.queue.push(ev);
+    if (entry.queue.length > g.max) entry.queue.splice(0, entry.queue.length - g.max);
+    if (!entry.showing) this.next(entry);
+  },
+  next(entry) {
+    clearTimeout(entry.hold);
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing', 'with-coin');
+      if (PREVIEW) this.update(entry);             // the editor's sample comes back
+      return;
+    }
+    entry.showing = ev;
+    const d = ev.detail || {}, g = this.opts(entry);
+    this.paint(entry, d);
+    entry.el.classList.remove('sample');
+    entry.el.classList.add('showing');
+    entry.el.classList.toggle('with-coin', g.mode !== 'throw');
+    playEnter(entry);
+    if (g.mode !== 'coin') this.throwAll(entry, Math.max(0, Math.floor(Number(d.coins) || 0)), g);
+    entry.hold = setTimeout(() => this.next(entry), g.seconds * 1000);
+  },
+  throwAll(entry, coins, g) {
+    const n = Math.min(coins, g.cap);
+    if (!n || isUltra()) return;                   // Ultra: the card says it, and nothing flies
+    entry.timers = [];
+    const every = n > 1 ? (g.seconds * 1000 * 0.6) / n : 0;
+    // Past the cap, the same number of things fly faster rather than more of them.
+    const flight = Math.round(900 * Math.max(0.4, Math.min(1, g.cap / coins)));
+    entry.lastFlight = flight;
+    const target = this.target(entry);
+    for (let i = 0; i < n; i++) {
+      entry.timers.push(setTimeout(() => this.throwOne(entry, target, flight, g), Math.round(i * every)));
+    }
+  },
+  /* Where things fly: the middle of another layer - a camera, say - or the
+     middle of this one. Both in this layer's own coordinates, from the
+     layers' transforms, so nothing has to be measured on screen. */
+  target(entry) {
+    const me = entry.layer.transform || {};
+    const want = (entry.layer.props || {}).target;
+    const other = want && entry.scene ? (entry.scene.layers || []).find((l) => l.id === want && l.visible !== false) : null;
+    const t = other && other.transform;
+    if (t) return { x: t.x + t.w / 2 - (me.x || 0), y: t.y + t.h / 2 - (me.y || 0), r: Math.max(10, Math.min(t.w, t.h) * 0.3) };
+    return { x: (me.w || 0) / 2, y: (me.h || 0) / 2, r: 40 };
+  },
+  throwOne(entry, target, flight, g) {
+    if (!entry.el.isConnected || entry.flying.size >= GIFT_HARD_CAP) return;
+    const p = entry.layer.props || {};
+    const me = entry.layer.transform || {};
+    const w = me.w || 0, h = me.h || 0, s = g.size;
+    const src = assetUrl(p.object);
+    const o = document.createElement(src ? 'img' : 'div');
+    o.className = 'gift-token';
+    if (src) { o.src = src; o.alt = ''; }
+    o.style.width = o.style.height = px(s);
+    // From a point on this layer's edge to somewhere on the target: a pile, not a laser.
+    const side = Math.floor(Math.random() * 4);
+    const sx = side === 0 ? 0 : side === 1 ? w : Math.random() * w;
+    const sy = side === 2 ? 0 : side === 3 ? h : Math.random() * h;
+    const a = Math.random() * Math.PI * 2, rr = Math.random() * target.r;
+    const dx = target.x + Math.cos(a) * rr - sx, dy = target.y + Math.sin(a) * rr - sy;
+    const lift = Math.min(260, Math.hypot(dx, dy) * 0.3);          // thrown, so it arcs
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 480);
+    o.style.left = px(sx - s / 2);
+    o.style.top = px(sy - s / 2);
+    entry.el.querySelector('.gift-fly').appendChild(o);
+    entry.flying.add(o);
+    entry.launched += 1;
+    entry.peak = Math.max(entry.peak, entry.flying.size);
+    const anim = o.animate([
+      { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
+      { transform: `translate(${dx / 2}px, ${dy / 2 - lift}px) rotate(${spin / 2}deg)`, opacity: 1, offset: 0.45 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg)`, opacity: 1, offset: 0.85 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg) scale(1.5)`, opacity: 0 },
+    ], { duration: Math.round(flight / 0.85), easing: 'linear', fill: 'forwards' });
+    o._anim = anim;
+    anim.onfinish = () => {
+      if (!entry.flying.has(o)) return;
+      const r = o.getBoundingClientRect();         // where it landed, for SceneDebug
+      entry.landed.push([Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]);
+      if (entry.landed.length > 60) entry.landed.splice(0, entry.landed.length - 60);
+      entry.flying.delete(o);
+      o.remove();
+    };
+  },
+  /* Everything flying comes down at once, synchronously - a cancel() event
+     arrives a task later, and "stop" means now. */
+  clear(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    for (const t of entry.timers) clearTimeout(t);
+    entry.timers = [];
+    for (const o of [...entry.flying]) {
+      entry.flying.delete(o);
+      try { o._anim.cancel(); } catch (_) { /* never started */ }
+      o.remove();
+    }
+    entry.showing = null;
+    entry.el.classList.remove('showing', 'with-coin');
+  },
+  takeDown(entry) { this.clear(entry); this.update(entry); },
+  destroy(entry) { this.clear(entry); },
+};
+
 /* Polls (S14): the bars people are voting on.
 
    The tally comes down the same alert socket S15 opened - which is why this
@@ -1622,6 +1819,14 @@ if (PREVIEW) {
       if (entry) playEnter(entry);
       return;
     }
+    // The Gift layer's "Try it" (T8): a sample gift for this one layer, in
+    // this preview alone. It never touches the bus, so it cannot reach a
+    // stream - a pretend gift on air would be a lie told to an audience.
+    if (e.data.type === 'editor-gift') {
+      const entry = current && current.layers.get(e.data.id);
+      if (entry && entry.type === 'gift') TYPES.gift.alert(entry, { kind: 'gift', detail: e.data.detail || {} }, current.scene);
+      return;
+    }
     if (e.data.type !== 'editor-scene' || !e.data.scene) return;
     editorPinned = true;
     banner.hidden = true;
@@ -1751,6 +1956,12 @@ window.SceneDebug = {
   layers: () => current ? [...current.layers.values()].map((e) => ({ id: e.layer.id, type: e.type, status: e.status || '', media: !!e.media, src: e.media && e.media.dataset ? e.media.dataset.src : '' })) : [],
   embeds: () => ({ live: EmbedHost.count(), created: EmbedHost.created() }),
   voice: () => voiceNow,
+  // T8's gift layers: what flew, how many at once at most, and where it landed.
+  gifts: () => current ? [...current.layers.values()].filter((e) => e.type === 'gift').map((e) => ({
+    id: e.layer.id, showing: e.el.classList.contains('showing'), coin: e.el.classList.contains('with-coin'),
+    flying: e.flying ? e.flying.size : 0, launched: e.launched || 0, peak: e.peak || 0,
+    lastFlight: e.lastFlight || 0, landed: (e.landed || []).slice(),
+  })) : [],
 };
 
 connectFeed();

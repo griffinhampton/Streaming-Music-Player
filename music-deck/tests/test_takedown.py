@@ -18,7 +18,7 @@ import unittest
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 HOOK = "takeDown"
 # The layers that hold something an event put on screen - T7's voice among them.
-HOLDERS = {"alert", "effect", "speak"}
+HOLDERS = {"alert", "effect", "speak", "gift"}
 # T7's Skip travels the same way, by its own name, and only a voice has one.
 SKIPPERS = {"speak"}
 

@@ -50,7 +50,11 @@ QUEUE_DEPTH = 256
 #
 # "speak" is a clip for a Voice layer (T7), addressed the same way; "skip" is
 # the Live view's Skip, which ends the clip being read and starts the next.
-KINDS = ("command", "request", "poll", "note", "gif", "sound", "stop", "effect", "speak", "skip")
+#
+# "gift" is one finished gift (T8): who, which, how many, the coin total after
+# a combo is coalesced, and the sender's picture as a local asset id. Every
+# Gift layer hears every gift and keeps the ones its filters want.
+KINDS = ("command", "request", "poll", "note", "gif", "sound", "stop", "effect", "speak", "skip", "gift")
 
 
 def event(kind, text, user="", title="", detail=None, at=None):

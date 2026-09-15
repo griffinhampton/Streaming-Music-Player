@@ -1016,6 +1016,12 @@ const ADD = [
     props: { command: 'tts', role: 'everyone', cooldown: 5, user_cooldown: 30, voice: '', rate: 0,
              volume: 0.9, maxlen: 150, max: 3, blocked: '', sayname: true, show: true,
              size: 30, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
+  // T8. Full size, like a background, because the throws cross the whole
+  // scene - from its edges to whatever "Throw them at" names.
+  { type: 'gift', label: 'Gift', sub: 'a spinning coin, and a throw for every coin', w: 99999, h: 99999,
+    props: { mode: 'both', min: 0, only: '', target: '', seconds: 4, max: 5, max_objects: 30,
+             object_size: 64, object: '', face: '', coin: 220,
+             size: 28, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
   // S15's and S14's layers. Both have had a full inspector and a working
   // runtime since the day they shipped, and no way at all to create one - the
   // only route was the API, which is how the test rig made them. The defaults

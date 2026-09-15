@@ -108,6 +108,50 @@ body.see-through { background: transparent; }
 .type-speak.showing .speak-card { opacity: 1; }
 .type-speak.sample .speak-card { opacity: .5; }
 
+/* The gift layer (T8). The stage inside carries the showing and hiding, for
+   the alert card's reason; the thrown things live in .gift-fly beside it so
+   they can finish their flight while the coin fades. The spin is a CSS
+   animation that runs only while a gift is showing, so motion.js's 30 fps
+   stepping and Ultra's stilling both apply to it. */
+.type-gift { overflow: visible; }
+.type-gift .gift-stage {
+  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 18px;
+  perspective: 900px; opacity: 0; transition: opacity 160ms linear;
+}
+.type-gift.showing .gift-stage { opacity: 1; }
+.type-gift.sample .gift-stage { opacity: .5; }
+.type-gift .gift-coin { position: relative; display: none; transform-style: preserve-3d; }
+.type-gift.with-coin .gift-coin { display: block; animation: gift-spin 2.4s linear infinite; }
+@keyframes gift-spin { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
+.type-gift .gift-face, .type-gift .gift-back {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; backface-visibility: hidden;
+}
+.type-gift .gift-face {
+  background: radial-gradient(circle at 35% 30%, #ffe89a, #f5b700 55%, #b07800);
+  box-shadow: inset 0 0 0 10px #d49a00, 0 0 40px rgba(255, 200, 0, .35);
+  color: #5a3a00; font-weight: 700; font-family: "Segoe UI", system-ui, sans-serif;
+}
+.type-gift .gift-face img { width: 80%; height: 80%; border-radius: 50%; object-fit: cover; }
+.type-gift .gift-back {
+  transform: rotateY(180deg);
+  background: radial-gradient(circle at 35% 30%, #ffe89a, #e0a800 55%, #8a5d00);
+  box-shadow: inset 0 0 0 10px #c48d00;
+}
+.type-gift .gift-back::after { content: ''; width: 44%; height: 44%; border-radius: 50%; border: 8px solid rgba(90, 58, 0, .45); }
+.type-gift .gift-card {
+  display: flex; align-items: baseline; gap: .45em; padding: .35em .8em; line-height: 1.25;
+  max-width: 100%; overflow-wrap: anywhere; font-family: "Segoe UI", system-ui, sans-serif;
+}
+.type-gift .gift-what { opacity: .85; }
+.type-gift .gift-fly { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.type-gift .gift-token {
+  position: absolute; border-radius: 50%; will-change: transform, opacity;
+  background: radial-gradient(circle at 35% 30%, #ffe89a, #f5b700 55%, #b07800);
+  box-shadow: inset 0 0 0 4px #d49a00;
+}
+.type-gift img.gift-token { background: none; box-shadow: none; border-radius: 0; object-fit: contain; }
+
 /* The poll layer (S14). Same trick as the alert layer: the card carries the
    showing and hiding, because applyBox writes el.style.opacity inline and an
    inline style would beat anything here. */

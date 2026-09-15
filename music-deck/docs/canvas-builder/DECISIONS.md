@@ -732,6 +732,66 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## A gift, on stream (2026-09-15)
+
+T8, built ahead of the gifts themselves. TikTok gifts need T4's event source
+and T6's combo counting, so this builds the layer they will land in and the
+one function they will arrive through, `post_gift()` (`server.py:1452`).
+
+**What it draws.** A **Gift** layer, full size from the Add grid (`scene.js:1126`):
+a coin spinning in 3D that wears the sender's picture - their initial when
+there is none - one thing thrown at a target for every coin, or both, and a
+card saying who sent what. The target is another layer on the scene, chosen by
+name in the inspector (`inspectors.js:859`); the throw is computed from the two
+layers' transforms, from a point on this layer's edge to somewhere on the
+target's middle, arcing, so ten coins land as a pile rather than a laser. Every
+Gift layer hears every gift and keeps what its filters want - at least so many
+coins (`scene.js:1196`), or only these gift names - so one layer can take the
+small gifts and another the big ones.
+
+**The cap is the design, not a detail.** One element per coin, flown by the Web
+Animations API: composited transforms and no script per frame. At most the
+layer's "most in the air" (30 by default), never past `GIFT_HARD_CAP` of 60
+whatever it says (`scene.js:1125`). A gift bigger than the cap throws the same
+number of things faster (`:1228`): a 500-coin gift was 20 things at 360 ms each
+against 900 ms for a small one - overflow expressed as speed, not count, as the
+plan asked. Every thrown element is removed when it lands. In Ultra nothing
+flies and the card says it (`:1224`).
+
+**Stop means now.** `clear()` (`scene.js:1288`) removes everything in the air
+synchronously rather than cancelling and waiting: a cancelled animation's event
+arrives a task later, and Stop effects is the button pressed because something
+is on screen that should not be.
+
+**Nothing pretend reaches an audience.** "Try it" in the inspector sends a
+sample gift to the editor's own preview frame by message
+(`inspectors.js:1104`), and the frame answers it only in preview
+(`scene.js:1825`) - it never calls the server, so it has no path to the bus.
+The rig's test route, `/api/debug/gift` (`server.py:2810`), posts a gift to
+the bus and refuses unless `TEST_RIG` is set: gated on the flag rather than the
+port, because a gift that reached a real stream from a test hook would be a lie
+told to the people watching. `post_gift()` keeps the sender's picture only if it
+is an asset this app holds (`:1469`); scene.js refuses remote URLs anyway, and
+T6 will fetch avatars through the server for exactly that reason.
+
+One test was wrong on its first run. The check that the test route asks about
+the rig before posting looked for the first `post_gift(` after the route - and
+found the route's own comment, which names the function before the check
+comes. It looks for the call now.
+
+Checked by `tests/test_golive.py` (the test route and "Try it" held to their
+limits), `test_takedown` (Stop reaches the gift layer) and `test_alerts` (gift
+is a kind of its own) - 372 tests in all - and `tools/ui/giftprobe.js` on the
+rig, 28 of 28 on its first run: the coin on screen wearing the sender's picture,
+which loaded, and turning (its 3D transform read twice, 250 ms apart); exactly
+one throw per coin, all ten landing inside the target layer's drawn box and
+none left in the page; a big-gift layer dark for small gifts; a gift below the
+minimum showing nothing while one a coin richer does; the cap and its speed;
+Stop mid-flight with no element left behind; the inspector's target picker;
+and "Try it" throwing seven in the editor's preview and none on the stage.
+Rerun on the changed code - the Add grid, Stage's stop, the inspector's click
+handlers: `addpalette` 12, `fxflood` 39, `ttsprobe` 31, `layercmd` 27, all green.
+
 ## The rig can never go live (2026-09-15)
 
 The user, in capitals: *"i finally actually have a streaming key from tiktok

@@ -1449,6 +1449,30 @@ def command_speak(layer_id, msg):
     return (True, "") if ok else (False, res)
 
 
+def post_gift(user, gift, coins, count=1, avatar=""):
+    """One finished gift on the bus (T8), in the shape T6's TikTok reader will
+    post it. `coins` is the total after a combo is coalesced - TikTok streams
+    repeats as increments with a "finished" flag, and only the finish belongs
+    here. The avatar is a local asset id or nothing: a picture this app does
+    not hold is dropped rather than passed on, and scene.js refuses remote
+    URLs outright (DECISIONS, "A scene that could call home")."""
+    def num(value, lo, hi, default):
+        try:
+            return max(lo, min(hi, int(value)))
+        except (TypeError, ValueError):
+            return default
+    user = str(user or "Someone").strip()[:40] or "Someone"
+    gift = str(gift or "a gift").strip()[:40] or "a gift"
+    coins = num(coins, 0, 1_000_000, 1)
+    count = num(count, 1, 100_000, 1)
+    avatar = str(avatar or "")
+    if avatar and not ASSET_STORE.path(avatar):
+        avatar = ""
+    text = f"{user} sent {gift}" + (f" x{count}" if count > 1 else "")
+    return ALERTS.say("gift", text, user=user, title=gift,
+                      detail={"user": user, "gift": gift, "coins": coins, "count": count, "avatar": avatar})
+
+
 def command_effect(layer_id, msg):
     """A layer's own command (T11). The layer already holds its picture and
     its clip, so the event only says which layer - and on which scene, so a
@@ -2783,6 +2807,17 @@ class Handler(BaseHTTPRequestHandler):
             REQUESTS.find = lambda text, t=dict(track): (True, dict(t))
             REQUESTS.enqueue = lambda uri, o=ok, r=reason: (o, r)
             return self._json({"ok": True, "fake": True, "track": track})
+        if path == "/api/debug/gift":
+            # A test hook for the Gift layer (T8), and the test rig's alone -
+            # gated on TEST_RIG, not the port, because a gift that reached a
+            # real stream from here would be a lie told to an audience. The
+            # editor's "Try it" never comes here: it plays in the editor's own
+            # preview. Real gifts arrive from TikTok (T6) through post_gift().
+            if not TEST_RIG:
+                return self._json({"ok": False, "error": "test hook: the test rig only"}, 403)
+            ev = post_gift(data.get("user"), data.get("gift"), data.get("coins"),
+                           data.get("count", 1), data.get("avatar", ""))
+            return self._json({"ok": True, "event": ev})
         if path == "/api/debug/chat-endpoint":
             # A test hook, and the only one in the app that is refused on the
             # real thing. Saying "speaking" below is harmless; telling a network

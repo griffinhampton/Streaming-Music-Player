@@ -17,7 +17,7 @@ let feedState = null;                          // the latest snapshot: designs, 
 const openSecs = new Set(['type', 'scene-bg', 'scene-format']); // which sections are open - a view choice
 const TYPE_NAME = { text: 'Text', image: 'Picture or video', background: 'Background', shape: 'Shape',
   component: 'Window', camera: 'Camera', capture: 'Screen or window', reactive: 'You, talking',
-  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll', speak: 'Voice' };
+  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll', speak: 'Voice', gift: 'Gift' };
 const COMP_NAME = { np: 'Now Playing', lyrics: 'Lyrics', queue: 'Queue', captions: 'Captions' };
 // Where each component's design lives in the snapshot (as embedhost.js reads it), and its scope in the deck.
 const DESIGN_KEY = { np: 'nowplaying', lyrics: 'lyrics_cfg', queue: 'queue_cfg', captions: 'captions_cfg' };
@@ -71,6 +71,9 @@ const TYPE_DEFAULTS = {
   speak: { 'props.role': 'everyone', 'props.cooldown': 0, 'props.user_cooldown': 0, 'props.voice': '',
     'props.rate': 0, 'props.volume': 0.9, 'props.maxlen': 150, 'props.max': 3, 'props.sayname': true,
     'props.show': true },
+  // scene.js TYPES.gift.opts() falls back to exactly these.
+  gift: { 'props.mode': 'both', 'props.min': 0, 'props.only': '', 'props.target': '', 'props.seconds': 4,
+    'props.max_objects': 30, 'props.object_size': 64, 'props.coin': 220 },
 };
 function defaultOf(l, path) {
   const t = TYPE_DEFAULTS[l.type];
@@ -247,6 +250,32 @@ const TYPE_SECTIONS = {
         ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
       ${cColor('Words', 'props.color')}
       ${cColor('Behind', 'props.bg')}`) + layerCommandSection(l),
+  gift: (l) => section('type', 'Gift', `
+      <p class="hint">What a gift looks like on stream: a coin spinning with the sender's picture on it,
+        one thing thrown for every coin, or both. TikTok gifts arrive here once TikTok is connected -
+        until then, try it below. Only this editor sees that.</p>
+      ${cSeg('Show', 'props.mode', [['both', 'Coin and throws'], ['coin', 'Just the coin'], ['throw', 'Just the throws']])}
+      <div class="field two">${cNum('Only gifts of at least (coins)', 'props.min', l.id, 'data-min="0" data-max="1000000"')}
+        ${cNum('Seconds on screen', 'props.seconds', l.id, 'data-min="1" data-max="30"')}</div>
+      <label class="field"><span>Only these gifts</span>
+        <input class="input" ${A('props.only')} data-kind="str" placeholder="Rose, Galaxy - empty for every gift" spellcheck="false"></label>
+      <label class="field"><span>Throw them at</span><select class="input" ${A('props.target')} data-kind="str" data-gift-targets></select></label>
+      ${assetField('What gets thrown', 'props.object', 'image gif', true)}
+      <div class="field two">${cNum('Most in the air at once', 'props.max_objects', l.id, 'data-min="1" data-max="60"')}
+        ${cNum('Size of each', 'props.object_size', l.id, 'data-min="16" data-max="240"')}</div>
+      <p class="hint">One thing per coin, up to the most in the air. A bigger gift throws them faster
+        rather than throwing more, so a 5,000-coin gift cannot freeze the stream.</p>
+      ${assetField('On the coin when the sender has no picture', 'props.face', 'image', true)}
+      ${cNum('Coin size', 'props.coin', l.id, 'data-min="60" data-max="600"')}
+      <div class="field"><span>Try it</span><div class="font-row">
+        <input class="input" type="number" min="1" max="100000" value="25" data-gift-coins aria-label="Coins in the test gift">
+        <button type="button" class="btn btn-ghost btn-sm" data-gift-try>Send a test gift</button></div></div>
+      <p class="hint">Plays in this editor only, never on stream.</p>
+      ${fontField('props.font', 'Default (Segoe UI)')}
+      <div class="field two">${cNum('Size', 'props.size', l.id, 'data-min="8" data-max="200"')}
+        ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
+      ${cColor('Words', 'props.color')}
+      ${cColor('Behind', 'props.bg')}`),
   text: (l) => section('type', 'Text', `
       <label class="field"><span>Words</span><textarea class="input" rows="3" ${A('props.text')} data-kind="str"></textarea></label>
       <div class="vars" role="group" aria-label="Insert live text">${['title', 'artist', 'album', 'source', 'elapsed', 'duration', 'time', 'date', 'caption', 'caption_live']
@@ -536,6 +565,7 @@ function mountInspector(root) {
   if (l && l.type === 'reactive') startMeter(root);
   if (l && LAYER_CMD_TYPES.includes(l.type)) loadCmdInfo(root);
   if (l && l.type === 'speak') fillVoices(root);
+  if (l && l.type === 'gift') fillGiftTargets(root);
   syncInspector(root);
 }
 
@@ -824,6 +854,18 @@ async function fillVoices(root) {
   writeControl(sel, 'str', LX.get('props.voice') || '');
 }
 
+/* The Gift layer's "Throw them at" (T8): the other layers on this scene, by
+   name. A camera is the usual choice - "thrown at the streamer's portrait". */
+function fillGiftTargets(root) {
+  const sel = root.querySelector('select[data-gift-targets]');
+  const l = oneLayer();
+  if (!sel || !l || !store.scene) return;
+  const others = store.scene.layers.filter((x) => x.id !== l.id && x.type !== 'background');
+  sel.innerHTML = '<option value="">The middle of this layer</option>' + others.map((x) =>
+    `<option value="${escHTML(x.id)}">${escHTML(x.name || TYPE_NAME[x.type] || x.type)}</option>`).join('');
+  writeControl(sel, 'str', LX.get('props.target') || '');
+}
+
 let sources = null, thumbTimer = null;
 const sameSource = (a, b) => !!a && !!b && a.kind === b.kind && (a.kind === 'monitor' ? Number(a.monitor || 0) === Number(b.monitor || 0) : a.title === b.title);
 async function renderSources(root, again) {
@@ -1054,6 +1096,18 @@ ins.addEventListener('click', async (e) => {
   } finally {
     b.disabled = false;
   }
+});
+
+// The Gift layer's "Try it" (T8): a sample gift sent to the editor's own
+// preview frame for this layer alone - never to the server, so never on air.
+ins.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-gift-try]');
+  const l = oneLayer();
+  if (!b || !l) return;
+  const box = ins.querySelector('[data-gift-coins]');
+  const coins = Math.max(1, Math.min(100000, Math.floor(Number(box && box.value) || 25)));
+  const w = $('sceneFrame').contentWindow;
+  if (w) w.postMessage({ type: 'editor-gift', id: l.id, detail: { user: 'You', gift: 'a test gift', coins, count: 1 } }, location.origin);
 });
 
 // Files dropped on a picture grid are uploaded into it.

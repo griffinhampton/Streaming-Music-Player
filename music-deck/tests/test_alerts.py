@@ -34,6 +34,10 @@ class Shape(unittest.TestCase):
         The failure would be silent, so it is pinned."""
         self.assertEqual(alerts.event("stop", "")["kind"], "stop")
 
+    def test_gift_is_a_kind_of_its_own(self):
+        """T8. Coerced to a note, a gift would reach no Gift layer at all."""
+        self.assertEqual(alerts.event("gift", "Amy sent a Rose", detail={"coins": 1})["kind"], "gift")
+
     def test_effect_is_a_kind_of_its_own(self):
         """T11: a layer's own command. Coerced to a note, it would reach no
         layer at all - the addressing rides in detail, but the kind is what

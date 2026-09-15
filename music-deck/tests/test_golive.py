@@ -90,6 +90,28 @@ class TheWiring(unittest.TestCase):
         self.assertIn("c['test_rig']=True", r)                # an old one, every time
         self.assertIn("refusing to start it", r)              # and a rig without it does not start
 
+    def test_a_test_gift_cannot_reach_a_real_stream(self):
+        """T8's test hook posts a gift to the bus. On the user's app that would
+        be a pretend gift on air, so it answers on the rig alone - and the
+        check is the first thing it does."""
+        s = src("server.py")
+        at = s.index('if path == "/api/debug/gift":')
+        body = s[at:at + 900]
+        self.assertIn("if not TEST_RIG:", body)
+        # The call, not the name: the route's comment mentions post_gift()
+        # before the check, and the first version of this test found that.
+        self.assertLess(body.index("if not TEST_RIG:"), body.index("ev = post_gift("))
+
+    def test_the_editors_try_it_never_goes_to_the_server(self):
+        """The inspector's "Try it" messages the preview frame, and the frame
+        answers only in preview - so it has no path to the bus at all."""
+        insp = src("web", "inspectors.js")
+        at = insp.index("data-gift-try]')")
+        self.assertNotIn("fetch(", insp[at:at + 700])
+        scene = src("web", "scene.js")
+        self.assertLess(scene.index("if (PREVIEW) {\n  window.addEventListener('message'"),
+                        scene.index("e.data.type === 'editor-gift'"))
+
     def test_a_rebuild_will_not_end_a_stream(self):
         b = src("tools", "rig", "rebuild.ps1")
         self.assertIn("the app is LIVE right now", b)
