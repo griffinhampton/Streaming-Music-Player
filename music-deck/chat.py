@@ -42,6 +42,26 @@ RECENT = 300               # messages kept for a page that opens late
 QUEUE_DEPTH = 512
 BACKOFF_MAX_S = 30
 MAX_TEXT = 500             # Twitch's own limit; a defence against a bad line
+
+# What a chatter's words may carry to a screen (asked 2026-09-15: nothing a
+# chatter types may run as code). Markup is kept exactly as typed - "<3" is a
+# heart, not a tag - because every page draws chat as text and escapes it; the
+# guarantee is at the drawing, pinned by tests/test_inert.py. What goes here is
+# what can only mislead: control characters, and the Unicode direction
+# overrides and isolates that flip or hide words, so a line cannot read one way
+# in the log and another on stream. Emoji joiners (U+200C, U+200D) stay.
+_BREAKS = re.compile(r"[\t\r\n]+")
+# Built from code points, never typed or escaped: the first version held the
+# real characters, because the editor that wrote it decoded the escapes - so
+# this very line carried the direction overrides it exists to remove.
+_HIDDEN = (0x200B, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A), 0xFEFF)
+_UNSAFE = re.compile("[" + "".join(map(chr, (*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), 0x7F, *_HIDDEN))) + "]")
+
+
+def inert(value):
+    """Words as they may be shown: line breaks as spaces, nothing that can
+    reverse or hide text. Every service's text and names pass through here."""
+    return _UNSAFE.sub("", _BREAKS.sub(" ", str(value or "")))
 LINE_CAP = 8192
 
 TWITCH_HOST = "irc.chat.twitch.tv"
@@ -108,7 +128,7 @@ def message(service, channel, text, user=None, badges=None, at=None, mid="",
     `symbols` is for tests, which should not have to reach into module state
     to ask a question about parsing.
     """
-    text = (text or "")[:MAX_TEXT]
+    text = inert(text)[:MAX_TEXT]
     cmd, args = "", ""
     marks = tuple(symbols) if symbols else _symbols
     if text[:1] in marks and len(text) > 1 and not text[1].isspace():
@@ -120,8 +140,8 @@ def message(service, channel, text, user=None, badges=None, at=None, mid="",
         "channel": channel,
         "id": mid or ("%s-%.6f-%d" % (service, time.time(), random.randint(0, 999999))),
         "at": float(at if at is not None else time.time()),
-        "user": {"id": str(u.get("id") or ""), "login": str(u.get("login") or ""),
-                 "name": str(u.get("name") or u.get("login") or ""),
+        "user": {"id": inert(u.get("id")), "login": inert(u.get("login")),
+                 "name": inert(u.get("name") or u.get("login")),
                  "color": str(u.get("color") or "")},
         "badges": list(badges or []),
         "text": text,
@@ -470,4 +490,10 @@ class ChatHub:
         with self._lock:
             ads = [{"service": a.service, "channel": a.channel, "state": a.state, "error": a.error}
                    for a in self._adapters.values()]
+            # What TikTok's reader window can see (tiktok_chat.py): a chat list
+            # or not, signed in or not. It changes when the user does something
+            # in that window, never per message - so it is safe on this feed.
+            for d, a in zip(ads, self._adapters.values()):
+                if isinstance(getattr(a, "page", None), dict):
+                    d["page"] = dict(a.page)
         return {"services": ads, "total": self.total}

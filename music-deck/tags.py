@@ -40,7 +40,7 @@ def _decode_text(enc, data):
             s = data.decode("latin-1", "replace")
     except Exception:
         s = data.decode("latin-1", "replace")
-    s = s.replace("﻿", "")
+    s = s.replace(chr(0xFEFF), "")     # a byte-order mark, by code point: never typed invisibly
     # v2.4 packs multiple values behind NULs; take the first, drop terminators.
     return s.split("\x00")[0].strip()
 

@@ -151,6 +151,33 @@ with your token is the thing this plan said it would not do. So (2), as a public
 API, is out. That leaves (3), your own logged-in TikTok page on this PC, and (1),
 a third party - still your call.
 
+**Your call, made 2026-09-15: (3), your own logged-in page. Built.** In the
+chat panel (the deck's Chat... and the Live view), type your TikTok username
+and press **Open TikTok**. A Chrome window of its own opens on your live page;
+sign in there yourself - the app never sees your password - and the chat of
+your live flows into the same pipeline Twitch uses, so `!tts`, command layers,
+polls and roles all work for TikTok viewers. The panel says what the window can
+see: signed in or not, your live page's chat found or not. Leave the window
+open; it can sit behind everything and it is muted, so your own stream is never
+played back into Desktop sound. Nothing is sent anywhere: the app reads the page
+over a DevTools port on 127.0.0.1, and the script it puts in the page can only
+read - it never clicks, so it can never press Go LIVE. What was already on
+screen when it attaches is never replayed.
+
+**And chat can never be code**, as you asked. The reader takes chat as text and
+never as markup; the parser strips the invisible characters that can flip or
+hide words; the voice uses the plain-text call; and every page draws chat as
+text. Proved by sending real attack lines - a `<script>`, an `<img onerror>`,
+a display name made of markup - through a page shaped like TikTok's: they arrive
+as the characters typed, and nothing runs, on stream or off.
+
+**The catch, as agreed:** the reader follows TikTok's page as it was drawn in
+September 2026, and TikTok changes its page when it likes. Tested against a
+fixture in that shape, not against TikTok itself - the first real test is your
+first live with the window open. If the panel says "chat found" and nothing
+arrives, or never finds the chat, that is the sign it needs updating. Gifts
+from the page are T6, next.
+
 ### T5. TikTok chat, through the pipeline that exists
 
 Once T4 has a source, this is one `Adapter` subclass: translate a comment into

@@ -117,23 +117,40 @@ const ChatPanel = (() => {
       .join('');
   }
 
+  /* Twitch and TikTok side by side (T5). The pill names every service being
+     read; each has its own row, and TikTok a line saying what its window can
+     see - which is what tells you the missing step when nothing arrives. */
+  const svc = (name) => services.find((s) => s.service === name) || null;
   function paintState() {
+    const tw = svc('twitch'), tt = svc('tiktok');
+    const on = services.filter((s) => s.state === 'joined');
+    const busy = services.find((s) => s.state === 'connecting' || s.state === 'reconnecting');
+    const failed = services.find((s) => s.state === 'failed');
     const pill = $('[data-cp="state"]');
-    const tw = services[0] || null;
-    const state = tw ? tw.state : 'idle';
-    pill.dataset.state = state;
-    pill.textContent = !tw ? 'Not connected'
-      : state === 'joined' ? `#${tw.channel}`
-      : state === 'connecting' ? 'Connecting…'
-      : state === 'reconnecting' ? 'Reconnecting…'
-      : state === 'failed' ? 'Failed' : state;
+    pill.dataset.state = on.length ? 'joined' : busy ? busy.state : failed ? 'failed' : 'idle';
+    pill.textContent = on.length ? on.map((s) => (s.service === 'tiktok' ? '@' : '#') + s.channel).join(' · ')
+      : busy ? (busy.state === 'connecting' ? 'Connecting…' : 'Reconnecting…')
+      : failed ? 'Failed' : 'Not connected';
     const err = $('[data-cp="error"]');
-    err.hidden = !(tw && tw.error && tw.state === 'failed');
-    err.textContent = (tw && tw.error) || '';
+    err.hidden = !(failed && failed.error);
+    err.textContent = (failed && failed.error) || '';
     $('[data-cp="go"]').hidden = !!tw;
     $('[data-cp="stop"]').hidden = !tw;
     const input = $('[data-cp="channel"]');
     if (tw && document.activeElement !== input && !input.value) input.value = tw.channel || '';
+    const live = !!tt && tt.state !== 'failed';
+    $('[data-cp="ttgo"]').hidden = live;
+    $('[data-cp="ttstop"]').hidden = !live;
+    const ti = $('[data-cp="ttname"]');
+    if (tt && document.activeElement !== ti && !ti.value) ti.value = tt.channel || '';
+    const pg = (tt && tt.page) || {};
+    $('[data-cp="tthint"]').textContent = !tt
+      ? 'Opens TikTok in a window of its own. Sign in there yourself, and this reads your live\'s chat - nothing leaves this PC.'
+      : tt.state === 'failed' ? (tt.error || 'The TikTok window stopped.')
+      : tt.state !== 'joined' ? 'Opening TikTok…'
+      : pg.signed_in === false ? 'Sign in to TikTok in the window it opened. The chat is read once you are signed in and on your live page.'
+      : !pg.room ? 'Signed in. Open your live page in that window - the chat is read as soon as TikTok shows it.'
+      : 'Reading your live chat. Leave the TikTok window open - it can sit behind everything, and it stays muted.';
   }
 
   /* --------------------------------------------------------------- wiring */
@@ -158,6 +175,12 @@ const ChatPanel = (() => {
         <button type="button" class="lp-btn primary" data-cp="go">Read it</button>
         <button type="button" class="lp-btn" data-cp="stop" hidden>Stop</button>
       </div>
+      <div class="lp-row">
+        <input class="lp-input" data-cp="ttname" placeholder="TikTok username" aria-label="TikTok username" spellcheck="false" style="flex:1 1 120px">
+        <button type="button" class="lp-btn primary" data-cp="ttgo">Open TikTok</button>
+        <button type="button" class="lp-btn" data-cp="ttstop" hidden>Stop</button>
+      </div>
+      <p class="lp-hint" data-cp="tthint" aria-live="polite"></p>
       <div class="cp-logwrap">
         <div class="cp-log" data-cp="log" role="log" aria-live="polite" aria-label="Chat messages"></div>
         <button type="button" class="cp-new" data-cp="new" hidden></button>
@@ -177,6 +200,22 @@ const ChatPanel = (() => {
     wire();
   }
 
+  /* One service at a time changes; the others are left as they were. */
+  function connect(service, channel) {
+    post('/api/chat/connect', { service, channel }).then((d) => {
+      if (d && d.status) {
+        services = services.filter((s) => s.service !== service).concat([d.status]);
+        setMention(); paintState();
+      } else if (d && d.error) { const e = $('[data-cp="error"]'); e.hidden = false; e.textContent = d.error; }
+    });
+  }
+  function disconnect(service) {
+    post('/api/chat/disconnect', { service }).then(() => {
+      services = services.filter((s) => s.service !== service);
+      setMention(); paintState();
+    });
+  }
+
   function wire() {
     el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); } });
     $('[data-cp="close"]').addEventListener('click', () => close(true));
@@ -184,14 +223,15 @@ const ChatPanel = (() => {
     $('[data-cp="go"]').addEventListener('click', () => {
       const channel = $('[data-cp="channel"]').value.trim();
       if (!channel) { $('[data-cp="channel"]').focus(); return; }
-      post('/api/chat/connect', { service: 'twitch', channel }).then((d) => {
-        if (d && d.status) { services = [d.status]; setMention(); paintState(); }
-        else if (d && d.error) { const e = $('[data-cp="error"]'); e.hidden = false; e.textContent = d.error; }
-      });
+      connect('twitch', channel);
     });
-    $('[data-cp="stop"]').addEventListener('click', () => {
-      post('/api/chat/disconnect', { service: 'twitch' }).then(() => { services = []; setMention(); paintState(); });
+    $('[data-cp="stop"]').addEventListener('click', () => disconnect('twitch'));
+    $('[data-cp="ttgo"]').addEventListener('click', () => {
+      const name = $('[data-cp="ttname"]').value.trim().replace(/^@/, '');
+      if (!name) { $('[data-cp="ttname"]').focus(); return; }
+      connect('tiktok', name);
     });
+    $('[data-cp="ttstop"]').addEventListener('click', () => disconnect('tiktok'));
 
     const log = $('[data-cp="log"]');
     /* Pause on scroll: reading something further up must not be yanked away by

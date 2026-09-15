@@ -732,6 +732,109 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## TikTok chat, from your own page (2026-09-15)
+
+T4 and T5. TikTok publishes no API for live-room chat, and Streamlabs' public
+docs cover no TikTok events at all (recorded under T4 in the plan). The user
+chose the route where nothing leaves the machine: *"Your own logged-in TikTok
+LIVE page, running inside the app on this PC."*
+
+**How it reads.** `tiktok_chat.py` opens a Chrome of its own, profile in
+`cache/chrome-tiktok` - so the sign-in lives there and nowhere else, and the
+rebuild's safety copy skips it with the other `chrome*` folders - on
+`www.tiktok.com/@user/live`, with a DevTools port Chrome picks itself on
+127.0.0.1 (`:405`). It connects to that port, installs one binding, and injects
+`OBSERVER` (`:66`), which watches the chat list and hands each new line to the
+binding. The selectors are TikTok's page as drawn in September 2026, gathered
+as facts - `data-e2e="chat-message"`, `message-owner-name`, `-DivComment`,
+badge image names - from how Social Stream Ninja's open-source reader finds
+them; the code is this project's own. Each line becomes chat.py's one shape
+through an Adapter registered beside Twitch's (`:464`), so `!tts`, layer
+commands, polls and the role ladder work for TikTok viewers with no other
+change.
+
+**What it never does.** `OBSERVER` only reads: no clicks, submits, navigation
+or requests of its own. The page is the user's, signed in as them, and a script
+that could press things there could press Go LIVE - `tests/test_tiktok_chat.py`
+fails on any of it. The window starts muted (`:56`), or the live page would play
+the user's own stream back into Desktop sound and the stream. What is on screen
+when it attaches is history, marked seen and never sent (`:113`): a reader that
+joined late must not replay ten minutes of `!tts`. It goes to TikTok and nowhere
+else (`:349`); the rig's hook that points it at a fixture (`server.py:2817`)
+answers only with `TEST_RIG` and only for a 127.0.0.1 address, and the rig's
+reader never shows a window (`:1865`). Quitting the app closes the reader's
+window (`:3167`).
+
+**Who is who.** A TikTok moderator's or subscriber's badge image reaches the
+ladder, so a mod-only command runs for a TikTok mod. The streamer is the
+broadcaster only when the page gave a real profile link naming them
+(`tiktok_chat.py:312`) - a display name is anybody's to set, and matching on it
+would let a viewer calling themselves the streamer through every gate.
+
+**The DevTools client** is the standard library's: a small RFC 6455 client
+(`:193`) whose reads never consume half a frame (`frame_end`, `:155`), so a
+timeout in the middle of one cannot put the stream out of step.
+
+**The chat panel** has a TikTok row beside Twitch's and a line saying what the
+window can see (`chatpanel.js:147`): signed in or not, the live page's chat
+found or not. That state rides the state feed (`chat.py:498`) - it changes when
+the user does something in the window, never per message, so it cannot turn
+into a broadcast per chat line.
+
+**What is not tested, said plainly.** TikTok's real page. `tools/ui/
+tiktokchat.js` serves a fixture drawn in TikTok's shape - the attributes, the
+class fragments, badge images, recycled `[data-index]` slots - and the reader
+passes against it; whether TikTok still draws its page that way is only known
+the first time the user opens a live with the window open. The panel's "chat
+found" line is how a change will show.
+
+## Chat is text, and only ever text (2026-09-15)
+
+Asked for mid-step, in the user's words: *"make sure the screen reader cant run
+scripts or code chatters might text out to be malicious!"*
+
+**Where chat goes, and why none of it can run.** The reader takes chat as
+`textContent`, hands it over as a JSON string that is only ever parsed as data
+(`tiktok_chat.py:429`), and the only script ever evaluated in the page is its
+own fixed one. The voice reads with the plain-text `Speak()` and gets its words
+as JSON on stdin, never on a command line. Every page draws chat as text: the
+audit went through every `innerHTML` in the pages that show chat, commands,
+requests and polls, and found each escaping or setting the words as text after -
+the poll bars on stream included, since a mod's `!poll` can carry typed choices.
+
+**What the parser takes out.** `chat.inert` (`chat.py:61`), which every
+service's text and names pass through (`:131`), strips control characters and
+the Unicode direction overrides and isolates that flip or hide words - a line
+must not read one way in the log and another on stream. Markup is kept as the
+characters typed, because "<3" is a heart and every page escapes it; emoji
+joiners are kept, or families and skin tones break.
+
+**The mistake made writing it**, and it is the same attack from the other side.
+The tools decoded escapes on their way to the file. The first version of the
+pattern put the real direction-override characters into `chat.py`'s source - the
+"Trojan Source" trick, code that reads one way in an editor and runs another -
+and the repair script put real NUL bytes there, so `chat.py` stopped importing.
+The rig imported it too: one regression probe failed with "fetch failed" on
+exactly that, the rig's error log said so, and it passed once repaired. The
+pattern is now built from code points (`chat.py:57`, `:58`), never typed, and
+`tests/test_inert.py` fails if any source file carries a hidden direction or
+zero-width character. That scan found one more, older than today: a literal
+byte-order mark in `tags.py`, now `chr(0xFEFF)` (`tags.py:43`) with no change
+in what it does.
+
+Checked by `tests/test_inert.py` and `tests/test_tiktok_chat.py` - 404 tests in
+all - and `tools/ui/tiktokchat.js` on the rig, 32 of 32: the reader opening
+headless and finding the chat, the backlog not replayed, a new line arriving
+through Twitch's pipeline, a viewer's command, a mod-only command denied to a
+viewer and run for a badged moderator, the broadcaster by profile link and a
+copied display name as nobody, a recycled slot read once, signing in noticed,
+and then the attacks: a `<script>`, an `<img onerror>`, a display name made of
+markup echoed back by `!hello`, and a direction override. They arrived as the
+characters typed, the override stripped, the markup name shown literally on
+stream in the alert card - and nothing ran, on the stream page or in the Live
+view: no flag set, no `<img src=x>`, no script. Stopping closed the reader's
+window. Rerun: `chatui` 30, `onair` 40, `keyleak` 7, `layercmd` 27.
+
 ## A gift, on stream (2026-09-15)
 
 T8, built ahead of the gifts themselves. TikTok gifts need T4's event source

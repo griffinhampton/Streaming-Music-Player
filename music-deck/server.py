@@ -46,6 +46,7 @@ import songreq
 import alerts
 import polls
 import tts
+import tiktok_chat          # registers chat.ADAPTERS["tiktok"] (T4, T5)
 import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
@@ -1856,6 +1857,12 @@ LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
 BROWSER = overlay_mod.find_browser()
+# TikTok chat (T4, T5): the user's own logged-in TikTok page, in a Chrome of its
+# own whose profile - and so its sign-in - lives in the cache and nowhere else.
+# The rig's never shows a window.
+tiktok_chat.TikTokAdapter.browser = BROWSER
+tiktok_chat.TikTokAdapter.profile = os.path.join(CACHE, "chrome-tiktok")
+tiktok_chat.TikTokAdapter.headless = TEST_RIG
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()
@@ -2807,6 +2814,18 @@ class Handler(BaseHTTPRequestHandler):
             REQUESTS.find = lambda text, t=dict(track): (True, dict(t))
             REQUESTS.enqueue = lambda uri, o=ok, r=reason: (o, r)
             return self._json({"ok": True, "fake": True, "track": track})
+        if path == "/api/debug/tiktok-page":
+            # Points the TikTok reader at a local fixture page (tools/ui/
+            # tiktokchat.js) - the rig's alone, and only ever at 127.0.0.1.
+            # Empty puts it back to www.tiktok.com.
+            if not TEST_RIG:
+                return self._json({"ok": False, "error": "test hook: the test rig only"}, 403)
+            base = str(data.get("base") or "").strip().rstrip("/")
+            if base and not tiktok_chat._is_local(base):
+                return self._json({"ok": False, "error": "a local address only"}, 400)
+            tiktok_chat.TikTokAdapter.base = base or tiktok_chat.TIKTOK
+            tiktok_chat.TikTokAdapter.allow_local_base = bool(base)
+            return self._json({"ok": True, "base": tiktok_chat.TikTokAdapter.base})
         if path == "/api/debug/gift":
             # A test hook for the Gift layer (T8), and the test rig's alone -
             # gated on TEST_RIG, not the port, because a gift that reached a
@@ -2906,7 +2925,7 @@ class Handler(BaseHTTPRequestHandler):
             channel = str(data.get("channel") or "").strip()
             res = CHAT.connect(service, channel)
             if res.get("ok"):
-                CONFIG.setdefault("chat", {}).setdefault(service, {})["channel"] = channel.lstrip("#").lower()
+                CONFIG.setdefault("chat", {}).setdefault(service, {})["channel"] = channel.lstrip("#@").lower()
                 save_config(CONFIG)
                 HUB.broadcast()
             return self._json(res)
@@ -3145,6 +3164,7 @@ class Handler(BaseHTTPRequestHandler):
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
                 CAPTIONS.stop()      # likewise the one holding the microphone
                 TTS.close()          # and the voice's
+                CHAT.stop()          # and the TikTok reader's window with it
                 live_stop()          # unpublish cleanly rather than vanish
                 time.sleep(0.4)
                 os._exit(0)
