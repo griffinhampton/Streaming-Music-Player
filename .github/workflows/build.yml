@@ -74,7 +74,7 @@ jobs:
             --name "$env:APP_NAME" --icon "$PWD\music-deck.ico" `
             --version-file "$PWD\version.txt" `
             --add-data "$PWD\web;web" --add-data "$PWD\smtc.ps1;." `
-            --add-data "$PWD\captions.ps1;." `
+            --add-data "$PWD\captions.ps1;." --add-data "$PWD\tts.ps1;." `
             --add-data "$PWD\music-deck.ico;." `
             --hidden-import tkinter --hidden-import tkinter.filedialog `
             --hidden-import tkinter.messagebox `

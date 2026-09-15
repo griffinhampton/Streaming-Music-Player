@@ -64,8 +64,9 @@ EFFECTS = ("gif", "sound", "effect")
 # T11: commands that belong to a layer on the canvas rather than to the list.
 # The layer is the setup - its command's name, who may run it and its two
 # waits live in its props - so adding the layer makes the command and deleting
-# it removes it. T7's voice and T8's gift layers join this the day they exist.
-LAYER_TYPES = ("effect",)
+# it removes it. T7's voice layer ("speak") is the second; T8's gift layer
+# joins them the day it exists.
+LAYER_TYPES = ("effect", "speak")
 # What such a command does. Deliberately not in ACTIONS: that tuple is what the
 # Commands panel offers, and a list entry pointing at a layer id would be a
 # command that breaks the moment the layer is deleted or the scene changes, so

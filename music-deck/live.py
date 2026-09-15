@@ -612,11 +612,30 @@ KEY_ROTATED_HINT = ("TikTok refused the stream key after it had been live - LIVE
                     "issued a new key; copy it, paste it here and start again")
 
 
+LOCAL_ONLY_REASON = ("this is the test rig, and it only ever streams to this PC (127.0.0.1) - "
+                     "it never goes live anywhere else")
+
+
+def is_local_url(url):
+    """Whether an RTMP address points at this machine and nowhere else."""
+    from urllib.parse import urlparse
+    try:
+        host = (urlparse(str(url or "").strip()).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
 class LiveEngine:
     """Owns the RTMP connection and the queue between the page and the wire."""
 
     def __init__(self, cache_dir, log=None):
         self.vault = Vault(cache_dir)
+        # Set by the test rig and nothing else (server.py, TEST_RIG). Checked in
+        # start() after the address is resolved - so an address that came out
+        # of the vault rather than the request is refused too - because every
+        # way of going live, the TikTok tab included, ends in start().
+        self.local_only = False
         self.log = log or (lambda *_: None)
         self.on_change = None
         self.on_reconnect = None   # the video source forces a keyframe here
@@ -684,6 +703,9 @@ class LiveEngine:
         key = (key or "").strip() or saved_key
         if not url or not key:
             return {"ok": False, "error": "a Server URL and a Stream key are needed"}
+        if self.local_only and not is_local_url(url):
+            self.log(f"live: refused to start - {LOCAL_ONLY_REASON}")
+            return {"ok": False, "error": LOCAL_ONLY_REASON, "refused": True}
         if remember:
             self.vault.save(url, key)
         if preset in PRESETS:

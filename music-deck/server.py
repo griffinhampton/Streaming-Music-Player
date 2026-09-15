@@ -45,6 +45,7 @@ import commands
 import songreq
 import alerts
 import polls
+import tts
 import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
@@ -591,6 +592,14 @@ def save_config(cfg):
 
 CONFIG = load_config()
 
+# NEVER GO LIVE from the test rig (2026-09-15: the user has a real TikTok stream
+# key now). tools/rig/rigrestart.ps1 writes "test_rig": true into the rig's own
+# config and nothing else ever does, so the user's app is untouched by this.
+# Read once, here: a page posting to /api/config cannot lift it mid-session.
+# While it holds, the engine streams to 127.0.0.1 alone and the TikTok routes
+# that open a live or fetch the Streamlabs token are refused outright.
+TEST_RIG = CONFIG.get("test_rig") is True
+
 
 # ================================================================= themes
 
@@ -982,6 +991,10 @@ class Hub:
             # How many commands there are and how they have gone - never the
             # log itself, which the editor asks for when it is open.
             "commands": COMMANDS.snapshot(),
+            # Whether a Voice layer on the scene on air answers to anything:
+            # the Live view shows Skip only then. Never the queue or the
+            # counts, which move on every message (see _change_key).
+            "tts": {"on_air": any(c.get("layer_type") == "speak" for c in live_layer_commands())},
             # How many requests are waiting - never the list, which the Live
             # view asks for while it is showing it.
             "requests": REQUESTS.snapshot(),
@@ -1183,6 +1196,9 @@ CHAT = chat.ChatHub(log=_log)
 # The producers never import it - the wiring is here, so S14's polls will be a
 # caller and not a dependency.
 ALERTS = alerts.AlertHub(log=_log)
+# Chat, read out loud (T7). Inert until a Voice layer's command runs: the
+# PowerShell helper starts on the first utterance and is let go when idle.
+TTS = tts.Voice(log=_log)
 
 
 def publish_tally(tally):
@@ -1394,11 +1410,54 @@ def live_layer_commands():
     return _LAYER_CMDS["cmds"]
 
 
+def live_layer(layer_id):
+    """(the live scene's id, that layer) - or the id and None if it has gone."""
+    sid = CONFIG.get("canvas", {}).get("live", "")
+    for layer in ((SCENES.get(sid) if sid else None) or {}).get("layers") or []:
+        if layer.get("id") == layer_id:
+            return sid, layer
+    return sid, None
+
+
+def command_speak(layer_id, msg):
+    """A Voice layer's command (T7): what was typed after it, read out.
+
+    Everything that can refuse does so here, before the command is logged as
+    run - an empty message, a blocked word, a full queue - so the log says why
+    and the effects budget gets its place back (commands.py hands it back for
+    any failure). The clip is made on the voice's own thread; the event that
+    tells the layer to play it goes out when it exists, addressed like any
+    layer command, with the words as they will be heard.
+    """
+    sid, layer = live_layer(layer_id)
+    if not layer:
+        return False, "that Voice layer is not on air any more"
+    p = layer.get("props") or {}
+    text, why = tts.clean_text(msg.get("args"), p.get("maxlen", tts.MAXLEN), p.get("blocked", ""))
+    if text is None:
+        return False, why
+    user = (msg.get("user") or {}).get("name") or ""
+    said = f"{user} says: {text}" if user and p.get("sayname", True) is not False else text
+    name = chat.symbols()[:1] + (msg.get("command") or "")
+
+    def made(clip_id, ok, error):
+        if ok:
+            ALERTS.say("speak", said, user=user, title=name,
+                       detail={"layer": str(layer_id), "scene": sid,
+                               "clip": f"/api/tts/{clip_id}.wav", "said": said})
+    ok, res = TTS.say(said, voice=p.get("voice") or "", rate=p.get("rate") or 0, done=made)
+    return (True, "") if ok else (False, res)
+
+
 def command_effect(layer_id, msg):
     """A layer's own command (T11). The layer already holds its picture and
     its clip, so the event only says which layer - and on which scene, so a
     page showing some other scene with a layer of the same id stays still.
-    No text back, for command_gif's reason."""
+    No text back, for command_gif's reason. A Voice layer's command goes to
+    command_speak instead: it has words to make into a clip first."""
+    kind = next((c.get("layer_type") for c in live_layer_commands() if c.get("target") == layer_id), "")
+    if kind == "speak":
+        return command_speak(layer_id, msg)
     user = (msg.get("user") or {}).get("name") or ""
     name = chat.symbols()[:1] + (msg.get("command") or "")
     ALERTS.say("effect", (user + " ran " + name).strip(), user=user, title=name,
@@ -1776,6 +1835,7 @@ BROWSER = overlay_mod.find_browser()
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()
+LIVE.local_only = TEST_RIG          # NEVER GO LIVE from the rig: see TEST_RIG
 NATIVE = nativelive.NativeVideo(LIVE, log=lambda msg: print("  " + msg))
 # TikTok's own side of the show: the key Go LIVE asks for, and the session
 # End Live closes. The engine above streams; this opens and shuts the live.
@@ -2455,6 +2515,14 @@ class Handler(BaseHTTPRequestHandler):
                                # T11: the ones that belong to layers on the
                                # scene on air, each with any conflict it has.
                                "layers": COMMANDS.layer_list()})
+        if path == "/api/tts/voices":
+            return self._json({"voices": TTS.voices(), "status": TTS.status()})
+        m = re.match(r"^/api/tts/([0-9a-f]{16})\.wav$", path)
+        if m:
+            wav = TTS.clip(m.group(1))
+            if not wav:
+                return self._send(404, "no such clip", "text/plain")
+            return self._send(200, wav, "audio/wav", {"Cache-Control": "no-store"})
         if path == "/api/commands/recent":
             # What fired, for the editor's log. Off the state feed on purpose:
             # it changes whenever anyone types, which is the wrong cadence for
@@ -2847,6 +2915,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/commands/stop":
             stop_everything()
             return self._json({"ok": True, "paused": COMMANDS.paused})
+        if path == "/api/tts/test":
+            # The inspector's "Hear it": made exactly as chat's clips are, and
+            # played by the editor page that asked - never on stream.
+            text, why = tts.clean_text(data.get("text") or "This is how chat will sound.",
+                                       data.get("maxlen", tts.MAXLEN), data.get("blocked", ""))
+            if text is None:
+                return self._json({"ok": False, "error": why})
+            ok, res = TTS.say_and_wait(text, voice=data.get("voice") or "", rate=data.get("rate") or 0)
+            return self._json({"ok": True, "clip": f"/api/tts/{res}.wav"} if ok else {"ok": False, "error": res})
+        if path == "/api/tts/skip":
+            # The Live view's Skip: the clip being read ends, the next starts.
+            ALERTS.say("skip", "")
+            return self._json({"ok": True})
         if path == "/api/commands/resume":
             resume_commands()
             return self._json({"ok": True, "paused": COMMANDS.paused})
@@ -2987,6 +3068,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(NATIVE.start(title=data.get("title"), hwnd=data.get("hwnd"),
                                            monitor=data.get("monitor"), fps=data.get("fps", 30),
                                            kbps=data.get("kbps", 3400)))
+        if TEST_RIG and path in ("/api/tiktok/token", "/api/tiktok/start"):
+            # The rig never opens a live at TikTok, and never goes looking for
+            # the token Streamlabs keeps on this PC - which is the user's own.
+            return self._json({"ok": False, "refused": True,
+                               "error": "this is the test rig - it never goes live at TikTok and "
+                                        "never loads the Streamlabs token"}, 403)
         if path == "/api/tiktok/token":
             # Pasted, read off this PC, or fetched through the browser. The
             # token is kept encrypted and never handed back to the page.
@@ -3022,6 +3109,7 @@ class Handler(BaseHTTPRequestHandler):
                 VOICE.stop()
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
                 CAPTIONS.stop()      # likewise the one holding the microphone
+                TTS.close()          # and the voice's
                 live_stop()          # unpublish cleanly rather than vanish
                 time.sleep(0.4)
                 os._exit(0)

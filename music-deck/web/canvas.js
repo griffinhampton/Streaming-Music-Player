@@ -1009,6 +1009,13 @@ const ADD = [
   { type: 'effect', label: 'Effect', sub: 'a picture or clip when something happens', w: 480, h: 480,
     props: { src: '', sound: '', volume: 0.8, kinds: 'command', seconds: 5, max: 3, fit: 'contain',
              enter: { kind: 'pop', ms: 400 } } },
+  // T7. The abuse controls' defaults are written into the layer rather than
+  // left to fallbacks, so a Voice layer from this grid arrives already safe:
+  // a thirty-second wait per person, five seconds between anyone, 150 letters.
+  { type: 'speak', label: 'Voice', sub: 'reads chat out loud', w: 1000, h: 140,
+    props: { command: 'tts', role: 'everyone', cooldown: 5, user_cooldown: 30, voice: '', rate: 0,
+             volume: 0.9, maxlen: 150, max: 3, blocked: '', sayname: true, show: true,
+             size: 30, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
   // S15's and S14's layers. Both have had a full inspector and a working
   // runtime since the day they shipped, and no way at all to create one - the
   // only route was the API, which is how the test rig made them. The defaults

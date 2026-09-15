@@ -10,7 +10,10 @@ one written here and say why. One step has a fork I am *not* taking on your
 behalf, and it is marked as such: T5 sends data to a third party, and that is
 your call to make, not mine.
 
-**Standing rules these steps obey**: rig at 8799, never the real app at 8713;
+**Standing rules these steps obey**: **never go live** - you have a real TikTok
+key as of 2026-09-15, and the rig now refuses in code to stream anywhere but
+127.0.0.1 or to touch TikTok's go-live and token routes; rig at 8799, never
+the real app at 8713;
 headless Chrome only (one monitor, and you game on it); US spelling; no
 multi-agent workflow runs; every committed check carries a negative control and
 a floor; secret-scan before every commit.
@@ -173,6 +176,21 @@ TTS reads viewer-written text aloud, so it ships with the abuse controls in the
 same step, not after: a length cap, a rate limit per user, a queue with a
 maximum depth, a blocklist, and a skip control on the deck. A stream cannot be
 un-said.
+
+**Built (2026-09-15), as a canvas layer (T11's shape).** Add **Voice** from the
+grid: its inspector picks one of Windows' voices, the speed, the volume, the
+longest message, the words never to read, whether to say who sent it and
+whether to show the words - and "Hear it" plays a sample in the editor. Chat
+sets it off with the layer's own command (`!tts` by default) and a message.
+The helper (`tts.ps1`) makes each clip on this PC and the scene page on air
+plays it, so the layer's volume, Stop effects and the Live view's new **Skip
+voice** all apply. All five controls shipped with it: the length cap (cut at a
+word), a per-person wait (30 s by default), a queue that refuses past five, a
+blocked-words list that also catches stretched spellings, and Skip - plus links
+read as "a link", runs of letters flattened, and T10's budget and pause in
+front. Followers-only waits on T4; until then the gate is the role ladder.
+Tested with real speech on the rig, 31 checks. See DECISIONS, "Chat, read out
+loud".
 
 ## Group C - the effects layer
 

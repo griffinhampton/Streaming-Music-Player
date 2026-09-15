@@ -32,7 +32,7 @@ if (Test-Path (Join-Path $root 'built in themes')) { $themes = @('--add-data', "
 $sw = [Diagnostics.Stopwatch]::StartNew()
 & "$venv\Scripts\pyinstaller.exe" --noconfirm --clean --onedir --noconsole `
     --name 'Awesome Streaming Deck' --icon "$R\music-deck.ico" --version-file "$R\version.txt" `
-    --add-data "$R\web;web" --add-data "$R\smtc.ps1;." --add-data "$R\captions.ps1;." `
+    --add-data "$R\web;web" --add-data "$R\smtc.ps1;." --add-data "$R\captions.ps1;." --add-data "$R\tts.ps1;." `
     --add-data "$R\music-deck.ico;." @themes `
     --hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox `
     --collect-binaries ctranslate2 --collect-data faster_whisper `
@@ -64,7 +64,7 @@ $gone = @($want.Keys | Where-Object { -not (Test-Path (Join-Path $webDir $_)) } 
 Write-Host ("  {0,-44} {1} pages, {2} js/css, {3} missing" -f 'web\ (read from the pages themselves)', $pages.Count, $want.Count, $gone.Count)
 if (-not $pages.Count) { throw 'no pages in the build - web\ did not ship at all' }
 if ($gone.Count) { throw ('a page asks for these and they did not ship: ' + ($gone -join ', ')) }
-foreach ($p in 'smtc.ps1', 'captions.ps1', 'ctranslate2\ctranslate2.dll', 'faster_whisper\assets\silero_vad_v6.onnx', 'builtin') {
+foreach ($p in 'smtc.ps1', 'captions.ps1', 'tts.ps1', 'ctranslate2\ctranslate2.dll', 'faster_whisper\assets\silero_vad_v6.onnx', 'builtin') {
     Write-Host ("  {0,-44} {1}" -f $p, (Test-Path (Join-Path $built "_internal\$p")))
 }
 
@@ -96,6 +96,15 @@ if ($bad.Count) { throw 'the new build did not pass its try-out - the app was le
 Write-Host 'the new build passed its try-out'
 if ($CheckOnly) { Write-Host 'check only: the app was not touched'; exit 0 }
 
+# Never end a stream by rebuilding under it (2026-09-15: the user has a real
+# TikTok key). Step 6 quits the app; if it says it is on air, stop here instead
+# and change nothing. An app that is not running answers nothing, which is fine.
+$st = $null
+try { $st = Invoke-RestMethod 'http://127.0.0.1:8713/api/live/status' -TimeoutSec 3 } catch { }
+if ($st -and $st.state -in @('connecting', 'live', 'reconnecting')) {
+    throw 'the app is LIVE right now - rebuilding would end the stream. Nothing was changed; run this again after you stop.'
+}
+
 # 4. a safety copy: the settings, and the cache but for what can be made again
 $bk = Join-Path $S ('backups\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force (Join-Path $bk 'cache') | Out-Null
@@ -122,7 +131,7 @@ Get-Process -Name 'Awesome Streaming Deck' -ErrorAction SilentlyContinue | Stop-
 Get-CimInstance Win32_Process | Where-Object {
     $_.CommandLine -notlike '*Get-CimInstance*' -and (
         ($_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*Awesome Streaming Deck\cache\chrome*') -or
-        ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*dist\Awesome Streaming Deck*' -and ($_.CommandLine -like '*smtc.ps1*' -or $_.CommandLine -like '*captions.ps1*')))
+        ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*dist\Awesome Streaming Deck*' -and ($_.CommandLine -like '*smtc.ps1*' -or $_.CommandLine -like '*captions.ps1*' -or $_.CommandLine -like '*tts.ps1*')))
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep 2
 

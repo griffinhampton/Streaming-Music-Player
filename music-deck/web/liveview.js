@@ -123,6 +123,8 @@ function paint() {
   // Paused rides the state feed (commands.py's snapshot), so every window with
   // this button agrees the moment anybody presses it - including a moderator
   // doing it from chat. Amber, like the others: something to come back to.
+  $('lvSkip').hidden = !((st.tts || {}).on_air);
+
   const paused = !!((st.commands || {}).paused);
   const sf = $('lvStopFx');
   sf.textContent = paused ? 'Resume commands' : 'Stop effects';
@@ -214,6 +216,11 @@ $('lvMore').addEventListener('click', () => LivePanel.toggle($('lvMore')));
 $('lvCmds').addEventListener('click', () => CmdPanel.toggle($('lvCmds')));
 $('lvReqs').addEventListener('click', () => ReqPanel.toggle($('lvReqs')));
 $('lvPoll').addEventListener('click', () => PollPanel.toggle($('lvPoll')));
+$('lvSkip').addEventListener('click', async () => {
+  const d = await post('/api/tts/skip', {});
+  if (!d.ok) $('lvHint').textContent = 'Could not skip';
+  else say('Skipped');
+});
 // No "click again to confirm", unlike Stop above it: stopping effects harms
 // nothing and is wanted at once, and resuming is one more press away.
 $('lvStopFx').addEventListener('click', async () => {

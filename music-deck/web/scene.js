@@ -998,6 +998,113 @@ TYPES.effect = {
   motion(entry) { this.update(entry); },
 };
 
+/* Voice (T7): chat, read out loud.
+
+   The server makes each clip with Windows' own voices (tts.py) and posts it
+   here, addressed to this layer the way a layer's own command is (T11). The
+   page plays it rather than the server because a clip played here obeys the
+   canvas: this layer's volume, Stop effects (takeDown), the Live view's Skip
+   (skipCurrent), and "only the scene on air answers". One clip at a time, in
+   order; a flood keeps the newest few - the effect layer's rule.
+
+   The words can show while they are read, on a card styled like an alert's. */
+const SPEAK_MAX_SECONDS = 45;          // a clip that never says it ended still gives way
+TYPES.speak = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="speak-card"><span class="speak-text"></span></div>';
+    entry.queue = [];
+    entry.showing = null;
+    this.update(entry);
+  },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const card = entry.el.querySelector('.speak-card');
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 30);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    if (entry.audio) entry.audio.volume = this.volume(p);
+    if (PREVIEW && !entry.showing) {
+      entry.el.querySelector('.speak-text').textContent = 'Amy says: this is how chat will sound';
+      entry.el.classList.add('showing', 'sample');
+    }
+  },
+  // Unset means most of the way up, never silence - effect.sound()'s reason.
+  volume(p) { return Math.max(0, Math.min(1, p.volume === undefined ? 0.9 : Number(p.volume) || 0)); },
+  alert(entry, ev, scene) {
+    if (ev.kind !== 'speak') return;
+    const d = ev.detail || {};
+    if (d.layer !== entry.layer.id || (d.scene && scene && d.scene !== scene.id)) return;
+    const max = Math.max(1, Math.min(10, Number((entry.layer.props || {}).max) || 3));
+    entry.queue.push(ev);
+    if (entry.queue.length > max) entry.queue.splice(0, entry.queue.length - max);
+    if (!entry.showing) this.next(entry);
+  },
+  next(entry) {
+    clearTimeout(entry.hold);
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing');
+      return;
+    }
+    entry.showing = ev;
+    const p = entry.layer.props || {};
+    const d = ev.detail || {};
+    entry.el.querySelector('.speak-text').textContent = d.said || ev.text || '';
+    entry.el.classList.remove('sample');
+    const words = p.show !== false;
+    entry.el.classList.toggle('showing', words);
+    if (words) playEnter(entry);
+    let a = entry.audio;
+    if (!a) {
+      a = entry.audio = new Audio();
+      a.preload = 'auto';
+      // Whichever comes first moves on, once: the clip ending, failing, or the timer.
+      a.addEventListener('ended', () => this.done(entry, entry.showing));
+      a.addEventListener('error', () => this.done(entry, entry.showing));
+    }
+    a.volume = this.volume(p);
+    const src = assetUrl(d.clip);
+    if (!src) { this.done(entry, ev); return; }
+    a.src = src;
+    const started = a.play();
+    if (started && started.catch) started.catch(() => this.done(entry, ev));
+    entry.hold = setTimeout(() => this.done(entry, ev), SPEAK_MAX_SECONDS * 1000);
+  },
+  /* One clip over. With more waiting the next starts at once; with nothing,
+     the words stay a moment so the last line does not vanish mid-thought. */
+  done(entry, ev) {
+    if (!ev || entry.showing !== ev) return;
+    clearTimeout(entry.hold);
+    if (entry.queue.length) { this.next(entry); return; }
+    entry.hold = setTimeout(() => { if (entry.showing === ev) this.next(entry); }, 1200);
+  },
+  /* T10: the words, the voice and everything waiting, all at once. */
+  takeDown(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    entry.el.classList.remove('showing');
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} }
+    this.update(entry);
+  },
+  /* The Live view's Skip: this clip ends and the next one starts. */
+  skipCurrent(entry) {
+    if (!entry.showing) return;
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} }
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    this.next(entry);
+  },
+  destroy(entry) {
+    clearTimeout(entry.hold);
+    // Or a layer somebody deleted mid-sentence keeps talking to the stream.
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} entry.audio = null; }
+  },
+};
+
 /* Polls (S14): the bars people are voting on.
 
    The tally comes down the same alert socket S15 opened - which is why this
@@ -1403,6 +1510,15 @@ class Stage {
       for (const entry of this.layers.values()) {
         const t = TYPES[entry.type];
         if (t.takeDown) t.takeDown(entry);
+      }
+      return;
+    }
+    // The Live view's Skip (T7): the clip a Voice layer is reading ends and
+    // the next starts. By its own hook name, for takeDown's reason.
+    if (ev && ev.kind === 'skip') {
+      for (const entry of this.layers.values()) {
+        const t = TYPES[entry.type];
+        if (t.skipCurrent) t.skipCurrent(entry);
       }
       return;
     }

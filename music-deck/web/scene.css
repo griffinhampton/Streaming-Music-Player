@@ -97,6 +97,17 @@ body.see-through { background: transparent; }
 .type-effect.sample .fx-box { opacity: .5; }
 .type-effect .media { max-width: 100%; max-height: 100%; }
 
+/* The voice layer (T7): the words being read, on a card like an alert's - and
+   for the same reason the card carries the showing, not the box. */
+.type-speak { display: grid; place-items: center; overflow: visible; }
+.type-speak .speak-card {
+  max-width: 100%; padding: .35em .8em; line-height: 1.25; overflow-wrap: anywhere;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  opacity: 0; transition: opacity 140ms linear;
+}
+.type-speak.showing .speak-card { opacity: 1; }
+.type-speak.sample .speak-card { opacity: .5; }
+
 /* The poll layer (S14). Same trick as the alert layer: the card carries the
    showing and hiding, because applyBox writes el.style.opacity inline and an
    inline style would beat anything here. */

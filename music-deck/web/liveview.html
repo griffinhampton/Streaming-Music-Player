@@ -23,6 +23,9 @@
   <!-- T10's one control. First in the row on purpose: it is the button you
        reach for without looking. liveview.js labels it from the state feed. -->
   <button type="button" class="lv-btn" id="lvStopFx" title="Take every picture, sound and alert off the stream now, and pause chat commands until you resume them. Polls keep counting.">Stop effects</button>
+  <!-- T7: shown only while a Voice layer on the scene on air answers to
+       something - liveview.js reads that from the state feed. -->
+  <button type="button" class="lv-btn" id="lvSkip" hidden title="End what the Voice layer is reading now, and go on to the next">Skip voice</button>
   <button type="button" class="lv-btn" id="lvPoll" aria-haspopup="dialog" title="Ask chat something and watch the bars fill up. People vote by typing !1, !2 and so on.">Poll</button>
   <button type="button" class="lv-btn" id="lvReqs" aria-haspopup="dialog" title="Songs chat has asked for, waiting to be let through or turned down">Requests</button>
   <button type="button" class="lv-btn" id="lvCmds" aria-haspopup="dialog" title="What !something in chat is allowed to do: who may run it, how often, and what happens">Commands&hellip;</button>

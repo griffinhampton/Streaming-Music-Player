@@ -732,6 +732,118 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## The rig can never go live (2026-09-15)
+
+The user, in capitals: *"i finally actually have a streaming key from tiktok
+so MAKE SURE TO NEVER ACCIDENTALLY GO LIVE"*. Until that day there was no key,
+so a stray start went nowhere. Now a stray start is a public broadcast, and a
+rule remembered is not a guard.
+
+**What was already true, checked rather than assumed.** The key lives in the
+app's own cache (`live.py`'s `Vault`, `cache/live.json`), encrypted with DPAPI -
+which means encrypted *to this Windows user*, so any copy of the app running as
+the same user could decrypt it if it read that file. The rig does not: it runs
+from `.rig/testrig`, its cache is its own, and it holds no `live.json` and no
+Streamlabs token. Every test that streams sends to `rtmp://127.0.0.1:1935`, a
+local ffmpeg; no probe or test calls a TikTok route; the rebuild's try-out runs
+the new build from a fresh folder with a fresh config. So nothing was wrong -
+but all of that was separation by habit, and one mistyped port or copied
+config away from not being true.
+
+**The guard, in code.** `live.is_local_url` (`live.py:619`) and a `local_only`
+switch on the engine, checked in `start()` *after* the address is resolved
+(`:706`) - because `start()` with no address falls back to the saved one, and
+a guard on the request alone would wave the vault's address straight through.
+Every way of going live, the TikTok tab included, ends in that one method.
+`server.py:601` sets `TEST_RIG` from the rig's own config, read once at start
+so a page posting to `/api/config` cannot lift it; `:1838` switches the engine;
+`:3071` refuses TikTok's go-live and token routes outright on the rig, with a
+403 - opening a live at TikTok happens *before* any stream starts, so the
+engine's guard alone would come too late for it. `rigrestart.ps1` writes
+`"test_rig": true` into a new rig (`:23`), stamps it into an old one on every
+restart (`:30`), and refuses to start a rig whose config does not say it
+(`:31`). The user's app never has the flag, so nothing changes for it.
+
+**And the mirror image.** `rebuild.ps1` quits the running app to replace it,
+so a rebuild started mid-stream would *end* a broadcast. It now asks the app
+first and stops, changing nothing, if it is on air (`rebuild.ps1:105`).
+
+Checked on a restarted rig: a start at `rtmp://example.invalid` - a host that
+can never resolve, so even a broken guard could reach nobody - refused with
+the reason; `/api/tiktok/start` and a token load from this PC both 403; the rig
+holds no key; and the control, a start at 127.0.0.1, accepted and then
+stopped. Nine unit tests (`tests/test_golive.py`), the vault fallback among
+them, and the new voice probe begins by checking the refusal and stops if it
+is missing.
+
+## Chat, read out loud (2026-09-15)
+
+T7, built as the user asked the day before: set up on the canvas like
+everything else. **Voice** is a layer, its command is on the layer (T11), and
+only the scene on air answers.
+
+**Made here, played there.** The voices are Windows' own - System.Speech in a
+PowerShell helper (`tts.ps1`) shaped like the captions one, JSON lines in and
+out, nothing downloaded and nothing sent anywhere. Its call is `Speak()`, the
+plain-text one, never `SpeakSsml()` (`tts.ps1:69`): the text is a viewer's,
+and markup in it is read out as characters, not obeyed. The helper never plays
+a sound. It hands back a WAV, the server keeps a dozen of them, and the Voice
+layer on the scene page plays them one at a time. That detour is the design:
+played by the page, a voice obeys the layer's volume, Stop effects
+(`takeDown`), the Live view's Skip and "only the scene on air answers" - played
+by the helper it would obey none of them. Warm, a clip takes about 0.1 s to
+make; the first after an idle spell takes about a second while PowerShell
+starts, and an idle helper is let go after five minutes.
+
+**The abuse controls, in the same step.** Reading viewer text aloud is the
+riskiest thing the app does. `clean_text` (`tts.py:67`) cuts to the layer's
+length at a word, reads a link as "a link", flattens "aaaaaaa" to "aaa", and
+refuses a message with a blocked word in it outright - matched as written and
+again with every run of letters squashed to one (`:78`), or "baaaadword" walks
+past a list that says "badword". A blocked word inside another word is not a
+match, so "ass" does not refuse "class". The helper's queue refuses past five
+(`:39`). In front of all that sit the layer's own waits - thirty seconds per
+person and five between anyone, written into the layer by the Add grid rather
+than left to fallbacks - and T10's budget, pause and Stop. Everything that can
+refuse does so in `command_speak` (`server.py:1422`) before the command is
+logged as run, so the log says why and the budget gets its place back.
+
+**Skip** is a new event the scene page hands to a `skipCurrent()` hook by its
+own name (`scene.js:1518`), for `takeDown`'s reason; `tests/test_takedown.py`
+now pins that only the Voice layer has one. The Live view shows **Skip voice**
+only while a Voice layer on the scene on air answers to something - a flag on
+the state feed (`server.py:997`) that changes when scenes do, never per message.
+
+**In the editor**, the inspector lists the voices this PC has (here, David and
+Zira), has a "Hear it" button that plays a sample in the editor and never on
+stream, and its command note says what the name does for a voice: "Chat can
+type !tts and a message to have it read out."
+
+Two things found on the way. `rigrestart.ps1` copied the Python and the web
+folder into the rig but never the PowerShell helpers, so the rig had been
+running whichever `captions.ps1` it was first given; it copies `*.ps1` now. And
+a unit test passed for the wrong reason: the length cap was tested on
+`"x" * 900`, which the stretch rule rightly squashes to three letters before
+the cap is reached, so "at most 500" held on a three-letter string. It uses
+text with no repeats now and asserts exact lengths.
+
+Not done: followers-only needs T4's event source, so the gate is the role
+ladder for now; the voices are whatever Windows has installed.
+
+Checked by 22 new unit tests (347 to 369), among them the helper hanging,
+dying and answering with nothing - against a stand-in that speaks its protocol
+- and the real helper making real speech; and `tools/ui/ttsprobe.js` on the
+rig, 31 of 31 on its first run: a message read with its clip really playing
+and its words on screen, a layer listening for everything staying dark, the
+clip fetched back as a 138 KB WAV, a blocked word refused with the same
+message minus the word read as the control, an empty message refused, a link
+read as "a link", a long message cut to 60 letters at a word, Skip ending a
+clip part way through and the next one still playing, Stop effects silencing
+the voice, `!tts` refused while paused, the inspector's voices and "Hear it",
+and Skip hidden once no voice is on air. Rerun on the changed code - the
+command note, the new Skip dispatch, the Add grid and the Live view's header
+all moved: `layercmd` 27, `fxflood` 39, `addpalette` 12, `onair` 40, all green.
+
 ## Commands set up on the layer they set off (2026-09-13)
 
 T11, asked for in the middle of T10: *"the tts, gift animations, and chat

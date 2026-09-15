@@ -47,7 +47,10 @@ QUEUE_DEPTH = 256
 # "effect" is a layer's own command (T11), addressed to that layer by id and
 # scene in `detail`; the layer answers whatever kinds it listens for, and every
 # other effect layer ignores it.
-KINDS = ("command", "request", "poll", "note", "gif", "sound", "stop", "effect")
+#
+# "speak" is a clip for a Voice layer (T7), addressed the same way; "skip" is
+# the Live view's Skip, which ends the clip being read and starts the next.
+KINDS = ("command", "request", "poll", "note", "gif", "sound", "stop", "effect", "speak", "skip")
 
 
 def event(kind, text, user="", title="", detail=None, at=None):

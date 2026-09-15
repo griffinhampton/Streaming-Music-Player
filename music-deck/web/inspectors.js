@@ -17,7 +17,7 @@ let feedState = null;                          // the latest snapshot: designs, 
 const openSecs = new Set(['type', 'scene-bg', 'scene-format']); // which sections are open - a view choice
 const TYPE_NAME = { text: 'Text', image: 'Picture or video', background: 'Background', shape: 'Shape',
   component: 'Window', camera: 'Camera', capture: 'Screen or window', reactive: 'You, talking',
-  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll' };
+  mic: 'Microphone', effect: 'Effect', alert: 'Alert', poll: 'Poll', speak: 'Voice' };
 const COMP_NAME = { np: 'Now Playing', lyrics: 'Lyrics', queue: 'Queue', captions: 'Captions' };
 // Where each component's design lives in the snapshot (as embedhost.js reads it), and its scope in the deck.
 const DESIGN_KEY = { np: 'nowplaying', lyrics: 'lyrics_cfg', queue: 'queue_cfg', captions: 'captions_cfg' };
@@ -66,6 +66,11 @@ const TYPE_DEFAULTS = {
   shape: { 'props.stroke.color': '#ffffff' },
   // What commands.py's layer_command() assumes when these are unset.
   effect: { 'props.role': 'everyone', 'props.cooldown': 0, 'props.user_cooldown': 0 },
+  // The same fallbacks tts.py, server.py's command_speak and scene.js use -
+  // an inspector showing a default the runtime does not apply would lie.
+  speak: { 'props.role': 'everyone', 'props.cooldown': 0, 'props.user_cooldown': 0, 'props.voice': '',
+    'props.rate': 0, 'props.volume': 0.9, 'props.maxlen': 150, 'props.max': 3, 'props.sayname': true,
+    'props.show': true },
 };
 function defaultOf(l, path) {
   const t = TYPE_DEFAULTS[l.type];
@@ -219,6 +224,29 @@ const TYPE_SECTIONS = {
       ${cRange('Volume', 'props.volume', 0, 100, { div: 100, dp: 2 })}
       <p class="hint">A sound command names its own clip; this one plays when the event does not
         bring one. A layer with a sound and no picture shows nothing and just plays.</p>`) + layerCommandSection(l),
+  speak: (l) => section('type', 'Voice', `
+      <p class="hint">Reads chat out loud in a Windows voice, made on this PC - nothing is sent anywhere.
+        Chat sets it off with the command below and a message; only the scene on air listens.</p>
+      <label class="field"><span>Voice</span><select class="input" ${A('props.voice')} data-kind="str" data-voices></select></label>
+      ${cRange('Speed', 'props.rate', -5, 5)}
+      ${cRange('Volume', 'props.volume', 0, 100, { div: 100, dp: 2 })}
+      <div class="field two">${cNum('Longest message (letters)', 'props.maxlen', l.id, 'data-min="20" data-max="500"')}
+        ${cNum('Most waiting', 'props.max', l.id, 'data-min="1" data-max="10"')}</div>
+      <label class="field"><span>Never read out</span><textarea class="input" rows="2" ${A('props.blocked')} data-kind="str"
+        placeholder="words or phrases, one per line or separated by commas" spellcheck="false"></textarea></label>
+      <p class="hint">A message with one of these in it is not read at all. Links are read as "a link", and
+        "aaaaaaa" as "aaa". The wait per person below is the rest of it - start at 30 seconds.</p>
+      ${cCheck('Say who sent it ("Amy says: ...")', 'props.sayname')}
+      ${cCheck('Show the words on screen while they are read', 'props.show')}
+      <div class="field"><span>Hear it</span><div class="font-row">
+        <input class="input" data-tts-sample value="This is how chat will sound." spellcheck="false" aria-label="Words to hear">
+        <button type="button" class="btn btn-ghost btn-sm" data-tts-try>Play</button></div></div>
+      <p class="hint" data-tts-note aria-live="polite">Plays here in the editor, never on stream.</p>
+      ${fontField('props.font', 'Default (Segoe UI)')}
+      <div class="field two">${cNum('Size', 'props.size', l.id, 'data-min="8" data-max="200"')}
+        ${cNum('Corner', 'props.radius', l.id, 'data-min="0" data-max="80"')}</div>
+      ${cColor('Words', 'props.color')}
+      ${cColor('Behind', 'props.bg')}`) + layerCommandSection(l),
   text: (l) => section('type', 'Text', `
       <label class="field"><span>Words</span><textarea class="input" rows="3" ${A('props.text')} data-kind="str"></textarea></label>
       <div class="vars" role="group" aria-label="Insert live text">${['title', 'artist', 'album', 'source', 'elapsed', 'duration', 'time', 'date', 'caption', 'caption_live']
@@ -437,7 +465,7 @@ function triggerSection(l) {
 const CMD_ROLES = [['everyone', 'Anyone'], ['subscriber', 'Subscribers and up'], ['vip', 'VIPs and up'],
   ['mod', 'Moderators and me'], ['broadcaster', 'Only me']];
 const CMD_WAITS = [[0, 'No wait'], [5, '5 s'], [10, '10 s'], [30, '30 s'], [60, '1 min'], [300, '5 min'], [900, '15 min']];
-const LAYER_CMD_TYPES = ['effect'];          // commands.py LAYER_TYPES
+const LAYER_CMD_TYPES = ['effect', 'speak'];  // commands.py LAYER_TYPES
 const cmdName = (v) => String(v || '').trim().toLowerCase().replace(/^[^a-z0-9_]+/, '');
 function layerCommandSection() {
   return section('cmd', 'Chat command', `
@@ -466,7 +494,12 @@ function paintCmdNote(root) {
   const raw = cmdName((l.props || {}).command);
   const sym = ((cmdInfo && cmdInfo.symbol) || '!')[0];
   const say = (t, warn) => { n.textContent = t; n.classList.toggle('warn', !!warn); };
-  if (!raw) return say('Give it a name and chat can set this layer off - it shows its own picture and plays its own sound. The Commands list in the Live view is for everything else.');
+  const voice = l.type === 'speak';
+  if (!raw) {
+    return say(voice
+      ? 'Give it a name - "tts" is the usual one - and chat can type it with a message to have the message read out. The Commands list in the Live view is for everything else.'
+      : 'Give it a name and chat can set this layer off - it shows its own picture and plays its own sound. The Commands list in the Live view is for everything else.');
+  }
   if (!/^[a-z0-9_][a-z0-9_-]{0,31}$/.test(raw)) return say('A command name is letters, numbers, _ or -, with no spaces. This one will not answer.', true);
   if (cmdInfo && (cmdInfo.commands || []).some((c) => c.name === raw)) {
     return say(`${sym}${raw} is also in the Commands list, and that one answers. Rename one of them.`, true);
@@ -476,8 +509,8 @@ function paintCmdNote(root) {
   if (first && first.id !== l.id) return say(`${sym}${raw} already belongs to ${first.name || 'another layer'} on this scene, which answers first.`, true);
   if (l.visible === false) return say('This layer is hidden, so it answers to nothing.', true);
   const live = ((feedState && feedState.canvas) || {}).live === store.scene.id;
-  say(live ? `Chat can type ${sym}${raw} to set this layer off.`
-    : `Chat can type ${sym}${raw} to set this layer off, once this scene is on air.`);
+  const does = voice ? 'and a message to have it read out' : 'to set this layer off';
+  say(live ? `Chat can type ${sym}${raw} ${does}.` : `Chat can type ${sym}${raw} ${does}, once this scene is on air.`);
 }
 function sceneBackgroundSection() {
   return section('scene-bg', 'Background',
@@ -502,6 +535,7 @@ function mountInspector(root) {
   if (l && l.type === 'capture') renderSources(root);
   if (l && l.type === 'reactive') startMeter(root);
   if (l && LAYER_CMD_TYPES.includes(l.type)) loadCmdInfo(root);
+  if (l && l.type === 'speak') fillVoices(root);
   syncInspector(root);
 }
 
@@ -772,6 +806,24 @@ async function fillMics(root) {
   writeControl(sel, 'str', LX.get('props.device') || '');
 }
 
+/* The Voice layer's voices (T7): Windows' installed ones, from the helper.
+   Only a list that came back is kept, so a first try while PowerShell was
+   still starting does not leave the picker empty for the rest of the session. */
+let voiceNames = null;
+async function fillVoices(root) {
+  const sel = root.querySelector('select[data-voices]');
+  if (!sel) return;
+  let list = voiceNames;
+  if (!list) {
+    try { list = ((await (await fetch('/api/tts/voices', { cache: 'no-store' })).json()).voices || []); } catch (_) { list = []; }
+    if (list.length) voiceNames = list;
+  }
+  if (!sel.isConnected) return;
+  sel.innerHTML = '<option value="">Windows default voice</option>' + list.map((v) =>
+    `<option value="${escHTML(v.name)}">${escHTML(v.name)}${v.culture ? ` (${escHTML(v.culture)})` : ''}</option>`).join('');
+  writeControl(sel, 'str', LX.get('props.voice') || '');
+}
+
 let sources = null, thumbTimer = null;
 const sameSource = (a, b) => !!a && !!b && a.kind === b.kind && (a.kind === 'monitor' ? Number(a.monitor || 0) === Number(b.monitor || 0) : a.title === b.title);
 async function renderSources(root, again) {
@@ -974,6 +1026,34 @@ ins.addEventListener('input', (e) => {
   // [^a-z0-9_-] scrub for a CSS class name would have eaten the leading #.
   const v = /^#[0-9a-f]{6}$/i.test(t.value) ? t.value.toLowerCase() : '';
   exec('trigger', (s) => { s.layers.find((y) => y.id === l.id).triggers[i].value = v; }, 'trigv:' + l.id + ':' + i);
+});
+
+// The Voice layer's "Hear it" (T7): made by the same helper chat's clips are,
+// with this layer's voice and speed, and played in this page - never on stream.
+ins.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-tts-try]');
+  const l = oneLayer();
+  if (!b || !l) return;
+  const p = l.props || {};
+  const note = ins.querySelector('[data-tts-note]');
+  const sample = ins.querySelector('[data-tts-sample]');
+  const tell = (t) => { if (note) note.textContent = t; };
+  b.disabled = true;
+  tell('Making it - the first one takes a second or two while Windows starts the voice.');
+  try {
+    const d = await (await fetch('/api/tts/test', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: sample ? sample.value : '', voice: p.voice || '', rate: Number(p.rate) || 0,
+        maxlen: p.maxlen, blocked: p.blocked || '' }) })).json();
+    if (!d.ok) { tell(d.error || 'The voice could not say that.'); return; }
+    const a = new Audio(d.clip);
+    a.volume = Math.max(0, Math.min(1, p.volume === undefined ? 0.9 : Number(p.volume) || 0));
+    await a.play().catch(() => {});
+    tell('Playing here in the editor, never on stream.');
+  } catch (_) {
+    tell('The app did not answer.');
+  } finally {
+    b.disabled = false;
+  }
 });
 
 // Files dropped on a picture grid are uploaded into it.

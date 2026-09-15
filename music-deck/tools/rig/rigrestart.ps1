@@ -20,11 +20,20 @@ Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -notlike '*Get-Cim
 Start-Sleep 2
 if (-not (Test-Path (Join-Path $rig 'config.json'))) {
     New-Item -ItemType Directory -Force (Join-Path $rig 'web') | Out-Null
-    Set-Content -Encoding ascii (Join-Path $rig 'config.json') '{"port": 8799}'
+    Set-Content -Encoding ascii (Join-Path $rig 'config.json') '{"port": 8799, "test_rig": true}'
     "made a new rig in $rig"
 }
+# NEVER GO LIVE (2026-09-15: the user has a real TikTok key). "test_rig" makes
+# server.py stream to 127.0.0.1 only and refuse the TikTok go-live and token
+# routes. Stamped on every restart, so an older rig gets it too - and checked,
+# because a rig that silently lacked it would look exactly like one that had it.
+& $py -c "import json,sys; p=sys.argv[1]; c=json.load(open(p,encoding='utf-8')); c['test_rig']=True; json.dump(c,open(p,'w',encoding='utf-8'),indent=2)" (Join-Path $rig 'config.json')
+if (-not ((Get-Content (Join-Path $rig 'config.json') -Raw) -match '"test_rig":\s*true')) { throw 'the rig config does not say test_rig - refusing to start it' }
 if (-not $NoSync) {
     Get-ChildItem "$R\*.py" | ForEach-Object { Copy-Item $_.FullName (Join-Path $rig $_.Name) -Force }
+    # The PowerShell helpers too (captions.ps1, smtc.ps1, tts.ps1). Copying the
+    # Python alone left the rig running whichever helper it was first given.
+    Get-ChildItem "$R\*.ps1" | ForEach-Object { Copy-Item $_.FullName (Join-Path $rig $_.Name) -Force }
     Copy-Item "$R\web\*" (Join-Path $rig 'web') -Recurse -Force
 }
 & $py (Join-Path $PSScriptRoot 'rigpos.py') $rig

@@ -17,8 +17,10 @@ import unittest
 
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 HOOK = "takeDown"
-# The layers that hold something an event put on screen.
-HOLDERS = {"alert", "effect"}
+# The layers that hold something an event put on screen - T7's voice among them.
+HOLDERS = {"alert", "effect", "speak"}
+# T7's Skip travels the same way, by its own name, and only a voice has one.
+SKIPPERS = {"speak"}
 
 
 def types_in(src):
@@ -54,6 +56,16 @@ class TheStopHook(unittest.TestCase):
         self.assertIsNotNone(branch, "the stop branch in Stage.alert was not found")
         self.assertIn("t.%s(entry)" % HOOK, branch.group(1))
         self.assertNotIn("t.stop", branch.group(1))
+
+    def test_only_a_voice_defines_the_skip(self):
+        defining = {name for name, body in self.types.items()
+                    if re.search(r"^  skipCurrent\(entry\)", body, re.M)}
+        self.assertEqual(defining, SKIPPERS)
+
+    def test_the_skip_is_dispatched_by_that_name(self):
+        branch = re.search(r"ev\.kind === 'skip'\) \{(.*?)return;", self.src, re.S)
+        self.assertIsNotNone(branch, "the skip branch in Stage.alert was not found")
+        self.assertIn("t.skipCurrent(entry)", branch.group(1))
 
     def test_the_microphone_still_has_the_stop_it_always_had(self):
         """The control, and the collision's other half: the mic layer's own

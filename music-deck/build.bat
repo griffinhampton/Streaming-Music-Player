@@ -42,7 +42,7 @@ echo Building "%APP%" ...
 "%ENV%\Scripts\pyinstaller.exe" --noconfirm --clean --onedir --noconsole ^
   --name "%APP%" --icon "%~dp0music-deck.ico" ^
   --version-file "%~dp0version.txt" ^
-  --add-data "%~dp0web;web" --add-data "%~dp0smtc.ps1;." --add-data "%~dp0captions.ps1;." ^
+  --add-data "%~dp0web;web" --add-data "%~dp0smtc.ps1;." --add-data "%~dp0captions.ps1;." --add-data "%~dp0tts.ps1;." ^
   --add-data "%~dp0music-deck.ico;." ^
   !THEMES! ^
   --hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox ^

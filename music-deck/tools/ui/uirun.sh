@@ -39,6 +39,10 @@
 #   * fxsound builds its own WAV rather than pointing at a file. An .mp3 of
 #     zeros uploads happily and then fails to decode, which would look exactly
 #     like the layer refusing to play it.
+#   * ttsprobe makes real speech with Windows' own voices (tts.ps1, which
+#     rigrestart.ps1 copies in with the Python now) and needs the autoplay flag
+#     like fxsound. Its first check is that the rig refuses to go live anywhere
+#     but this PC; it stops there if not. NEVER GO LIVE (2026-09-15).
 #   * Never pipe this script (| grep, | tail). The rig's server is started
 #     detached and inherits the pipe's write end, so the reader never sees
 #     end-of-file: the run finishes and the pipe hangs, holding the output.
@@ -60,7 +64,7 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 RIGPORT=8799
 mkdir -p "$O/uishots"
 
-ALL="chatui onair onstream ctlgate scrollprobe inkcenter framelayer voicetrig soundpanel pickertest keyleak scenebeacon capcheck t1shot fxgif fxsound addpalette fxflood layercmd"
+ALL="chatui onair onstream ctlgate scrollprobe inkcenter framelayer voicetrig soundpanel pickertest keyleak scenebeacon capcheck t1shot fxgif fxsound addpalette fxflood layercmd ttsprobe"
 
 run_one() {
   name="$1"
@@ -84,6 +88,7 @@ run_one() {
     addpalette)  js="$N/addpalette.js";         port=9396; extra="$O/uishots"; win=1440,900 ;;
     fxflood)     js="$N/fxflood.js";            port=9397; extra="";           win=1600,900 ;;
     layercmd)    js="$N/layercmd.js";           port=9398; extra="";           win=1600,900 ;;
+    ttsprobe)    js="$N/ttsprobe.js";           port=9399; extra="";           win=1600,900 ;;
     *) echo "unknown probe: '$name'"; echo "one of: $ALL"; return 2 ;;
   esac
 
