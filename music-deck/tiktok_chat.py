@@ -381,7 +381,11 @@ def to_message(channel, p):
     if not name or not text:
         return None
     linked = re.sub(r"[^a-z0-9._]", "", str(p.get("login") or "").lower())[:24]
-    login = linked or re.sub(r"\s+", "", name.lower())[:40]
+    # With no handle - a line read from the page's drawing - the login is made
+    # from the display name, and marked with "~", which no handle can hold: a
+    # stranger calling themselves "Bob" must never be taken for @bob, whose
+    # coins and gifts are counted by handle (gifts.py, commands' coin price).
+    login = linked or "~" + re.sub(r"\s+", "", name.lower())[:40]
     role = p.get("role")
     badges = []
     if linked and linked == channel:

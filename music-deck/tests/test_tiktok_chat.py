@@ -85,6 +85,15 @@ class TheLines(unittest.TestCase):
         self.assertEqual(chat_rank(fake), "everyone")
         self.assertEqual(chat_rank(other), "everyone")
 
+    def test_a_line_without_a_handle_can_never_be_taken_for_one(self):
+        """A line read from the page's drawing has no handle; its login is made
+        from the display name and marked, so a stranger calling themselves Bob
+        is never @bob - whose coins and gifts are counted by handle."""
+        m = tt.to_message("probe", {"name": "Bob", "login": "", "text": "hi"})
+        self.assertEqual(m["user"]["login"], "~bob")
+        self.assertIsNone(tt.webcast.HANDLE.match(m["user"]["login"]))
+        self.assertEqual(tt.to_message("probe", {"name": "Bob", "login": "bob", "text": "hi"})["user"]["login"], "bob")
+
     def test_empty_lines_are_not_messages(self):
         for p in ({"name": "", "text": "hi"}, {"name": "Amy", "text": "  "}, {}):
             self.assertIsNone(tt.to_message("probe", p), p)

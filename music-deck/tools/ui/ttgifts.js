@@ -239,6 +239,7 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     { name: 'modonly', action: 'say', role: 'mod', response: 'ok' },
     { name: 'mine', action: 'say', role: 'broadcaster', response: 'yours' },
     { name: 'fans', action: 'say', role: 'follower', response: 'thanks for following' },
+    { name: 'bigspender', action: 'say', response: 'big thanks', coins: 100 },
   ];
   await post('/api/commands/save', { commands: CMDS, symbol: '!', budget: { count: 5, seconds: 0 }, floor: 'everyone' });
   // The coin ledger is kept across restarts (gifts.py); this run counts from nothing.
@@ -417,6 +418,21 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('with commands for followers and gifters, a passer-by runs none', fo('Passerby') === 'denied', J(fl.map((e) => [e.user, e.outcome])));
   check('and a follower runs what anyone could before', fo('FanToo') === 'ran');
   await post('/api/commands/save', { commands: CMDS, symbol: '!', budget: { count: 5, seconds: 0 }, floor: 'everyone' });
+  // A price in coins gifted this stream: !bigspender asks for 100. Bob gave
+  // 1,000 above, Amy 5; a moderator never pays.
+  const logPrice = (await logNow()).length;
+  toRoom(C({ from: user(102, 'Bob', 'bob'), text: '!bigspender' }));
+  toRoom(C({ from: user(101, 'Amy', 'amy'), text: '!bigspender' }));
+  toRoom(C({ from: user(213, 'ModZero', 'modzero'), text: '!bigspender', flags: [5] }));
+  await sleep(2000);
+  const pr = (await logNow()).slice(logPrice);
+  const pe = (who) => pr.find((e) => e.user === who && e.command === 'bigspender') || {};
+  check('a command with a price in coins runs for someone who gifted that much this stream', pe('Bob').outcome === 'ran',
+    J(pr.map((e) => [e.user, e.outcome, e.response])));
+  check('and not for someone who gifted less - told what it needs and what they have',
+    pe('Amy').outcome === 'denied' && /needs 100 coins/.test(pe('Amy').response || '') && /you have 5\)/.test(pe('Amy').response || ''),
+    J(pe('Amy')));
+  check('a moderator never pays', pe('ModZero').outcome === 'ran');
   st = await tiktokStatus();
   check('the reader says chat is coming from the room socket', st && st.page && st.page.chat_from === 'socket', J(st && st.page));
 

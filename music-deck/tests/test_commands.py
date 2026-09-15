@@ -132,6 +132,34 @@ class Running(unittest.TestCase):
         self.eng.load([{"name": "subs", "action": "say", "role": "subscriber", "response": "x"}])
         self.assertEqual(self.eng.handle(msg("!subs", badges=["moderator/1"]))["outcome"], "ran")
 
+    def test_a_price_in_coins_gifted_this_stream(self):
+        """A command can ask for coins gifted this stream (gifts.py). Below it
+        is a refusal that says what was asked and what they have; the streamer
+        and their mods never pay; 0 is no price; a ledger that fails is a price
+        nobody has paid."""
+        ledger = {"rich": 1000, "poor": 5}
+        eng = commands.Engine(coins=lambda m: ledger.get((m.get("user") or {}).get("login"), 0), clock=lambda: 0)
+        eng.load([{"name": "big", "action": "say", "response": "x", "coins": 100},
+                  {"name": "free", "action": "say", "response": "x", "coins": 0}])
+        self.assertEqual(eng.handle(msg("!big", login="rich"))["outcome"], "ran")
+        poor = eng.handle(msg("!big", login="poor"))
+        self.assertEqual(poor["outcome"], "denied")
+        self.assertIn("needs 100 coins", poor["response"])
+        self.assertIn("you have 5", poor["response"])
+        self.assertEqual(eng.handle(msg("!big", login="nobody"))["outcome"], "denied")
+        self.assertEqual(eng.handle(msg("!big", badges=["moderator/1"], login="mod"))["outcome"], "ran")
+        self.assertEqual(eng.handle(msg("!big", badges=["broadcaster/1"], login="me"))["outcome"], "ran")
+        self.assertEqual(eng.handle(msg("!free", login="nobody"))["outcome"], "ran")
+        broken = commands.Engine(coins=lambda m: 1 / 0, clock=lambda: 0)
+        broken.load([{"name": "big", "action": "say", "response": "x", "coins": 100}])
+        self.assertEqual(broken.handle(msg("!big", login="rich"))["outcome"], "denied")
+
+    def test_a_price_is_cleaned_like_everything_else(self):
+        for given, kept in ((100, 100), ("250", 250), (-5, 0), ("lots", 0), (None, 0), (10 ** 9, commands.MAX_COINS)):
+            self.assertEqual(commands.clean({"name": "x", "coins": given})["coins"], kept, given)
+        layer = {"id": "L1", "type": "speak", "props": {"command": "tts", "coins": 50}}
+        self.assertEqual(commands.layer_command(layer)["coins"], 50, "a layer's command can carry a price too")
+
     def test_the_floor_is_under_every_command(self):
         """"Commands are for": set to followers and gifters, a plain viewer runs
         nothing, a follower or a gifter runs what their rung allows, and a

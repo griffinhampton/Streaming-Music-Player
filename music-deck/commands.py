@@ -43,6 +43,7 @@ from collections import deque
 LOG_KEEP = 300              # what the Live view can look back over
 NAME_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]{0,31}$")
 MAX_RESPONSE = 400
+MAX_COINS = 1_000_000
 
 # The ladder. Anything at or above the gate may run the command. "follower" is
 # TikTok's, and means followers and gifters: its room socket says who follows
@@ -123,7 +124,8 @@ def layer_command(layer):
         return None
     p = layer.get("props") if isinstance(layer.get("props"), dict) else {}
     cmd = clean({"name": p.get("command"), "action": "say", "role": p.get("role"),
-                 "cooldown": p.get("cooldown"), "user_cooldown": p.get("user_cooldown")})
+                 "cooldown": p.get("cooldown"), "user_cooldown": p.get("user_cooldown"),
+                 "coins": p.get("coins")})
     if cmd is None:
         return None
     cmd.update(action=LAYER_ACTION, target=str(layer["id"]), response="",
@@ -189,11 +191,17 @@ def clean(item):
             return max(0, min(3600, int(item.get(key) or 0)))
         except (TypeError, ValueError):
             return 0
+    # A price: the least a chatter must have gifted this stream, in coins
+    # (gifts.py's ledger, by TikTok @handle). 0 is none.
+    try:
+        coins = max(0, min(MAX_COINS, int(item.get("coins") or 0)))
+    except (TypeError, ValueError):
+        coins = 0
     return {"name": name, "action": action, "role": role,
             "response": str(item.get("response") or "")[:MAX_RESPONSE],
             "target": str(item.get("target") or ""),
             "cooldown": secs("cooldown"), "user_cooldown": secs("user_cooldown"),
-            "enabled": item.get("enabled") is not False}
+            "coins": coins, "enabled": item.get("enabled") is not False}
 
 
 def fill(text, msg):
@@ -219,6 +227,7 @@ class Engine:
         run_stop(target, msg) -> (ok, text)      clear the stream and pause, or resume (T10)
         run_effect(layer, msg) -> (ok, text)     set off a layer's own command (T11)
         layers() -> [command]                    what the layers on air answer to (T11)
+        coins(msg) -> int                        what the chatter has gifted this stream (gifts.py)
 
     The list comes first when a name is in both: it answers the way it did
     before the layer existed, and the conflict is shown rather than settled.
@@ -230,8 +239,9 @@ class Engine:
 
     def __init__(self, run_scene=None, run_request=None, run_poll=None, run_gif=None,
                  run_sound=None, run_stop=None, run_effect=None, layers=None,
-                 log=None, clock=time.monotonic):
+                 coins=None, log=None, clock=time.monotonic):
         self.log = log or (lambda *_: None)
+        self.coins = coins or (lambda msg: 0)
         self.run_scene = run_scene
         self.run_request = run_request
         self.run_poll = run_poll
@@ -397,6 +407,18 @@ class Engine:
         need = max(cmd["role"], floor, key=RANK.get)
         if rank_of(msg.get("badges")) < RANK[need]:
             return self._record(msg, cmd, "denied", f"{cmd['name']} is for {ROLE_WORDS.get(need, need)} and above")
+
+        # A price in coins gifted this stream, for anyone below a moderator:
+        # the streamer and their mods never pay for their own tools. A ledger
+        # that cannot answer is a price nobody has paid.
+        if cmd.get("coins") and rank_of(msg.get("badges")) < RANK["mod"]:
+            try:
+                have = max(0, int(self.coins(msg) or 0))
+            except Exception:
+                have = 0
+            if have < cmd["coins"]:
+                return self._record(msg, cmd, "denied",
+                                    f"{cmd['name']} needs {cmd['coins']} coins gifted this stream (you have {have})")
 
         with self._lock:
             last = self._last_cmd.get(cmd["name"], None)

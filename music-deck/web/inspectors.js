@@ -496,6 +496,10 @@ function triggerSection(l) {
 const CMD_ROLES = [['everyone', 'Anyone'], ['follower', 'Followers, gifters and up'], ['subscriber', 'Subscribers and up'],
   ['vip', 'VIPs and up'], ['mod', 'Moderators and me'], ['broadcaster', 'Only me']];
 const CMD_WAITS = [[0, 'No wait'], [5, '5 s'], [10, '10 s'], [30, '30 s'], [60, '1 min'], [300, '5 min'], [900, '15 min']];
+// A price: coins the chatter has gifted this stream (gifts.py; commands.py
+// clean). Your mods and you never need any.
+const CMD_COINS = [[0, 'No price'], [1, '1 coin'], [10, '10 coins'], [50, '50 coins'], [100, '100 coins'],
+  [500, '500 coins'], [1000, '1,000 coins']];
 const LAYER_CMD_TYPES = ['effect', 'speak'];  // commands.py LAYER_TYPES
 const cmdName = (v) => String(v || '').trim().toLowerCase().replace(/^[^a-z0-9_]+/, '');
 function layerCommandSection() {
@@ -504,6 +508,7 @@ function layerCommandSection() {
       ${cSelect('Who may run it', 'props.role', CMD_ROLES)}
       <div class="field two">${cSelect('Wait, for anyone', 'props.cooldown', CMD_WAITS, true)}
         ${cSelect('Wait, per person', 'props.user_cooldown', CMD_WAITS, true)}</div>
+      ${cSelect('Needs coins gifted this stream', 'props.coins', CMD_COINS, true, 'title="The least someone must have gifted you this stream, in TikTok coins. Your mods and you never need any."')}
       <p class="hint" data-cmd-note aria-live="polite"></p>`);
 }
 /* /api/commands, for the note: the symbol in force and the list's names. Read

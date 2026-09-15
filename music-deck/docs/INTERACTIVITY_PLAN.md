@@ -270,7 +270,10 @@ cost - its price times how many, checked against 22 real gift messages - and
 the Live view shows the coins this stream, the gifts, and who gave most, with
 Reset for a new stream. The same count makes a gifter: with **Commands are
 for: Followers & gifters** in the Commands panel, chat commands work for the
-people who follow you on TikTok or have gifted you, and nobody else.
+people who follow you on TikTok or have gifted you, and nobody else. And any
+command can have a price - "needs 100 coins gifted" in its row, or on a layer's
+own command such as the Voice layer's `!tts` - which your mods and you never
+pay.
 
 ### T7. Text to speech, for followers
 

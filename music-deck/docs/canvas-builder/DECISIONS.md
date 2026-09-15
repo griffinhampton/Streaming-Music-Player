@@ -732,6 +732,41 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## A price in coins (2026-09-15)
+
+The next step of "understanding how many coins were gifted": coins as a
+privilege, not only whether a gift was sent. Any command - the list's, or a
+layer's own, a Voice layer's `!tts` among them - can ask for coins gifted this
+stream (`commands.py`, `clean`'s `coins`; the Commands panel's "needs N coins
+gifted", the inspector's "Needs coins gifted this stream"). Below it the
+chatter is refused and told what it needs and what they have - "needs 100
+coins gifted this stream (you have 5)". The streamer and their moderators never
+pay for their own tools, 0 is no price, and a ledger that cannot answer is a
+price nobody has paid. The count is the ledger's (`gifts.py`), asked by TikTok
+@handle through `command_coins` (`server.py`); Twitch has no coins.
+
+**A hole this closed.** A line read from the page's drawing - the fallback -
+has no handle, and its login was made from the display name: a stranger calling
+themselves "Bob" got the login "bob", which is @bob's handle, and so @bob's
+coins. Such logins now begin with "~", which no handle can hold
+(`tiktok_chat.to_message`), so a made-up login can never be taken for a real
+one.
+
+**Checked** in `tests/test_commands.py` (the price, the refusal's words, mods and
+the streamer, no price, a failing ledger, cleaning, a layer's price) and
+`tests/test_tiktok_chat.py` (the marked login), and on the rig by
+`tools/ui/ttgifts.js`: a command asking 100 runs for the viewer who gave 1,000,
+is refused for the one who gave 5 with both numbers said, and runs for a
+moderator who gave nothing.
+
+**And the streak counting, seen on real lives at last.** The ledger adds what
+`Combos` finishes, so a streak counted wrong would be coins counted wrong. Eight
+more busy lives, every real gift message fed through the app's own streak
+logic beside TikTok's own counts: 22 more gift messages, the group count 1 every
+time again, and the first multi-tap streak caught live - a Rose tapped twice -
+which TikTok counted to 2 and the app finished at 2, once. One streak is not
+many; it is the first that could have disagreed, and did not.
+
 ## Coins, and commands for followers and gifters (2026-09-15)
 
 Asked for in the user's words: *"begin creating the logic for understanding how

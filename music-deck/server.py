@@ -1501,10 +1501,21 @@ def command_effect(layer_id, msg):
     return True, ""
 
 
+def command_coins(msg):
+    """What a chatter has gifted this stream, for a command's price in coins
+    (commands.py): the coin ledger, by TikTok @handle - never by display name.
+    A line read from the page has no handle; its login is marked so it can
+    never match one (tiktok_chat.to_message). Twitch has no coins."""
+    if (msg or {}).get("service") != "tiktok":
+        return 0
+    return LEDGER.coins_from((msg.get("user") or {}).get("login") or "")
+
+
 COMMANDS = commands.Engine(run_scene=command_scene, run_request=command_request,
                            run_poll=command_poll, run_gif=command_gif,
                            run_sound=command_sound, run_stop=command_stop,
-                           run_effect=command_effect, layers=live_layer_commands, log=_log)
+                           run_effect=command_effect, layers=live_layer_commands,
+                           coins=command_coins, log=_log)
 COMMANDS.load((CONFIG.get("commands") or {}).get("list") or [])
 # Written back as kept, for the reason command_symbol gives: a config holding a
 # budget the engine is not honoring would be a setting that lies.

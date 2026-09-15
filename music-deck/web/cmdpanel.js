@@ -43,7 +43,7 @@ const CmdPanel = (() => {
   let dirty = false;
 
   const $ = (sel) => el.querySelector(sel);
-  const blank = () => ({ name: '', action: 'say', role: 'everyone', response: '', target: '', cooldown: 0, user_cooldown: 0, enabled: true });
+  const blank = () => ({ name: '', action: 'say', role: 'everyone', response: '', target: '', cooldown: 0, user_cooldown: 0, coins: 0, enabled: true });
   // Which field an action keeps its argument in. row() and readRows() both ask
   // this one question rather than each carrying its own copy of the rule: when
   // the two disagree, a command saves its argument into a field nothing reads
@@ -90,6 +90,7 @@ const CmdPanel = (() => {
         <div class="lp-row">
           <label class="cmd-cool">Every <input class="lp-input cmd-num" type="number" min="0" max="3600" data-cmd="cooldown" value="${Number(c.cooldown) || 0}" aria-label="Cooldown for everyone, in seconds"> s, for anyone</label>
           <label class="cmd-cool">and <input class="lp-input cmd-num" type="number" min="0" max="3600" data-cmd="user_cooldown" value="${Number(c.user_cooldown) || 0}" aria-label="Cooldown per person, in seconds"> s, per person</label>
+          <label class="cmd-cool" title="The least someone must have gifted you this stream, in TikTok coins. Your mods and you never need any. 0: no price.">needs <input class="lp-input cmd-num" type="number" min="0" max="1000000" data-cmd="coins" value="${Number(c.coins) || 0}" aria-label="Coins gifted this stream it needs"> coins gifted</label>
         </div>
       </fieldset>`;
   }
@@ -111,6 +112,7 @@ const CmdPanel = (() => {
         enabled: !on || on.checked,
         cooldown: Number(get('cooldown')) || 0,
         user_cooldown: Number(get('user_cooldown')) || 0,
+        coins: Math.max(0, Math.floor(Number(get('coins')) || 0)),
         [fieldOf(action)]: get(fieldOf(action)),
       });
     });
