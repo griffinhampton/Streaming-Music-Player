@@ -450,6 +450,15 @@ class WhatItMayDoInThePage(unittest.TestCase):
         say(chat_frame(text="hi", frm=user(1, "Giver", "giver")))
         self.assertEqual(chat_rank(got[-1]), "everyone", "a failing ledger gives nobody a rung")
 
+    def test_no_log_in_button_is_not_proof_of_signed_in(self):
+        """On 2026-09-15 one real room in six drew no Log in control at all to
+        a signed-out reader, and the page reported signed in. Signed in now
+        needs this page to have shown the button and taken it away."""
+        o = tt.OBSERVER
+        self.assertIn("if (signedOut) sawLogin = true;", o)
+        self.assertIn("signedIn: signedOut ? false : sawLogin ? true : null", o)
+        self.assertNotIn("room ? true : null", o)
+
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))
 

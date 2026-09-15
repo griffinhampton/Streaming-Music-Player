@@ -144,7 +144,7 @@ OBSERVER = r"""(() => {
     const r = read(m);
     if (r && fresh(r.key)) send({ t: 'chat', name: r.name, login: r.login, text: r.text, role: r.role });
   };
-  let room = null, watcher = null, last = '', lastAt = 0;
+  let room = null, watcher = null, last = '', lastAt = 0, sawLogin = false;
   function attach() {
     // Whichever container really holds chat lines; TikTok's page has had two
     // at once (live-chat-container and public-screen-live-chat-slot).
@@ -187,7 +187,12 @@ OBSERVER = r"""(() => {
     // never opens the page again under someone typing (REOPEN_MAX).
     const f = document.activeElement;
     const typing = !!(f && f.matches && f.matches('input, textarea, [contenteditable=""], [contenteditable="true"]'));
-    const state = { t: 'status', room: !!room, signedIn: signedOut ? false : room ? true : null,
+    // And no Log in button is not proof of signed in: on 2026-09-15 one real
+    // room in six drew none anywhere to a signed-out reader. So signed in is
+    // said only when this page showed the button and then took it away - the
+    // streamer signing in there; otherwise it cannot be told, and is null.
+    if (signedOut) sawLogin = true;
+    const state = { t: 'status', room: !!room, signedIn: signedOut ? false : sawLogin ? true : null,
                     path: location.pathname, typing };
     const k = JSON.stringify(state);
     if (k !== last || Date.now() - lastAt > 10000) { last = k; lastAt = Date.now(); send(state); }
