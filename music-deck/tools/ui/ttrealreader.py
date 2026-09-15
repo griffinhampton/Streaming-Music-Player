@@ -68,17 +68,29 @@ def main():
                   "ownPage": st["page"]["own"], "live": st["page"]["live"], "waiting": st["page"]["waiting"],
                   "looksAgain": st["page"]["looks"],
                   "framesDecoded": r.frames, "framesBad": r.bad, "seconds": round(time.monotonic() - t0),
+                  # Which live it is (the coin count starts again for a new one).
+                  "liveIdFound": bool(r.room_id),
                   "gifts": [{"gift": g["gift"], "count": g["count"], "coins": g["coins"]} for g in gifts]}
     finally:
         a.stop()
         time.sleep(1)
         shutil.rmtree(profile, ignore_errors=True)
     print(json.dumps(report))
-    ok = report["roomSocket"] and report["framesDecoded"] > 0 and report["framesBad"] == 0 and \
-        report["chatFrom"] == "socket" and (report["chatLines"] > 0 or report["gifts"])
-    print("the reader reads this live: chat from the room socket, and chat or a gift" if ok
-          else "the reader does NOT read this live - the numbers above say which part")
-    return 0 if ok else 1
+    # Reading is the room socket, on the streamer's page, decoding cleanly. A
+    # quiet live - nobody chatting or gifting in those seconds - is still read:
+    # the first version called that a failure, and sent people looking for one.
+    reading = report["ownPage"] and report["roomSocket"] and report["framesDecoded"] > 0 and \
+        report["framesBad"] == 0 and report["chatFrom"] == "socket"
+    if reading and (report["chatLines"] > 0 or report["gifts"]):
+        print("the reader reads this live: chat from the room socket, and chat or a gift")
+    elif reading:
+        print(f"the reader reads this live's room socket, but nobody chatted or gifted in {report['seconds']} s"
+              " - try a busier live, or longer")
+    elif report["waiting"]:
+        print("that live is not on - try someone who is live right now")
+    else:
+        print("the reader does NOT read this live - the numbers above say which part")
+    return 0 if reading else 1
 
 
 if __name__ == "__main__":
