@@ -154,9 +154,20 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
       '<div class="w-full break-words">' + esc(o.text) + '</div></div></div>';
     list.appendChild(d);
   }
-  let at = 0;
+  // Ops: draw a line, move within the page as TikTok does (go), or load
+  // another page outright (load). A page just loaded skips what came before it.
+  let at = -1;
   (async function tick() {
-    try { const all = await (await fetch('/ops')).json(); for (; at < all.length; at++) draw(all[at]); } catch (_) {}
+    try {
+      const all = await (await fetch('/ops')).json();
+      if (at < 0) at = all.length;
+      for (; at < all.length; at++) {
+        const o = all[at];
+        if (o.go) history.pushState({}, '', o.go);
+        else if (o.load) { at = all.length; location.href = o.load; return; }
+        else draw(o);
+      }
+    } catch (_) {}
     setTimeout(tick, 250);
   })();
 </script></body></html>`;
@@ -401,7 +412,35 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('nothing was thrown on the stream page', stage2.errors.length === 0, stage2.errors.slice(0, 2).join(' | '));
   await closePage(stage2);
 
-  // ------------------------------------------------------------ 9. stop
+  // ------------------------------------------------ 9. only your own live
+  // TikTok's live page offers other lives, and an ended one can move on to
+  // another. Nothing from there may reach this stream.
+  ops.push({ go: '/@someoneelse/live' });              // moving within the page, as TikTok does
+  await sleep(1500);
+  st = await tiktokStatus();
+  check('the reader knows the window left the streamer\'s own live', st && st.page && st.page.own === false, J(st && st.page));
+  toRoom(G({ from: user(401, 'Elsewhere', 'elsewhere'), streak: false }));
+  toRoom(C({ from: user(402, 'ElseChat', 'elsechat'), text: '!hello from another live' }));
+  await sleep(2500);
+  check('a gift on someone else\'s live is not posted to this stream', await n('Elsewhere') === 0);
+  check('nor is their chat read', !(await chatNow()).some((m) => m.user.name === 'ElseChat'));
+  ops.push({ go: '/@probe/live' });
+  await sleep(1500);
+  toRoom(G({ from: user(403, 'BackHome', 'backhome'), streak: false }));
+  await sleep(2500);
+  check('back on the streamer\'s own live, gifts arrive again (the control)', await n('BackHome') === 1);
+  const roomsBefore = sockets.room.length;
+  ops.push({ load: '/@someoneelse/live' });            // a full load of another live
+  for (let i = 0; i < 40 && sockets.room.length <= roomsBefore; i++) await sleep(250);
+  await sleep(1500);
+  st = await tiktokStatus();
+  toRoom(G({ from: user(404, 'Loaded', 'loaded'), streak: false }));
+  await sleep(2500);
+  check('after a full load of another live, its gifts are not posted either',
+    sockets.room.length > roomsBefore && await n('Loaded') === 0 && st && st.page && st.page.own === false,
+    J({ sockets: sockets.room.length, page: st && st.page }));
+
+  // ------------------------------------------------------------ 10. stop
   await post('/api/chat/disconnect', { service: 'tiktok' });
   await sleep(3000);
   check('stopping closes the reader\'s window', !(await readerAlive()));

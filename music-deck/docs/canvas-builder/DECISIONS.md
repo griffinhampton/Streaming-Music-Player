@@ -732,6 +732,33 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## Only your own live (2026-09-15)
+
+Found reading the reader over before the first real stream: it read whatever
+live its window showed. TikTok's live page offers other lives, and one that
+has ended can move on to another - and from there a stranger's gifts would have
+gone on the user's overlay, their chat would have run commands, and the voice
+would have read them aloud on the user's stream.
+
+**Now nothing counts unless the window is on the streamer's own live page**
+(`tiktok_chat.py`, `_own`): the main frame at `/@<channel>/live`, as DevTools
+reports every navigation - a full load (`Page.frameNavigated`, the page itself
+and not a frame inside it) and TikTok moving within its one page
+(`Page.navigatedWithinDocument`). A frame from the room socket anywhere else is
+not even decoded; a streak that finishes after the window left is dropped; the
+page's own drawing of the chat, the fallback, is held to the same rule. The
+chat panel says so when the window has wandered, rather than going quiet.
+
+**Checked** in `tests/test_tiktok_chat.py` - before the page has been anywhere,
+on the live, moved within the page to another, a frame inside the page, the
+same page spelled with capitals and a query, a full load of another live, and
+the page's drawing - and on the rig by `tools/ui/ttgifts.js`, whose page moves
+to another creator's live as TikTok does, back, and then loads another outright:
+nothing from there arrives, and back home it does. And on a real live, with the
+reader as it ships (`ttrealreader.py`): TikTok's real page counted as the live's
+own - 62 frames decoded and none bad, chat from the room socket, and a real
+Rose posted - so the rule lets the real thing through, not only the fixture.
+
 ## What the reader costs (2026-09-15)
 
 The user's standing budget is about five per cent of the PC for the whole app,

@@ -215,6 +215,7 @@ class WhatItMayDoInThePage(unittest.TestCase):
         self.addCleanup(setattr, tt.TikTokAdapter, "on_gift", old)
         tt.TikTokAdapter.on_gift = got.append
         a = tt.TikTokAdapter("probe", lambda m: None)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
         room = "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/"
         name = "Ev" + chr(0x202E) + "il"
         frame = push([wrap("WebcastGiftMessage", gift_payload(streak=False, frm=user(7, name, "evil")))])
@@ -232,6 +233,7 @@ class WhatItMayDoInThePage(unittest.TestCase):
         import base64
         got = []
         a = tt.TikTokAdapter("probe", got.append)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
         a._event("Network.webSocketCreated", {"requestId": "9", "url":
                  "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/"})
 
@@ -275,6 +277,7 @@ class WhatItMayDoInThePage(unittest.TestCase):
         import time
         got = []
         a = tt.TikTokAdapter("probe", got.append)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
         line = json.dumps({"t": "chat", "name": "Amy", "text": "hello"})
         a._payload(line)
         self.assertEqual(got, [], "in the first seconds after the page opens")
@@ -299,6 +302,65 @@ class WhatItMayDoInThePage(unittest.TestCase):
         self.assertIn('{"name": "prefers-reduced-motion", "value": "reduce"}', src)
         for never in ("setCPUThrottlingRate", "Animation.setPlaybackRate", "setWebLifecycleState"):
             self.assertNotIn(never, src, never)
+
+    def test_only_the_streamers_own_live_is_read(self):
+        """TikTok's live page offers other lives, and an ended one can move on
+        to another. Read from there, a stranger's gifts would go on this stream
+        and their chat would run commands and be read aloud. So nothing counts
+        unless the window's page itself is at /@<channel>/live."""
+        import base64
+        import json
+        import time
+        from test_webcast import chat_frame, gift_frame
+        gifts, lines = [], []
+        old = tt.TikTokAdapter.on_gift
+        self.addCleanup(setattr, tt.TikTokAdapter, "on_gift", old)
+        tt.TikTokAdapter.on_gift = gifts.append
+        a = tt.TikTokAdapter("probe", lines.append)
+        a._event("Network.webSocketCreated", {"requestId": "9", "url":
+                 "wss://webcast-ws.us.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/"})
+
+        def say(frame):
+            a._event("Network.webSocketFrameReceived", {"requestId": "9", "response": {
+                "opcode": 2, "payloadData": base64.b64encode(frame).decode()}})
+
+        def go(url, within=False):
+            if within:
+                a._event("Page.navigatedWithinDocument", {"frameId": "main", "url": url})
+            else:
+                a._event("Page.frameNavigated", {"frame": {"id": "main", "url": url}})
+
+        say(gift_frame(streak=False))
+        self.assertEqual(gifts, [], "before the page has been anywhere")
+        go("https://www.tiktok.com/@probe/live")
+        say(gift_frame(streak=False))
+        say(chat_frame(text="hi"))
+        self.assertEqual((len(gifts), len(lines)), (1, 1))
+        self.assertTrue(a.status()["page"]["own"])
+        go("https://www.tiktok.com/@someoneelse/live", within=True)     # TikTok moving within its page
+        decoded = a.room.frames
+        say(gift_frame(streak=False))
+        say(chat_frame(text="from another live"))
+        self.assertEqual((len(gifts), len(lines)), (1, 1))
+        self.assertEqual(a.room.frames, decoded, "not even decoded")
+        self.assertFalse(a.status()["page"]["own"])
+        # A frame inside the page is not the page.
+        a._event("Page.frameNavigated", {"frame": {"id": "ad", "parentId": "main",
+                                                   "url": "https://www.tiktok.com/@probe/live"}})
+        self.assertFalse(a.status()["page"]["own"])
+        go("https://www.tiktok.com/@Probe/live/?enter_from=x", within=True)   # the same page, spelled another way
+        say(gift_frame(streak=False))
+        self.assertEqual(len(gifts), 2)
+        go("https://www.tiktok.com/@someoneelse/live")                  # a full load of another live
+        say(gift_frame(streak=False))
+        self.assertEqual(len(gifts), 2)
+        # The page's drawing is held to the same rule.
+        b = tt.TikTokAdapter("probe", lines.append)
+        b._opened = time.monotonic() - tt.PAGE_WAIT - 1
+        b._event("Page.frameNavigated", {"frame": {"id": "m", "url": "https://www.tiktok.com/@someoneelse/live"}})
+        before = len(lines)
+        b._payload(json.dumps({"t": "chat", "name": "Amy", "text": "hello"}))
+        self.assertEqual(len(lines), before)
 
     def test_the_devtools_port_is_this_pcs_alone(self):
         self.assertFalse(any(f.startswith("--remote-debugging-address") for f in tt.FLAGS))

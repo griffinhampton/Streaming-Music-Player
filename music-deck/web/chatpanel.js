@@ -152,6 +152,9 @@ const ChatPanel = (() => {
       ? 'Opens your TikTok live page in a window of its own and reads its chat and gifts - nothing leaves this PC. You do not have to sign in there.'
       : tt.state === 'failed' ? (tt.error || 'The TikTok window stopped.')
       : tt.state !== 'joined' ? 'Opening TikTok…'
+      // The window moved to someone else's live (tiktok_chat.py _own): nothing
+      // from there reaches the stream, and the streamer should know why.
+      : pg.own === false && pg.path ? `The TikTok window is on another page. Chat and gifts are read only from your own live page (@${tt.channel}) - open it there again.`
       // Nothing heard and no chat list: the page is still loading, or the
       // window is on some other page. Which one cannot be told, so say both.
       : !reading ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'

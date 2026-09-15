@@ -404,13 +404,33 @@ class TikTokAdapter(chat.Adapter):
         self.page = {"room": False, "signed_in": None, "path": ""}
         self.room = webcast.Room(self.channel, allow_local=self.allow_local_base)
         self._opened = time.monotonic()
+        # Which page the window is on: the main frame's id and path, from
+        # DevTools' own navigation events (_own).
+        self._main = ""
+        self._at = ""
+        self.elsewhere = 0
         self._proc = None
         self._tab = ""
         self._port = None
 
     def status(self):
         return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts,
-                                                chat_from=self._chat_from()))
+                                                chat_from=self._chat_from(), own=self._own()))
+
+    def _own(self):
+        """Is the window on the streamer's own live page?
+
+        Only then is anything read. TikTok's live page offers other lives, and
+        one that has ended can move on to another - and a reader that read
+        whatever the window showed would put a stranger's gifts on this
+        stream, run their chat's commands, and read their chat aloud. So chat
+        and gifts count only while the main frame is at /@<channel>/live, as
+        DevTools reports each navigation - a full load (Page.frameNavigated)
+        or TikTok moving within its one page (Page.navigatedWithinDocument)."""
+        return self._at == f"/@{self.channel}/live"
+
+    def _navigated(self, url):
+        self._at = urlparse(url or "").path.lower().rstrip("/")
 
     def _chat_from(self):
         """Where chat is being read from: the room socket, the page's drawing
@@ -539,7 +559,18 @@ class TikTokAdapter(chat.Adapter):
             self.room.opened(params.get("requestId"), params.get("url"))
         elif method == "Network.webSocketClosed":
             self.room.closed(params.get("requestId"))
+        elif method == "Page.frameNavigated":
+            f = params.get("frame") or {}
+            if not f.get("parentId"):              # the page itself, not a frame inside it
+                self._main = f.get("id") or ""
+                self._navigated(f.get("url"))
+        elif method == "Page.navigatedWithinDocument":
+            if params.get("frameId") == self._main:
+                self._navigated(params.get("url"))
         elif method == "Network.webSocketFrameReceived":
+            if not self._own():
+                self.elsewhere += 1                # someone else's live: not even decoded
+                return
             r = params.get("response") or {}
             self._room_events(self.room.frame(params.get("requestId"), r.get("opcode"), r.get("payloadData") or ""))
 
@@ -551,6 +582,8 @@ class TikTokAdapter(chat.Adapter):
         handle, and a viewer who copies the streamer's display name is still
         nobody. A moderator and a follower are TikTok's own flags for this room
         (webcast.chat)."""
+        if not self._own():
+            return               # a streak finishing after the window left is not this live's either
         post = type(self).on_gift
         for e in events:
             if e["kind"] == "chat":
@@ -583,8 +616,8 @@ class TikTokAdapter(chat.Adapter):
                          "path": str(p.get("path") or "")[:120]}
             return
         if p.get("t") == "chat":
-            if self._chat_from() != "page":
-                return               # the room socket is the source (PAGE_WAIT, SOCKET_FRESH)
+            if self._chat_from() != "page" or not self._own():
+                return               # the room socket is the source (PAGE_WAIT, SOCKET_FRESH), or not this live
             msg = to_message(self.channel, p)
             if msg:
                 self.messages += 1
