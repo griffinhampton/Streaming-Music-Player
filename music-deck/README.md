@@ -294,6 +294,55 @@ words (delete the test source afterwards). A scene with see-through parts looks
 right on stream when the app goes LIVE itself, since it draws the whole scene;
 through a window capture, give such a scene a solid background.
 
+## TikTok chat, gifts and coins
+
+The app can read your TikTok LIVE's chat and gifts, count the coins, and put
+them to work: chat commands, a voice reading chat aloud, gift animations, a coin
+goal and a top-gifters list.
+
+1. In the Live view's chat panel (or the deck's **Chat...**), type your TikTok
+   username and press **Open TikTok**. A window of its own opens on your live
+   page. **You do not have to sign in**: TikTok shows a live's chat and gifts to
+   viewers who are signed out, and a window that never signed in keeps no TikTok
+   login. Open it before or after you go live - if your live has not started
+   yet, it looks again by itself until it has.
+2. Leave that window open. It can sit behind everything, and it stays muted.
+   It reads only your own live page: if it wanders onto someone else's live,
+   nothing from there reaches your stream, and the chat panel says so.
+3. From then on TikTok chat works in the app the way Twitch chat does:
+   commands, the **Voice** layer's `!tts`, polls, song requests.
+
+**Who may run commands** - in **Commands...**:
+
+- **Commands are for**: *Anyone*, or *Followers & gifters* - the people who
+  follow you on TikTok or have gifted you (TikTok's own mark, or a gift this
+  stream). Your own messages count as you, by your @username, which nobody can
+  copy; TikTok's moderators count as moderators.
+- Each command's own **who** still applies on top, and a command can cost
+  coins: **needs N coins gifted** this stream. You and your moderators never
+  need any.
+- Twitch chat says neither who follows nor who gifted, so there *Followers &
+  gifters* means subscribers and up.
+
+**Coins.** Every gift counts as its price times how many were sent - a Rose x5
+is 5 coins. The Live view's **Gifts** box shows the coins this stream, the gifts
+and who gave most; press **Reset the count** when a new stream starts. The totals
+stay on this PC, across restarts, until you reset them.
+
+**On stream**, from the Canvas Builder's Add grid:
+
+- **Gift** - a spinning coin with the sender's picture, and a throw for every coin.
+- **Coin goal** - a bar filling toward a number you choose.
+- **Top gifters** - who gave most, hidden until someone has gifted.
+- **Voice** - reads chat out loud (`!tts`) in a Windows voice made on this PC.
+
+**What the TikTok window costs.** About a fifth of one CPU core while it reads a
+live (measured with the window hidden; the one you see may use more).
+
+**If chat stops arriving**, TikTok may have changed its page. From the
+`music-deck` folder, `python tools/ui/ttrealreader.py <someone who is live>`
+checks the reader against a real live and says which part stopped matching.
+
 ## Camera, capture and privacy
 
 - **Nothing is uploaded.** The app answers only this PC (`127.0.0.1`). The one
@@ -313,6 +362,12 @@ through a window capture, give such a scene a solid background.
   `cache\live.json`: another account or another PC cannot read it. It is
   never written to a log or shown again. **Forget** in the LIVE panel removes
   it.
+- **The TikTok window** is TikTok's own live page, and talks to TikTok the way
+  any browser showing your live would. The app reads what arrives in it, on
+  this PC, and sends nothing of its own - apart from fetching each gift
+  sender's picture from TikTok's image servers, once, so the stream page never
+  has to. A window you never signed in holds no TikTok login. The coin totals
+  keep viewers' names on this PC until you press **Reset the count**.
 - **A scene export** holds the scene's pictures and fonts. Look at what is in a
   scene before you give it away.
 
