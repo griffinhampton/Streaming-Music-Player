@@ -985,6 +985,16 @@ signed out - chat, gifts, handles, flags - so the chat panel no longer tells
 the user to sign in: a window that was never signed in holds no TikTok login
 at all. It says to sign in only if the user's live does not show without it.
 
+**And whether it is signed in cannot always be told** (2026-09-15). The page
+called itself signed out when it found a Log in button, and signed in whenever
+the chat list was drawn and it did not - so a reader that had never signed in
+reported signed in on one real live. Counted on six more (headless, signed out,
+counts only): five drew the Log in control the page looks for; the sixth drew
+none anywhere outside the chat. A missing button is not evidence. Signed in is
+now said only when this page showed the button and then took it away - the
+streamer signing in there - and otherwise it is null, not known. Nothing drawn
+changes: the chat panel only ever acts on "signed out".
+
 ## A new live, a new count (2026-09-15)
 
 "Needs N coins gifted this stream", the Coin goal and Top gifters all mean
