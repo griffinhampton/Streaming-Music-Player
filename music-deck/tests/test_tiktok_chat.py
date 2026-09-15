@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # test_webcast's frame builders
 
 import chat  # noqa: E402
 import tiktok_chat as tt  # noqa: E402

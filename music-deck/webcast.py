@@ -149,7 +149,20 @@ def user(b):
     else's - so it is the one that can say who a gift was sent to."""
     fs = fields(b)
     handle = _text(fs, 38, 40).lower()
-    return {"id": _int(fs, 1), "name": _text(fs, 3, 80), "handle": handle if HANDLE.match(handle) else ""}
+    return {"id": _int(fs, 1), "name": _text(fs, 3, 80), "handle": handle if HANDLE.match(handle) else "",
+            "avatar": avatar_url(_bytes(fs, 9))}
+
+
+def avatar_url(b):
+    """The picture (9): a list of links (1) to the same image, as WebP and as
+    JPEG from several of TikTok's servers. The JPEG if there is one - every
+    browser takes it - else the first. Only a link: avatars.py decides whether
+    it may be fetched at all."""
+    if not b:
+        return ""
+    urls = [u[:2048].decode("utf-8", "replace") for u in _all(fields(b), 1, 2)][:8]
+    jpeg = [u for u in urls if urlparse(u).path.lower().endswith((".jpeg", ".jpg"))]
+    return (jpeg or urls or [""])[0]
 
 
 def gift(payload):
@@ -379,5 +392,6 @@ class Room:
             self.gifts += 1
             out.append({"kind": "gift", "user": g["user"]["name"] or g["user"]["handle"] or "Someone",
                         "handle": g["user"]["handle"], "gift": g["name"] or "a gift",
-                        "count": g["count"], "coins": min(g["coins"] * g["count"], 1_000_000)})
+                        "count": g["count"], "coins": min(g["coins"] * g["count"], 1_000_000),
+                        "avatar_url": g["user"]["avatar"]})
         return out

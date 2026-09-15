@@ -85,7 +85,32 @@ const vint = (n) => {
 const I = (f, n) => Buffer.concat([vint(BigInt(f) << 3n), vint(n)]);
 const B = (f, v) => { const b = Buffer.isBuffer(v) ? v : Buffer.from(String(v), 'utf8'); return Buffer.concat([vint((BigInt(f) << 3n) | 2n), vint(b.length), b]); };
 const M = (...parts) => Buffer.concat(parts.filter(Boolean));
-const user = (id, name, handle) => M(I(1, id), B(3, name), handle ? B(38, handle) : null);
+// A user: id (1), display name (3), picture links (9, a list in 1), @handle (38).
+const user = (id, name, handle, pics) => M(I(1, id), B(3, name), pics ? B(9, M(...pics.map((u) => B(1, u)))) : null,
+  handle ? B(38, handle) : null);
+// A real PNG for the sender's picture, so the coin can be seen to load it.
+const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function makePng(size) {
+  const rows = [];
+  for (let y = 0; y < size; y++) {
+    const px = [0];
+    for (let x = 0; x < size; x++) px.push(x < size / 2 ? 230 : 40, 90, y < size / 2 ? 200 : 60);
+    rows.push(Buffer.from(px));
+  }
+  const chunk = (tag, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(tag, 'latin1'), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))]);
+}
+const PIC = makePng(96);
+const picHits = [];
 const giftMsg = (o) => M(
   I(2, o.gid || 5655), I(5, o.count || 1), B(7, o.from),
   o.to ? B(8, o.to) : null, o.end ? I(9, 1) : null, o.group ? I(11, o.group) : null,
@@ -134,6 +159,15 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
 </script></body></html>`;
 const fixture = http.createServer((req, res) => {
   if (req.url === '/ops') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J(ops)); return; }
+  // Stand-ins for TikTok's image servers, and for what the app must refuse
+  // from them: a redirect, and a page that calls itself a PNG.
+  if (req.url.startsWith('/pic/')) {
+    const p = req.url.split('?')[0];
+    picHits.push(p);
+    if (p === '/pic/r.png') { res.writeHead(302, { Location: '/pic/redirected.png' }); res.end(); return; }
+    if (p === '/pic/page.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end('<html>not a picture</html>'); return; }
+    if (p === '/pic/face.png' || p === '/pic/redirected.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(PIC); return; }
+  }
   if (/^\/@[a-z0-9._]+\/live/.test(req.url)) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(FIXTURE); return; }
   res.writeHead(404); res.end();
 });
@@ -315,7 +349,51 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   st = await tiktokStatus();
   check('the reader says chat is coming from the room socket', st && st.page && st.page.chat_from === 'socket', J(st && st.page));
 
-  // ------------------------------------------------------------ 7. stop
+  // ------------------------------------------------ 8. the sender's picture
+  // Fetched by the server (avatars.py), kept, and served from this app - the
+  // stream page never asks anyone else for it.
+  const P = `http://127.0.0.1:${FIXTURE_PORT}/pic`;
+  const stage2 = await openPage(`${RIG}/scene.html?follow=1`);
+  await stage2.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  await stage2.send('Page.bringToFront');
+  await sleep(2500);
+  picHits.length = 0;
+  toRoom(G({ from: user(301, 'Pixie', 'pixie', [`${P}/face.png?x-expires=1&x-signature=a`]), streak: false }));
+  let face = null;
+  for (let i = 0; i < 50 && !(face && face.w); i++) {
+    face = await stage2.ev(`(() => { const el = document.querySelector('[data-id="gift"]');
+      const img = el && el.querySelector('.gift-face img');
+      return el && el.querySelector('.gift-who').textContent === 'Pixie'
+        ? { src: img ? img.getAttribute('src') : '', w: img ? img.naturalWidth : 0 } : null; })()`);
+    await sleep(200);
+  }
+  check('the sender\'s picture is on the coin, loaded from this app', face && /^\/avatar\/[0-9a-f]{16}\.png$/.test(face.src) && face.w === 96, J(face));
+  const px = (await from('Pixie'))[0];
+  check('the gift carries a local address for it, never TikTok\'s link', px && /^\/avatar\/[0-9a-f]{16}\.png$/.test(px.detail.avatar), J(px && px.detail));
+  toRoom(G({ from: user(301, 'Pixie', 'pixie', [`${P}/face.png?x-expires=2&x-signature=b`]), streak: false, gid: 5656, name: 'Heart' }));
+  await sleep(2500);
+  check('the same picture under a newly signed link is fetched once, not again', picHits.filter((h) => h === '/pic/face.png').length === 1, J(picHits));
+  toRoom(G({ from: user(302, 'Redi', 'redi', [`${P}/r.png`]), streak: false }));
+  toRoom(G({ from: user(303, 'Pagey', 'pagey', [`${P}/page.png`]), streak: false }));
+  toRoom(G({ from: user(304, 'Faraway', 'faraway', ['https://example.com/face.png']), streak: false }));
+  await sleep(3000);
+  const pic = async (who) => ((await from(who))[0] || { detail: { avatar: null } }).detail.avatar;
+  check('a redirect is never followed: the gift comes with no picture', (await pic('Redi')) === '' && !picHits.includes('/pic/redirected.png'), J(picHits));
+  check('a page calling itself a picture is refused', (await pic('Pagey')) === '');
+  check('a picture anywhere but TikTok\'s image servers is refused', (await pic('Faraway')) === '');
+  check('and every one of those gifts still arrives, with the sender\'s initial',
+    (await from('Redi')).length === 1 && (await from('Pagey')).length === 1 && (await from('Faraway')).length === 1);
+  const r1 = await fetch(`${RIG}/avatar/..%2Fconfig.json`).then((r) => r.status);
+  const r2 = await fetch(`${RIG}/avatar/0123456789abcdef.exe`).then((r) => r.status);
+  check('the picture route serves nothing but files of its own shape', r1 === 404 && r2 === 404, `${r1} ${r2}`);
+  const served = face && face.src ? await fetch(RIG + face.src) : null;
+  check('and serves those as the picture they are, never sniffed as anything else',
+    served && served.status === 200 && served.headers.get('content-type') === 'image/png' &&
+    served.headers.get('x-content-type-options') === 'nosniff', served && `${served.status} ${served.headers.get('content-type')}`);
+  check('nothing was thrown on the stream page', stage2.errors.length === 0, stage2.errors.slice(0, 2).join(' | '));
+  await closePage(stage2);
+
+  // ------------------------------------------------------------ 9. stop
   await post('/api/chat/disconnect', { service: 'tiktok' });
   await sleep(3000);
   check('stopping closes the reader\'s window', !(await readerAlive()));

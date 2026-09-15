@@ -258,8 +258,11 @@ live page: a one-off at once, a streak once, at its end, with its total. Only
 TikTok's room socket is read - never its messaging socket, which on a signed-in
 page carries your private messages. Checked on a real live with the reader as it
 ships: the room socket found, 147 messages decoded and none bad, and a real gift
-posted (Heart Me, 1 coin). Still to come: the sender's picture (a gift shows
-their initial for now). Chat from the same socket came next - see the end of T4.
+posted (Heart Me, 1 coin). The sender's picture came last: the coin wears it,
+fetched by the app from TikTok's image servers only and served from the app
+itself, so a scene still never loads anything from outside - checked on a real
+live, where seven real picture links were fetched and kept. Chat from the same
+socket came before that - see the end of T4.
 
 ### T7. Text to speech, for followers
 

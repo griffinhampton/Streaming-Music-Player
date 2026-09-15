@@ -732,6 +732,45 @@ live output by hand: the server said so, left it closed, and the stream
 held its last frame and reported `stalled` - the new rule, met in real
 use.
 
+## The gift sender's picture (2026-09-15)
+
+The last part of T6. A gift message names its sender's picture - a link to
+TikTok's image servers - and the Gift layer's coin wears it. A scene never
+fetches anything remote (scene.js refuses remote URLs; "A scene that could call
+home"), so the server fetches it, once, and the gift carries a local address
+instead: `/avatar/<id>`, served by this app (`server.py`, beside `/asset/`).
+
+**What `avatars.py` will fetch, and nothing else.** `https` from TikTok's image
+servers only - `*.tiktokcdn.com` and its `-us` and `-eu` twins, which is where
+real messages pointed - on the standard port, with no user or password in the
+link (`allowed`). No redirects: a 3xx is refused, never followed, because a
+redirect is a way to a host that is not on that list. At most 512 KB, and only
+a JPEG, PNG or WebP by the file's own first bytes, whatever the server calls it.
+The rig may fetch from its fixture on 127.0.0.1 (`TEST_RIG`), and nowhere else.
+
+**Kept, briefly.** TikTok signs its picture links with a query that expires
+and serves the same picture from several hosts, but under one path - so the
+cache is keyed on the path, and a sender who gives five gifts is fetched once.
+The pictures are other people's: only the newest 200 are kept, the rest are
+deleted, and they never appear in the asset library. The route serves only ids
+of the cache's own shape, as the type it checked, with `nosniff`.
+
+**Never in the way.** The fetch runs on a thread of its own (`Poster`), in
+order, so chat never waits on a picture and a gift waits at most four seconds;
+a full queue posts the gift at once without its picture, and any refusal just
+means the coin shows the sender's initial, as before.
+
+**Checked** in `tests/test_avatars.py` - a local server standing in for
+TikTok's and for everything the cache must refuse - and on the rig by
+`tools/ui/ttgifts.js`: the coin wears the picture, loaded from `/avatar/`; the
+same picture under a newly signed link is fetched once; a redirect, a page
+calling itself a PNG and a link to anywhere else each leave the gift with no
+picture, and the gift still arrives; the route refuses anything not its own.
+And on a real live, by the app's own rules: seven real picture links taken from
+the room socket - all JPEG links, from `p16` and `p19` on `tiktokcdn.com` and its
+`-us` and `-eu` twins - all allowed, all fetched as real JPEGs of 1 to 3 KB, and
+asked for again, all served from the cache.
+
 ## Chat from the room socket (2026-09-15)
 
 The step after T6, because it closed the gap the page left open. TikTok's page
@@ -855,8 +894,8 @@ writes the port file Chrome no longer writes (`:494`); a test fails if port 0
 comes back. `ttreal.js` still answers its own question - does the script read
 TikTok's page - and says in its header that it cannot answer this one.
 
-**Not yet:** the sender's picture - a gift shows their initial for now. Chat
-from the same socket came next ("Chat from the room socket", above).
+**Then:** the sender's picture ("The gift sender's picture", above) and chat
+from the same socket ("Chat from the room socket", above).
 
 ## TikTok chat, from your own page (2026-09-15)
 

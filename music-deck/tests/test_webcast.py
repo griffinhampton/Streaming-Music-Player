@@ -40,8 +40,9 @@ def M(*parts):
     return b"".join(parts)
 
 
-def user(uid, name, handle=""):
-    return M(I(1, uid), B(3, name), B(38, handle) if handle else b"")
+def user(uid, name, handle="", pics=()):
+    return M(I(1, uid), B(3, name), B(9, M(*[B(1, u) for u in pics])) if pics else b"",
+             B(38, handle) if handle else b"")
 
 
 AMY = user(101, "Amy", "amy")
@@ -147,7 +148,7 @@ class TheFrames(unittest.TestCase):
         g = webcast.gift(ms[1][1])
         self.assertEqual((g["id"], g["name"], g["coins"], g["streak"], g["count"], g["end"], g["group"]),
                          (5655, "Rose", 1, True, 3, True, 11))
-        self.assertEqual(g["user"], {"id": 101, "name": "Amy", "handle": "amy"})
+        self.assertEqual(g["user"], {"id": 101, "name": "Amy", "handle": "amy", "avatar": ""})
         self.assertEqual(g["to"], "")
 
     def test_an_uncompressed_body_reads_the_same(self):
@@ -258,7 +259,17 @@ class TheRoom(unittest.TestCase):
 
     def test_a_gift_on_the_room_socket_arrives_as_post_gift_takes_it(self):
         out = self.room().frame("1", 2, b64(gift_frame(streak=False, coins=5)))
-        self.assertEqual(out, [{"kind": "gift", "user": "Amy", "handle": "amy", "gift": "Rose", "count": 1, "coins": 5}])
+        self.assertEqual(out, [{"kind": "gift", "user": "Amy", "handle": "amy", "gift": "Rose", "count": 1, "coins": 5,
+                                "avatar_url": ""}])
+
+    def test_the_senders_picture_is_the_jpeg_link(self):
+        """Real messages list the same picture as WebP and as JPEG, from
+        several of TikTok's servers. The JPEG, if there is one."""
+        webp = "https://p16-common-sign.tiktokcdn-us.com/tos-useast5/abc~tplv-crop.webp?x-expires=1"
+        jpeg = "https://p19-common-sign.tiktokcdn-us.com/tos-useast5/abc~tplv-crop.jpeg?x-expires=1"
+        for pics, want in (((webp, jpeg), jpeg), ((webp,), webp), ((), "")):
+            out = self.room().frame("1", 2, b64(gift_frame(streak=False, frm=user(7, "Pic", "pic", pics))))
+            self.assertEqual(out[0]["avatar_url"], want, pics)
 
     def test_the_other_sockets_are_never_read(self):
         """The control. im-ws is TikTok's messaging socket: on a signed-in

@@ -47,6 +47,7 @@ import alerts
 import polls
 import tts
 import tiktok_chat          # registers chat.ADAPTERS["tiktok"] (T4, T5)
+import avatars              # gift senders' pictures, fetched here, never by a scene (T6)
 import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
@@ -1454,7 +1455,8 @@ def post_gift(user, gift, coins, count=1, avatar=""):
     """One finished gift on the bus (T8), in the shape T6's TikTok reader will
     post it. `coins` is the total after a combo is coalesced - TikTok streams
     repeats as increments with a "finished" flag, and only the finish belongs
-    here. The avatar is a local asset id or nothing: a picture this app does
+    here. The avatar is a local asset id, an /avatar/ address avatars.py
+    made, or nothing: a picture this app does
     not hold is dropped rather than passed on, and scene.js refuses remote
     URLs outright (DECISIONS, "A scene that could call home")."""
     def num(value, lo, hi, default):
@@ -1467,7 +1469,10 @@ def post_gift(user, gift, coins, count=1, avatar=""):
     coins = num(coins, 0, 1_000_000, 1)
     count = num(count, 1, 100_000, 1)
     avatar = str(avatar or "")
-    if avatar and not ASSET_STORE.path(avatar):
+    if avatar.startswith("/avatar/"):
+        # A TikTok sender's picture, fetched and kept by avatars.py.
+        avatar = avatar if AVATARS.path(avatar[len("/avatar/"):]) else ""
+    elif avatar and not ASSET_STORE.path(avatar):
         avatar = ""
     text = f"{user} sent {gift}" + (f" x{count}" if count > 1 else "")
     return ALERTS.say("gift", text, user=user, title=gift,
@@ -1869,10 +1874,17 @@ def tiktok_gift(g):
     """A finished gift from the TikTok reader's page (T6, webcast.py): a
     one-off at once, a streak at its end with its total. Not held by Stop
     effects' pause - that pause is for chat's commands, and a gift is not one;
-    the stop itself still takes a gift that is showing down."""
-    post_gift(g.get("user"), g.get("gift"), g.get("coins"), g.get("count", 1))
+    the stop itself still takes a gift that is showing down. The sender's
+    picture is fetched first, off the reader's thread (avatars.Poster)."""
+    GIFT_POSTER.put(g)
 
 
+# Gift senders' pictures (avatars.py): fetched here from TikTok's image servers,
+# never by a scene, and kept in a cache of their own - not the asset library.
+# The rig may fetch from its own fixture on 127.0.0.1, and nowhere else.
+AVATARS = avatars.AvatarCache(os.path.join(CACHE, "avatars"), log=_log, allow_local=TEST_RIG)
+GIFT_POSTER = avatars.Poster(AVATARS, lambda g, aid: post_gift(
+    g.get("user"), g.get("gift"), g.get("coins"), g.get("count", 1), ("/avatar/" + aid) if aid else ""))
 tiktok_chat.TikTokAdapter.on_gift = tiktok_gift
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
@@ -2209,6 +2221,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, "no art", "text/plain")
             mime, data = art
             return self._send(200, data, mime, {"Cache-Control": "max-age=600"})
+
+        if path.startswith("/avatar/"):
+            # A gift sender's picture (avatars.py): only a file the cache made,
+            # by an id of its own shape, served as the picture it checked it was.
+            full = AVATARS.path(path[len("/avatar/"):])
+            if not full:
+                return self._send(404, "no avatar", "text/plain")
+            with open(full, "rb") as f:
+                data_bytes = f.read()
+            return self._send(200, data_bytes, avatars.TYPES[full.rsplit(".", 1)[1]],
+                              {"Cache-Control": "max-age=86400", "X-Content-Type-Options": "nosniff"})
 
         if path.startswith("/asset/"):
             asset = ASSET_STORE.path(path[len("/asset/"):])
