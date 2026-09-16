@@ -9,6 +9,17 @@
 // It also checks --fg resolves on each page: base.css paints the thumb with
 // color-mix(... var(--fg) ...), and on a page that never defines --fg at :root
 // the whole declaration is invalid and the thumb quietly reverts to default.
+//
+// Measure only once the page has finished. This used to take the first answer
+// that came back, and an answer comes back as soon as there is a body - which
+// on the deck and the Canvas Builder is well before four stylesheets have
+// arrived from a rig restarted seconds earlier. So it reported Windows'
+// scrollbar, no --fg and no stylesheets at all on pages whose CSS was perfectly
+// fine: 6, 9 and 12 of 12 out of the same unchanged files on three runs
+// (2026-09-16). Nothing is cached between runs either - server.py sends
+// Cache-Control: no-store for these - so every run refetches and rolls again.
+// A probe that fails at random teaches nothing, and worse, it spends whoever
+// reads it on hunting a regression that was never there.
 const [port, rigPort = '8799'] = process.argv.slice(2);
 const RIG = `http://127.0.0.1:${rigPort}`;
 setTimeout(() => { console.log('TIMEOUT'); process.exit(3); }, 120000).unref();
@@ -45,7 +56,10 @@ const PROBE = `(() => {
   d.remove();
   const fg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim();
   const sheets = [...document.styleSheets].map((s) => (s.href || '').split('/').pop()).filter(Boolean);
-  return { w, fg, sheets };
+  // A sheet joins document.styleSheets when it has loaded, so an empty list on
+  // a page that links four of them means none of them are here yet.
+  const ready = document.readyState === 'complete' && document.styleSheets.length > 0;
+  return { ready, state: document.readyState, w, fg, sheets };
 })()`;
 
 const PAGES = [
@@ -58,11 +72,18 @@ const PAGES = [
   for (const [name, path] of PAGES) {
     const page = await open(RIG + path);
     let got = null;
-    for (let i = 0; i < 40 && !got; i++) {
+    for (let i = 0; i < 80 && !(got && got.ready); i++) {
       await sleep(150);
       try { got = await page.ev(PROBE); } catch (_) { /* still loading */ }
     }
     if (!got) { check(`${name}: loads`, false, 'no answer'); continue; }
+    // Never measure an unfinished page: an unstyled one answers every question
+    // below wrongly, and says nothing about the scrollbars this exists to check.
+    if (!got.ready) {
+      check(`${name}: finishes loading its stylesheets`, false,
+        `readyState=${got.state}, ${got.sheets.length} sheet(s) after 12 s`);
+      continue;
+    }
     check(`${name}: base.css is linked`, got.sheets.includes('base.css'), got.sheets.join(' '));
     check(`${name}: the scrollbar is ours, not Windows'`, got.w === 10, `${got.w}px wide (ours is 10, Chrome's own is 15-17)`);
     check(`${name}: --fg resolves, so the thumb is painted`, !!got.fg, got.fg || 'empty - color-mix would be invalid');
