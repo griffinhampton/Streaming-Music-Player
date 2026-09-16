@@ -421,7 +421,7 @@ class WhatItMayDoInThePage(unittest.TestCase):
         a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
         now, first = time.monotonic(), tt.TikTokAdapter.reopen_first
         a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")
-        a._loaded_at = now - 600                      # the page loaded ten minutes ago
+        a._loaded_at = now - tt.SILENT - 600          # the page loaded well before any of this
         a.room.heard = now - 10                       # and its socket spoke ten seconds ago
         self.assertFalse(a._reopen_due(now), "still being heard: never")
         a.room.heard = now - tt.SILENT - 1            # now it has said nothing for that long

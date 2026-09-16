@@ -1052,17 +1052,36 @@ goal and the top gifters arrive on the room socket and nowhere else, so they
 would have stopped dead while the app looked well.
 
 **So silence is a reason to look again.** Nothing at all on the room socket for
-`SILENT` - three minutes - and the page is opened again, on the same doubling
+`SILENT` - ten minutes - and the page is opened again, on the same doubling
 wait as a page with no live on it, to at most five minutes.
 
-**Three minutes, against what a healthy room does.** A threshold that a quiet
-live could trip would reload the streamer's page for nothing, losing a few
-seconds of gifts each time, so the gaps were counted before it was trusted:
-five real rooms, three minutes each, headless and signed out. The longest gap
-between frames on any of them was 7.8 seconds, and nine in ten were under two -
-including a room whose chat was four lines in three minutes and whose socket
-still sent 267 frames, because TikTok keeps it busy whether or not anyone is
-talking. Three minutes is more than twenty times the worst of that. A live that really has ended then shows
+**Ten minutes, and why not three.** A threshold a quiet live could trip would
+reload the streamer's page for nothing, losing the gifts that arrive while it
+reloads, so the gaps were counted before it was trusted: five real rooms, three
+minutes each, headless and signed out. The longest gap between frames on any of
+them was 7.8 seconds, and nine in ten were under two - including a room whose
+chat was four lines in three minutes and whose socket still sent 267 frames,
+because TikTok keeps it busy whether or not anyone is talking. Three minutes
+looked like twenty times the worst case, and it shipped.
+
+It was wrong within the hour. Watching one real live end to end, the socket
+fell silent for **157 seconds** in the middle of a stream that was still
+running - the page's own drawing took chat over meanwhile, as it is meant to -
+and then came back by itself. Three minutes would have fired 23 seconds later.
+A count of gaps in three-minute windows cannot see a lull longer than its
+window, which is the flaw in how the first number was measured, not in the
+rooms. Ten minutes is four times the longest lull yet seen, and a socket dead
+for ten minutes has cost the stream its gifts either way.
+
+**The whole chain, on a real live.** The same run is what checked it: the rig's
+own server pointed at a public live for eight minutes, sampled every thirty
+seconds. It stayed on that live's page throughout, chat came from the room
+socket, and the far end filled up - 502 coins from 18 gifters across 280 gifts
+in the ledger, 28 gift alerts and 10 follows on the bus. Each piece had been
+checked against real TikTok before; this was the first time the whole path ran
+end to end on it rather than on the rig's stand-in page. The ledger was reset
+and the reader stopped when it finished; the names it held while it ran stayed
+on this PC, as they do on the streamer's. A live that really has ended then shows
 as waiting, and the next one is found; a socket that died is replaced by the
 new page's. The reader also reports how long it has been quiet (`quiet`, in
 seconds), which is what the check above is made of.

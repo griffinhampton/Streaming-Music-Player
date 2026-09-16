@@ -348,7 +348,8 @@ window it may use more.
 
 **If TikTok goes quiet**, the reader opens your live page again by itself: a
 room socket can stop delivering without closing, and gifts arrive on nothing
-else. Three minutes of silence is enough for it to look again.
+else. Ten minutes of silence is enough for it to look again - real lives go
+quiet for a couple of minutes at a time, so it waits well past that.
 
 **If chat stops arriving**, TikTok may have changed its page. From the
 `music-deck` folder, `python tools/ui/ttrealreader.py <someone who is live>`
