@@ -1484,6 +1484,20 @@ def post_gift(user, gift, coins, count=1, avatar=""):
                       detail={"user": user, "gift": gift, "coins": coins, "count": count, "avatar": avatar})
 
 
+def post_follow(user, avatar=""):
+    """One new follower on the bus (T6). TikTok announces a follow on the same
+    socket the gifts arrive on (webcast.social); the picture is a local asset
+    id, an /avatar/ address avatars.py made, or nothing - post_gift says why."""
+    user = str(user or "Someone").strip()[:40] or "Someone"
+    avatar = str(avatar or "")
+    if avatar.startswith("/avatar/"):
+        avatar = avatar if AVATARS.path(avatar[len("/avatar/"):]) else ""
+    elif avatar and not ASSET_STORE.path(avatar):
+        avatar = ""
+    return ALERTS.say("follow", f"{user} followed", user=user, title="New follower",
+                      detail={"user": user, "avatar": avatar})
+
+
 def command_effect(layer_id, msg):
     """A layer's own command (T11). The layer already holds its picture and
     its clip, so the event only says which layer - and on which scene, so a
@@ -1914,6 +1928,9 @@ AVATARS = avatars.AvatarCache(os.path.join(CACHE, "avatars"), log=_log, allow_lo
 GIFT_POSTER = avatars.Poster(AVATARS, lambda g, aid: post_gift(
     g.get("user"), g.get("gift"), g.get("coins"), g.get("count", 1), ("/avatar/" + aid) if aid else ""))
 tiktok_chat.TikTokAdapter.on_gift = tiktok_gift
+# A new follower, the same way: their picture first, off the reader's thread.
+FOLLOW_POSTER = avatars.Poster(AVATARS, lambda f, aid: post_follow(f.get("user"), ("/avatar/" + aid) if aid else ""))
+tiktok_chat.TikTokAdapter.on_follow = FOLLOW_POSTER.put
 # The coins gifted, per sender and in all (gifts.py), kept in the cache across
 # a restart until the streamer resets it; and the reader asks it who has gifted.
 LEDGER = gifts.GiftLedger(os.path.join(CACHE, "gift-ledger.json"))

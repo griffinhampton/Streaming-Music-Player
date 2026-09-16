@@ -211,7 +211,7 @@ const TYPE_SECTIONS = {
       <p class="hint">Shows nothing until something happens - a command someone ran, a song that went
         into the queue. Leave the kinds empty to show all of them.</p>
       <label class="field"><span>Only these kinds</span>
-        <input class="input" ${A('props.kinds')} data-kind="str" placeholder="command request poll" spellcheck="false"></label>
+        <input class="input" ${A('props.kinds')} data-kind="str" placeholder="gift follow command" spellcheck="false"></label>
       <div class="field two">${cNum('Seconds on screen', 'props.seconds', l.id, 'data-min="1" data-max="60"')}
         ${cNum('Most waiting', 'props.max', l.id, 'data-min="1" data-max="20"')}</div>
       ${fontField('props.font', 'Default (Segoe UI)')}
@@ -224,7 +224,7 @@ const TYPE_SECTIONS = {
         picture from Assets. Leave the kinds empty to show it for everything.</p>
       ${assetField('Picture or clip', 'props.src', 'image gif video', true)}
       <label class="field"><span>Only these kinds</span>
-        <input class="input" ${A('props.kinds')} data-kind="str" placeholder="command request poll" spellcheck="false"></label>
+        <input class="input" ${A('props.kinds')} data-kind="str" placeholder="gift follow command" spellcheck="false"></label>
       <div class="field two">${cNum('Seconds on screen', 'props.seconds', l.id, 'data-min="1" data-max="60"')}
         ${cNum('Most waiting', 'props.max', l.id, 'data-min="1" data-max="20"')}</div>
       ${cSeg('Fit', 'props.fit', [['cover', 'Cover'], ['contain', 'Contain'], ['stretch', 'Stretch']])}

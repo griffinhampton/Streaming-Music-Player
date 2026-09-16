@@ -339,6 +339,8 @@ starts it again by hand.
 - **Coin goal** - a bar filling toward a number you choose.
 - **Top gifters** - who gave most, hidden until someone has gifted.
 - **Voice** - reads chat out loud (`!tts`) in a Windows voice made on this PC.
+- **Alert** or **Effect** - put `follow` in "Only these kinds" to show new
+  followers (TikTok announces them), or `gift` for gifts.
 
 **What the TikTok reader costs.** About a fifth of one CPU core while it reads
 a live, hidden - which is how it runs unless you ask to see it. Shown as a

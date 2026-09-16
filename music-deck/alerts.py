@@ -54,7 +54,10 @@ QUEUE_DEPTH = 256
 # "gift" is one finished gift (T8): who, which, how many, the coin total after
 # a combo is coalesced, and the sender's picture as a local asset id. Every
 # Gift layer hears every gift and keeps the ones its filters want.
-KINDS = ("command", "request", "poll", "note", "gif", "sound", "stop", "effect", "speak", "skip", "gift")
+# "follow" is one new follower (T6): TikTok announces it on the same socket the
+# gifts arrive on, and it carries who and their picture. Its own kind, so a
+# layer can show followers without also firing on every gift.
+KINDS = ("command", "request", "poll", "note", "gif", "sound", "stop", "effect", "speak", "skip", "gift", "follow")
 
 
 def event(kind, text, user="", title="", detail=None, at=None):

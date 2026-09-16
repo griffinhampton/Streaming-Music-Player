@@ -40,6 +40,7 @@ MAX_B64 = 8 * 1024 * 1024
 GZIP = bytes([0x1F, 0x8B])
 GIFT = "WebcastGiftMessage"
 CHAT = "WebcastChatMessage"
+SOCIAL = "WebcastSocialMessage"
 HANDLE = re.compile(r"^[a-z0-9._]{2,24}$")
 _HOST = re.compile(r"webcast[a-z0-9-]*(\.[a-z0-9-]+)*\.tiktok\.com")
 
@@ -210,6 +211,19 @@ def chat(payload):
             "follower": _int(ident, 4) == 1, "gifter": _int(ident, 1) == 1}
 
 
+def social(payload):
+    """A WebcastSocialMessage: someone followed, or shared the live. Which one
+    is TikTok's own action number (4) - 1 a follow, 3 a share - beside the key
+    of the message's display text (common 1, displayText 8, key 1), which names
+    it: pm_main_follow_message_viewer_2 for a follow, pm_mt_guidance_share for
+    a share. Counted on real lives (2026-09-15): 18 follows and 133 shares, and
+    the two always agreed. Both are read, because a bare number that changed
+    meaning would otherwise announce followers nobody has."""
+    fs = fields(payload)
+    key = _text(fields(_bytes(fields(_bytes(fs, 1)), 8)), 1, 80).lower()
+    return {"user": user(_bytes(fs, 2)), "action": _int(fs, 4), "key": key}
+
+
 def is_webcast(url, allow_local=False):
     """The one socket whose frames are read: TikTok's webcast room socket,
     wss://webcast...tiktok.com/webcast/im/... Every other socket on the page
@@ -340,6 +354,7 @@ class Room:
         self.bad = 0
         self.gifts = 0
         self.chats = 0
+        self.follows = 0
         self.heard = float("-inf")
         # Which live this is: TikTok's room id, from the room socket's address
         # - 19 digits on every real live, and the same number every message on
@@ -376,11 +391,14 @@ class Room:
         self.heard = self.clock()
         out = []
         for method, payload, mid, history in msgs:
-            if method not in (GIFT, CHAT) or history or not self.seen.first(mid):
+            if method not in (GIFT, CHAT, SOCIAL) or history or not self.seen.first(mid):
                 continue
             try:
                 if method == CHAT:
                     out += self._said(chat(payload))
+                    continue
+                if method == SOCIAL:
+                    out += self._followed(social(payload))
                     continue
                 g = gift(payload)
             except Bad:
@@ -403,6 +421,16 @@ class Room:
         u = c["user"]
         return [{"kind": "chat", "user": u["name"] or u["handle"] or "Someone", "handle": u["handle"],
                  "text": text, "mod": c["mod"], "follower": c["follower"], "gifter": c["gifter"]}]
+
+    def _followed(self, s):
+        """A follow, and only a follow: the action and the template id have to
+        agree (social). A share is not something this app shows."""
+        if s["action"] != 1 or "follow" not in s["key"]:
+            return []
+        u = s["user"]
+        self.follows += 1
+        return [{"kind": "follow", "user": u["name"] or u["handle"] or "Someone",
+                 "handle": u["handle"], "avatar_url": u["avatar"]}]
 
     def _done(self, finished):
         out = []

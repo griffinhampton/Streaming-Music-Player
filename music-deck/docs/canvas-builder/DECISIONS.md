@@ -995,6 +995,33 @@ now said only when this page showed the button and then took it away - the
 streamer signing in there - and otherwise it is null, not known. Nothing drawn
 changes: the chat panel only ever acts on "signed out".
 
+## A new follower, on the same socket (2026-09-15)
+
+The follower rung needed to know who follows; a stream also wants to *say* so.
+TikTok announces a follow on the room socket the gifts already arrive on
+(`WebcastSocialMessage`), so this is a parser and a kind, not a new source.
+
+**Told apart from a share.** The same message carries both: an action number
+(field 4) - 1 a follow, 3 a share - and the key of its display text
+(`pm_main_follow_message_viewer_2`, `pm_mt_guidance_share`), which names it.
+Counted on real lives while the follower rung was being checked: 18 follows and
+133 shares, the two never disagreeing. Both are read, and both must agree,
+because a bare number whose meaning changed would announce followers nobody
+has - and shares outnumber follows seven to one, so the wrong way round is a
+stream shouting all evening.
+
+**What it becomes.** `follow` is its own kind on the alert bus, so an Alert or
+Effect layer can show followers without firing on every gift. The follower's
+picture is fetched and kept exactly as a gift sender's is (`avatars.Poster`,
+off the reader's thread), and their name reaches the stream as characters and
+nothing else (`chat.inert`) - a name is theirs to choose.
+
+**Checked** in `tests/test_webcast.py` (a follow arrives; a share, an action
+without its key and a key without its action do not) and
+`tests/test_tiktok_chat.py` (passed on with its name as text, and never from a
+stranger's page), and on the rig by `ttgifts.js`: a follow reaches the stream
+as its own kind, and a share sent beside it does not.
+
 ## Gone quiet, and the way back (2026-09-15)
 
 Half an hour of the shipped reader on one real live, to see what a stream's

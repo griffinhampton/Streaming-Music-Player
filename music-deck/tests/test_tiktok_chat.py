@@ -762,6 +762,25 @@ class TheLive(unittest.TestCase):
         a._event("Network.webSocketCreated", {"requestId": "4", "url": self.WS.format("7000000000000000002")})
         self.assertEqual(told[-1], "7000000000000000002")
 
+    def test_a_follow_is_passed_on_with_its_name_as_text(self):
+        """A follower's name is a name they chose, so it reaches the stream as
+        characters and nothing else (chat.inert) - and only from the
+        streamer's own page."""
+        told = []
+        was = tt.TikTokAdapter.on_follow
+        tt.TikTokAdapter.on_follow = told.append
+        self.addCleanup(setattr, tt.TikTokAdapter, "on_follow", was)
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        follow = {"kind": "follow", "user": "A" + chr(0x202E) + "m", "handle": "amy", "avatar_url": ""}
+        a._event("Page.frameNavigated", {"frame": {"id": "m", "url": "https://www.tiktok.com/@someoneelse/live"}})
+        a._room_events([dict(follow)])
+        self.assertEqual(told, [], "a stranger's live is not this stream's")
+        a._event("Page.frameNavigated", {"frame": {"id": "m", "url": "https://www.tiktok.com/@probe/live"}})
+        a._room_events([dict(follow)])
+        self.assertEqual(len(told), 1)
+        self.assertNotIn(chr(0x202E), told[0]["user"])
+        self.assertEqual(told[0]["handle"], "amy")
+
     def test_a_failing_ledger_never_stops_the_reader(self):
         def fail(_rid):
             raise RuntimeError("no")

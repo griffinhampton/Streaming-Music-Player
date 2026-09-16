@@ -129,6 +129,11 @@ const G = (o) => push([wrap('WebcastGiftMessage', giftMsg(o), o)], o);
 // A chat line: sender (2), words (3), TikTok's identity flags (18; 5 = moderator).
 const chatMsg = (o) => M(B(2, o.from), B(3, o.text), o.flags ? B(18, M(...o.flags.map((f) => I(f, 1)))) : null);
 const C = (o) => push([wrap('WebcastChatMessage', chatMsg(o), o)], o);
+// A social message: its display text names it (common 1 -> displayText 8 ->
+// key 1), the sender is 2, and TikTok's action is 4 - 1 a follow, 3 a share.
+const socialMsg = (o) => M(B(1, M(B(1, 'WebcastSocialMessage'), B(8, M(B(1, o.key || 'pm_main_follow_message_viewer_2'))))),
+  B(2, o.from), I(4, o.action === undefined ? 1 : o.action));
+const S = (o) => push([wrap('WebcastSocialMessage', socialMsg(o), o)], o);
 const ops = [];
 
 /* ---- the fixture: a live page with two sockets, and the server end of both. */
@@ -480,6 +485,19 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
     served.headers.get('x-content-type-options') === 'nosniff', served && `${served.status} ${served.headers.get('content-type')}`);
   check('nothing was thrown on the stream page', stage2.errors.length === 0, stage2.errors.slice(0, 2).join(' | '));
   await closePage(stage2);
+
+  // ----------------------------------------------------- 8b. a new follower
+  // TikTok announces a follow on the same socket the gifts arrive on, and a
+  // share on it too - which must not be taken for one (webcast.social).
+  const followsBefore = ((await getJ('/api/alerts/recent?n=300')).events || []).filter((e) => e.kind === 'follow').length;
+  toRoom(S({ from: user(301, 'Fern', 'fern') }));
+  toRoom(S({ from: user(302, 'Sharer', 'sharer'), action: 3, key: 'pm_mt_guidance_share' }));
+  await sleep(2500);
+  const follows = ((await getJ('/api/alerts/recent?n=300')).events || []).filter((e) => e.kind === 'follow');
+  check('a new follower arrives as an alert of its own kind',
+    follows.length === followsBefore + 1 && (follows[follows.length - 1].detail || {}).user === 'Fern',
+    J(follows.slice(-2).map((e) => [e.kind, (e.detail || {}).user])));
+  check('a share is not a follow', !follows.some((e) => (e.detail || {}).user === 'Sharer'));
 
   // ------------------------------------------------ 9. only your own live
   // TikTok's live page offers other lives, and an ended one can move on to

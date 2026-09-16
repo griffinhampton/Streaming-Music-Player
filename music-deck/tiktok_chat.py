@@ -511,6 +511,9 @@ class TikTokAdapter(chat.Adapter):
     # begin): passed on when the room socket on their own page opens, once per
     # live. Called through the class, like on_gift.
     on_room = None
+    # A new follower (webcast.social), for server.py's post_follow. Called
+    # through the class, like on_gift.
+    on_follow = None
     reopen_first = 60        # REOPEN_MAX says why
     silent_after = SILENT    # SILENT says why; the rig shortens it
 
@@ -830,6 +833,14 @@ class TikTokAdapter(chat.Adapter):
                 if msg:
                     self.messages += 1
                     self.on_message(msg)
+                continue
+            if e["kind"] == "follow":
+                tell = type(self).on_follow
+                if tell:
+                    try:
+                        tell(dict(e, user=chat.inert(e["user"])[:40] or "Someone"))
+                    except Exception as exc:
+                        self.log(f"chat: tiktok: a follow could not be shown: {exc}")
                 continue
             # Names are chat, and chat is text (chat.inert): no control or
             # direction characters onto the stream.

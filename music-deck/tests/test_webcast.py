@@ -76,6 +76,16 @@ def chat_payload(text="hello", frm=AMY, flags=()):
     return M(B(1, M(B(1, webcast.CHAT))), B(2, frm), B(3, text), B(18, M(*[I(f, 1) for f in flags])) if flags else b"")
 
 
+def social_payload(frm=AMY, action=1, key="pm_main_follow_message_viewer_2"):
+    """A WebcastSocialMessage: the message's own display text names it - common
+    (1), displayText (8), key (1) - the sender is 2, TikTok's action is 4."""
+    return M(B(1, M(B(1, webcast.SOCIAL), B(8, M(B(1, key))))), B(2, frm), I(4, action))
+
+
+def social_frame(history=False, mid=None, **kw):
+    return push([wrap(webcast.SOCIAL, social_payload(**kw), history=history, mid=mid)])
+
+
 def chat_frame(history=False, mid=None, **kw):
     return push([wrap(webcast.CHAT, chat_payload(**kw), history=history, mid=mid)])
 
@@ -256,6 +266,20 @@ class TheRoom(unittest.TestCase):
         self.assertTrue(webcast.is_webcast("ws://127.0.0.1:6791/webcast/im/x", allow_local=True))
         self.assertFalse(webcast.is_webcast("ws://10.0.0.2/webcast/im/x", allow_local=True))
         self.assertFalse(webcast.is_webcast("ws://127.0.0.1:6791/ws/v2", allow_local=True))
+
+    def test_a_new_follower_arrives(self):
+        """TikTok announces a follow on the same socket the gifts arrive on."""
+        got = self.room().frame("1", 2, b64(social_frame()))
+        self.assertEqual([(e["kind"], e["user"], e["handle"]) for e in got], [("follow", "Amy", "amy")])
+
+    def test_a_share_is_not_a_follow(self):
+        """Shares outnumbered follows seven to one on real lives. The action
+        and the template id must agree, so neither alone can announce one."""
+        r = self.room()
+        for action, key in ((3, "pm_mt_guidance_share"), (1, "pm_mt_guidance_share"),
+                            (3, "pm_main_follow_message_viewer_2"), (0, "")):
+            self.assertEqual(r.frame("1", 2, b64(social_frame(action=action, key=key))), [], f"{action} {key}")
+        self.assertEqual(r.follows, 0)
 
     def test_the_live_is_known_by_its_room_id(self):
         """Every real live's room socket named its room id, 19 digits - the
