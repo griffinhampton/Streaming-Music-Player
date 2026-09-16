@@ -1022,6 +1022,17 @@ without its key and a key without its action do not) and
 stranger's page), and on the rig by `ttgifts.js`: a follow reaches the stream
 as its own kind, and a share sent beside it does not.
 
+**And on real lives, through the shipped parser** - which the counting above
+was not: it read TikTok's fields directly, while what ships reads them through
+`webcast.social` and `Room.frame`, the way server.py receives them. Four public
+rooms, 150 seconds each: 30 social messages, of which 27 were follows, and the
+app would have shown exactly those 27 - no follow missed, nothing else shown.
+The other three were one share and **two reposts, action 4**
+(`ttlive_repost_...`), a number nothing had seen before this run. That is the
+case the two-part rule was written for: an unknown action met on its first
+encounter was ignored rather than announced, where trusting the number alone
+would have congratulated two people who only reposted.
+
 ## Gone quiet, and the way back (2026-09-15)
 
 Half an hour of the shipped reader on one real live, to see what a stream's

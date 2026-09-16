@@ -212,13 +212,20 @@ def chat(payload):
 
 
 def social(payload):
-    """A WebcastSocialMessage: someone followed, or shared the live. Which one
-    is TikTok's own action number (4) - 1 a follow, 3 a share - beside the key
-    of the message's display text (common 1, displayText 8, key 1), which names
-    it: pm_main_follow_message_viewer_2 for a follow, pm_mt_guidance_share for
-    a share. Counted on real lives (2026-09-15): 18 follows and 133 shares, and
-    the two always agreed. Both are read, because a bare number that changed
-    meaning would otherwise announce followers nobody has."""
+    """A WebcastSocialMessage: someone followed, shared or reposted the live.
+    Which one is TikTok's own action number (4) beside the key of the message's
+    display text (common 1, displayText 8, key 1), which names it: 1 with
+    pm_main_follow_message_viewer_2 is a follow; 3 is a share
+    (pm_mt_guidance_share) and 4 a repost (ttlive_repost_...), and neither of
+    those is shown.
+
+    Counted on real lives (2026-09-15): 18 follows against 133 shares while the
+    follower rung was checked, and this parser itself on four more rooms - 30
+    social messages, 27 of them follows, every one of those shown and nothing
+    else shown. Both the number and the key are read, and the repost is why:
+    it turned up only on that second look, under an action number nothing had
+    seen before, and a bare number trusted alone would have announced two
+    followers who had merely reposted."""
     fs = fields(payload)
     key = _text(fields(_bytes(fields(_bytes(fs, 1)), 8)), 1, 80).lower()
     return {"user": user(_bytes(fs, 2)), "action": _int(fs, 4), "key": key}

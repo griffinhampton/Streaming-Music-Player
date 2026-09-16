@@ -276,8 +276,12 @@ class TheRoom(unittest.TestCase):
         """Shares outnumbered follows seven to one on real lives. The action
         and the template id must agree, so neither alone can announce one."""
         r = self.room()
+        # The repost is not hypothetical: action 4 turned up on real lives the
+        # first time the shipped parser was watched, under a number nothing had
+        # seen before, and was ignored because its key names no follow.
         for action, key in ((3, "pm_mt_guidance_share"), (1, "pm_mt_guidance_share"),
-                            (3, "pm_main_follow_message_viewer_2"), (0, "")):
+                            (3, "pm_main_follow_message_viewer_2"), (0, ""),
+                            (4, "ttlive_repost_commentsarea_repostedusername_im")):
             self.assertEqual(r.frame("1", 2, b64(social_frame(action=action, key=key))), [], f"{action} {key}")
         self.assertEqual(r.follows, 0)
 
