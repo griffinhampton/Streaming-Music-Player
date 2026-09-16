@@ -551,6 +551,7 @@ class TikTokAdapter(chat.Adapter):
         self._proc = None
         self._bid = ""               # its Chrome's browser id, once started (reader_on)
         self._told = ""              # the live last passed on (on_room)
+        self._said_first_page = False   # the first main-frame navigation is logged once
         self._tab = ""
         self._port = None
 
@@ -706,7 +707,10 @@ class TikTokAdapter(chat.Adapter):
                 cdp.send(method, params)
             self._opened = time.monotonic()
             self._set("joined")
-            self.log(f"chat: tiktok: reading @{self.channel}")
+            # Which browser and which tab: a reader attached to a tab that is
+            # not the one being driven looks exactly like a reader that works,
+            # right up until nothing ever arrives (seen 2026-09-16).
+            self.log(f"chat: tiktok: reading @{self.channel} (port {self._port}, tab {str(self._tab)[:8]})")
             tick = time.monotonic()
             while not self._stop.is_set():
                 msg = cdp.recv()
@@ -821,6 +825,9 @@ class TikTokAdapter(chat.Adapter):
                 self._main = f.get("id") or ""
                 self._navigated(f.get("url"))
                 self._loaded_at = time.monotonic()
+                if not self._said_first_page:
+                    self._said_first_page = True
+                    self.log(f"chat: tiktok: the page went to {str(f.get('url'))[:60]}")
         elif method == "Page.navigatedWithinDocument":
             if params.get("frameId") == self._main:
                 self._navigated(params.get("url"))
