@@ -1,8 +1,8 @@
 """Drive the AMD H.264 MFT step by step and print every HRESULT.
     python mfdbg.py <unlock 0|1> <own output sample 0|1> [encoder name part]"""
-import ctypes, sys, time
+import ctypes, os, sys, time
 from ctypes import c_void_p, POINTER, byref, c_int32, c_uint, c_uint64
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import capture, mfenc
 from capture import GUID, guid, vcall, release
 from mfenc import *   # noqa

@@ -118,6 +118,13 @@ def serve_ws_feed(handler, hub, feeds):
         except (ConnectionError, OSError, ValueError):
             pass
         gone.set()
+        # Wake the sender now. Without this it stays in q.get() until the
+        # timeout, so a page that has hung up goes on holding its place in the
+        # feed budget for up to fifteen seconds after it is gone.
+        try:
+            q.put_nowait(None)
+        except queue.Full:
+            pass                       # full means it will wake on its own
 
     threading.Thread(target=reader, daemon=True).start()
     try:
@@ -127,6 +134,8 @@ def serve_ws_feed(handler, hub, feeds):
             except queue.Empty:
                 ws.send(0x9, b"")          # ping keeps a quiet line open
                 continue
+            if payload is None:
+                break                      # the reader woke us: the page is gone
             ws.send_text(payload)
     except (ConnectionError, OSError, ValueError):
         pass

@@ -40,6 +40,15 @@ import feeds
 import guard
 import scenes
 import sceneio
+import chat
+import commands
+import songreq
+import alerts
+import polls
+import tts
+import tiktok_chat          # registers chat.ADAPTERS["tiktok"] (T4, T5)
+import avatars              # gift senders' pictures, fetched here, never by a scene (T6)
+import gifts                # the coin ledger: what was gifted, by whom
 import voice
 from lyrics import Lyrics
 from spotify_api import SpotifyAccount
@@ -78,6 +87,41 @@ DEFAULT_CONFIG = {
     },
     "voice": {
         "threshold": 0.08,           # how loud counts as talking, for reactive images (voice.py)
+    },
+    "chat": {
+        # Reading a public Twitch channel needs no account, so there is nothing
+        # secret in here and nothing to keep in the vault (chat.py).
+        "twitch": {"channel": "", "auto": False},
+        # Muted locally, by login: the panel stops showing them and nothing is
+        # sent to the service. Hiding a single message is not kept - the hub's
+        # ring ages messages out, so a list of ids could only ever grow.
+        "blocked": [],
+    },
+    "commands": {
+        # The spine S13 to S15 hang off (commands.py). Settings a person edits,
+        # so config rather than a store of its own - scenes.py is for documents
+        # with revisions and backups, which these are not. Not filed under
+        # "chat" either: S14 starts a poll from the Live view or by a command
+        # from you, so a command is not chat's property.
+        "list": [],
+        # What starts a command in chat: "!" by default, "/" or "@" or several
+        # at once ("!/") if that suits better. chat.set_symbols refuses a
+        # letter or a digit - with "a" as the symbol, "apple" would run the
+        # command "pple" - so what is saved here is what it accepted.
+        "symbol": "!",
+        # At most `count` pictures or sounds in any `seconds`, from every
+        # command together (T10, commands.clean_budget). Seconds of 0 is no
+        # budget. Whether commands are paused is deliberately not in here.
+        "budget": {"count": 5, "seconds": 30},
+    },
+    "requests": {
+        # Song requests (songreq.py). Moderated by default, and the default is
+        # the interesting part: Spotify can append to a queue but has no
+        # endpoint to take anything out of one again, so letting a request
+        # through is the step that cannot be undone.
+        "moderated": True,
+        "max_seconds": 420,          # 0 for no limit
+        "blocked": [],               # matched against the request and against what came back
     },
     "live": {
         "preset": "720p30",          # see live.PRESETS
@@ -551,6 +595,14 @@ def save_config(cfg):
 
 CONFIG = load_config()
 
+# NEVER GO LIVE from the test rig (2026-09-15: the user has a real TikTok stream
+# key now). tools/rig/rigrestart.ps1 writes "test_rig": true into the rig's own
+# config and nothing else ever does, so the user's app is untouched by this.
+# Read once, here: a page posting to /api/config cannot lift it mid-session.
+# While it holds, the engine streams to 127.0.0.1 alone and the TikTok routes
+# that open a live or fetch the Streamlabs token are refused outright.
+TEST_RIG = CONFIG.get("test_rig") is True
+
 
 # ================================================================= themes
 
@@ -937,6 +989,25 @@ class Hub:
                        "duration": CONFIG["canvas"].get("duration", 300),
                        "at": CANVAS_SWITCHED[0]},
             "voice": VOICE.snapshot(),
+            # Which services are connected, never the messages themselves.
+            "chat": CHAT.snapshot(),
+            # How many commands there are and how they have gone - never the
+            # log itself, which the editor asks for when it is open.
+            "commands": COMMANDS.snapshot(),
+            # Whether a Voice layer on the scene on air answers to anything:
+            # the Live view shows Skip only then. Never the queue or the
+            # counts, which move on every message (see _change_key).
+            "tts": {"on_air": any(c.get("layer_type") == "speak" for c in live_layer_commands())},
+            # How many requests are waiting - never the list, which the Live
+            # view asks for while it is showing it.
+            "requests": REQUESTS.snapshot(),
+            # How many events have fired, never the events: they ride their own
+            # feed, because a whole-state broadcast per alert is the mistake
+            # the chat messages were kept away from.
+            "alerts": ALERTS.snapshot(),
+            # Whether a poll is open and what it asks - never the counts, which
+            # move on every vote and go to the canvas over the bus instead.
+            "polls": POLLS.snapshot(),
             "feeds": FEEDS.counts(),
             "lyrics_info": self._lyrics_info(now),
             # What the microphone is hearing, for the captions window and the
@@ -989,10 +1060,11 @@ class Hub:
     @staticmethod
     def _change_key(snap):
         """The snapshot minus what moves on its own: the clocks every window
-        runs itself, the microphone meter's fine grain, ages counting up.
-        A playing position is reduced to where the song would have started,
-        which holds still while it plays and jumps on a seek - so a seek is
-        still sent at once, and steady playback is not."""
+        runs itself, the microphone meter's fine grain, ages counting up, and
+        the counters that only ever climb. A playing position is reduced to
+        where the song would have started, which holds still while it plays
+        and jumps on a seek - so a seek is still sent at once, and steady
+        playback is not."""
         s = dict(snap)
         s.pop("server_time", None)
         t = time.time()
@@ -1008,6 +1080,21 @@ class Hub:
         if isinstance(s.get("spotify_queue"), dict):
             s["spotify_queue"] = {k: v for k, v in s["spotify_queue"].items()
                                   if k not in ("age", "retry_in")}
+        # Totals that only go up, and that no page draws. A chat message ticks
+        # chat.total, an alert ticks alerts.total, a command ticks one of
+        # commands.ran/refused. Left in the key, any of them turns "send when
+        # something a window shows has changed" back into a send every pump
+        # tick: measured on the rig at one send per 0.41 s while chat was
+        # busy, against 2.00 s idle - five times the traffic, for numbers
+        # nothing reads. They stay in the payload, exactly as captions.level
+        # does; they simply stop being a reason to send it.
+        for name, climbing in (("chat", ("total",)),
+                               ("alerts", ("total", "dropped")),
+                               ("commands", ("ran", "refused")),
+                               ("requests", ("queued", "refused"))):
+            sub = s.get(name)
+            if isinstance(sub, dict):
+                s[name] = {kk: vv for kk, vv in sub.items() if kk not in climbing}
         return json.dumps(s, sort_keys=True, default=str)
 
     def _send(self, snap, key):
@@ -1050,6 +1137,10 @@ def _pump():
         try:
             VOICE.tick()
             HUB.broadcast_if_changed()
+        except Exception:
+            pass
+        try:
+            LEDGER.save(force=False)     # the coin ledger, at most every gifts.SAVE_EVERY
         except Exception:
             pass
         time.sleep(0.4)
@@ -1104,6 +1195,380 @@ VOICE = voice.Voice(CAPTIONS, mic_name=CONFIG["captions"].get("mic"),
                     on_change=lambda: HUB.broadcast(), log=_log,
                     threshold=(CONFIG.get("voice") or {}).get("threshold", voice.THRESHOLD))
 FEEDS = feeds.Feeds(log=_log)
+# Chat in, from any service, in one shape (chat.py). Inert until something
+# connects it; the messages ride their own feed rather than the state snapshot,
+# which exists to send whole state rarely and would be the wrong pipe entirely.
+CHAT = chat.ChatHub(log=_log)
+# The event bus (alerts.py): what the app just did, on its way to the canvas.
+# The producers never import it - the wiring is here, so S14's polls will be a
+# caller and not a dependency.
+ALERTS = alerts.AlertHub(log=_log)
+# Chat, read out loud (T7). Inert until a Voice layer's command runs: the
+# PowerShell helper starts on the first utterance and is let go when idle.
+TTS = tts.Voice(log=_log)
+
+
+def publish_tally(tally):
+    """A poll's whole tally onto the bus, so the poll layer can draw the bars.
+
+    The whole tally and never a delta: a page that joins halfway through a poll
+    is then right at the next vote instead of adding up what it missed. polls.py
+    never learns alerts.py exists - the same arrangement every other producer
+    here has.
+    """
+    ALERTS.post(alerts.event("poll", tally.get("question", ""), title="poll",
+                             detail={"poll": tally}))
+
+
+POLLS = polls.Polls(publish=publish_tally, log=_log)
+
+
+def command_poll(target, msg):
+    """`!poll` run by someone allowed to: "close", or a question and its
+    choices written as "Which song? | Sabotage | Intergalactic".
+
+    This is the streamer's way in. A viewer voting is a different path
+    entirely - polls.py watches the chat hub for `!1`, because a vote wants
+    neither a role gate nor a cooldown.
+    """
+    text = str(target or "").strip()
+    if text.lower() in ("close", "end", "stop"):
+        res = POLLS.close()
+        HUB.broadcast()
+        return bool(res.get("ok")), res.get("reason") or "the poll is closed"
+    parts = [p.strip() for p in text.split("|") if p.strip()]
+    if len(parts) < 3:
+        return False, "say it as: !poll Which song? | Sabotage | Intergalactic"
+    res = POLLS.open(parts[0], parts[1:])
+    HUB.broadcast()
+    if not res.get("ok"):
+        return False, res.get("reason") or "could not open that poll"
+    return True, f"poll open: {parts[0]} - vote with !1 to !{len(parts) - 1}"
+
+
+def alert_for_request(entry):
+    """A song that actually went into the queue is worth showing; one that was
+    refused or skipped is the streamer's business and not the viewers'."""
+    if entry and entry.get("state") == "queued":
+        track = entry.get("track") or {}
+        ALERTS.say("request", f"{entry.get('user') or 'someone'} queued {track.get('title') or 'a song'}",
+                   user=entry.get("user", ""), title=chat.symbols()[:1] + "queue",
+                   detail={"artist": track.get("artist", ""), "uri": track.get("uri", "")})
+    return entry
+
+
+def command_scene(target):
+    """The one command action that reaches outside: put a scene on air.
+
+    A command names a scene the way a person would ("!gaming" -> "Gaming"),
+    while set_live_scene wants an id - a config file full of ids would be
+    unusable to whoever has to edit it. So match on the name, then fall back to
+    treating the string as an id. Scene names are not unique (there are two
+    called "P5 stress" on the test rig), so take the first in list order:
+    predictable beats refusing to switch in the middle of a show.
+    """
+    want = (target or "").strip().lower()
+    if not want:
+        return False, "that command does not say which scene"
+    for s in SCENES.list():
+        if (s.get("name") or "").strip().lower() == want:
+            res = set_live_scene(s["id"])
+            if res.get("ok"):
+                HUB.broadcast()
+                return True, f"{s['name']} is on air"
+            return False, res.get("reason") or "could not switch"
+    res = set_live_scene(target)
+    if res.get("ok"):
+        HUB.broadcast()
+        return True, "on air"
+    return False, res.get("reason") or "no scene by that name"
+
+
+# What `!something` is allowed to do (commands.py). The engine watches the chat
+# hub in process rather than subscribing to it like a page would: this is not a
+# feed to a browser, it is the app reacting to its own messages, and a watcher
+# is called directly instead of going through a queue that can drop.
+def spotify_find(text):
+    """Look a request up. Named rather than a lambda so the rig's test hook has
+    something to put back when it is finished faking."""
+    ok, found = SPOTIFY.search(text, limit=1)
+    return (True, found[0]) if ok and found else (False, found if isinstance(found, str) else "")
+
+
+def spotify_enqueue(uri):
+    return SPOTIFY.add_to_queue(uri)
+
+
+# Song requests (songreq.py): the song half of `!queue`. Who may ask, and how
+# often, stays with the command engine - asking that question in two places is
+# how the two answers drift apart.
+REQUESTS = songreq.Store(find=spotify_find, enqueue=spotify_enqueue,
+                         rules=CONFIG.get("requests"), log=_log)
+
+
+def command_request(msg):
+    """`!queue something`. By the time this runs the engine has already decided
+    that this person may ask and is not asking too often; what is left is
+    whether the song itself is allowed."""
+    entry = REQUESTS.ask(msg)
+    track = entry.get("track") or {}
+    what = (f"{track.get('title', '')} - {track.get('artist', '')}".strip(" -")
+            or entry.get("text") or "that")
+    HUB.broadcast()
+    alert_for_request(entry)
+    if entry["state"] == "queued":
+        return True, f"queued {what}"
+    if entry["state"] == "pending":
+        return True, f"{what} is waiting to be let through"
+    return False, entry.get("reason") or "no"
+
+
+def command_gif(asset, msg):
+    """Put a picture on the canvas (T2).
+
+    A kind of its own rather than "command", so an effect layer can show
+    pictures without also firing on every command that happens to carry a
+    response. The picture rides in `detail`, which means one effect layer
+    serves every gif command instead of needing one layer each - and a
+    command with no picture of its own is not a failure, because the layer
+    falls back to whatever it was given.
+
+    Nothing is returned as text, and that is deliberate. `_record` keeps
+    whatever comes back as the command's response (commands.py:249), and
+    `after_command` posts a second alert for any command that has one - so a
+    sentence here would put the picture on screen and an alert card beside
+    it, off one command. The log still shows that it ran.
+    """
+    user = (msg.get("user") or {}).get("name") or ""
+    name = chat.symbols()[:1] + (msg.get("command") or "")
+    ALERTS.say("gif", (user + " ran " + name).strip(), user=user, title=name,
+               detail={"asset": str(asset or "")})
+    return True, ""
+
+
+def command_sound(asset, msg):
+    """Play a clip on the canvas - `command_gif`'s twin, and for the same
+    reasons: its own kind so a layer can listen for sound without firing on
+    every command, the clip in `detail` so one layer serves every sound
+    command, and no text back so one command stays one alert."""
+    user = (msg.get("user") or {}).get("name") or ""
+    name = chat.symbols()[:1] + (msg.get("command") or "")
+    ALERTS.say("sound", (user + " ran " + name).strip(), user=user, title=name,
+               detail={"sound": str(asset or "")})
+    return True, ""
+
+
+def stop_everything(by=""):
+    """T10's one control: what chat put on the stream comes off it now, and
+    nothing more goes on until somebody resumes.
+
+    Both halves, because either alone fails at the moment it is needed.
+    Clearing without pausing lasts until the next message of a flood; pausing
+    without clearing leaves the clip that made you reach for the button
+    playing to the end. Polls keep counting - a vote is not an effect, and
+    nothing a viewer does to a poll reaches the stream except its bars.
+    """
+    COMMANDS.set_paused(True)
+    ALERTS.say("stop", "", user=by, title="stop")
+    HUB.broadcast()
+    _log("commands: stopped" + (f" by {by}" if by else "") + " - effects cleared, commands paused")
+
+
+def resume_commands(by=""):
+    COMMANDS.set_paused(False)
+    HUB.broadcast()
+    _log("commands: resumed" + (f" by {by}" if by else ""))
+
+
+def command_stop(target, msg):
+    """The same control as a command, for the moderators. "resume" resumes;
+    anything else stops, so a mistyped target can never leave a stop command
+    doing nothing. No text back, for the reason command_gif gives: a response
+    becomes an alert card, and a stop that put a card on stream would be a
+    strange way to clear it."""
+    by = (msg.get("user") or {}).get("name") or ""
+    if str(target or "").strip().lower() == "resume":
+        resume_commands(by)
+    else:
+        stop_everything(by)
+    return True, ""
+
+
+_LAYER_CMDS = {"key": None, "cmds": []}
+
+
+def live_layer_commands():
+    """T11: what the layers of the scene on air answer to in chat.
+
+    Asked on every command rather than rebuilt on events, because a scene
+    changes in more ways than there are hooks - a switch, a save, an undo, a
+    restore, an import over the live one - and a hook missed is a command still
+    answering for a layer that is gone. Cached on the scene's id and revision,
+    which every one of those moves, so a chat message costs a lookup.
+
+    Only the scene on air: a layer on a scene nobody is watching can show
+    nothing and play nothing, so it answers to nothing either.
+    """
+    sid = CONFIG.get("canvas", {}).get("live", "")
+    key = (sid, SCENES.revisions().get(sid)) if sid else None
+    if key != _LAYER_CMDS["key"]:
+        _LAYER_CMDS["cmds"] = commands.scene_commands(SCENES.get(sid)) if sid else []
+        _LAYER_CMDS["key"] = key
+    return _LAYER_CMDS["cmds"]
+
+
+def live_layer(layer_id):
+    """(the live scene's id, that layer) - or the id and None if it has gone."""
+    sid = CONFIG.get("canvas", {}).get("live", "")
+    for layer in ((SCENES.get(sid) if sid else None) or {}).get("layers") or []:
+        if layer.get("id") == layer_id:
+            return sid, layer
+    return sid, None
+
+
+def command_speak(layer_id, msg):
+    """A Voice layer's command (T7): what was typed after it, read out.
+
+    Everything that can refuse does so here, before the command is logged as
+    run - an empty message, a blocked word, a full queue - so the log says why
+    and the effects budget gets its place back (commands.py hands it back for
+    any failure). The clip is made on the voice's own thread; the event that
+    tells the layer to play it goes out when it exists, addressed like any
+    layer command, with the words as they will be heard.
+    """
+    sid, layer = live_layer(layer_id)
+    if not layer:
+        return False, "that Voice layer is not on air any more"
+    p = layer.get("props") or {}
+    text, why = tts.clean_text(msg.get("args"), p.get("maxlen", tts.MAXLEN), p.get("blocked", ""))
+    if text is None:
+        return False, why
+    user = (msg.get("user") or {}).get("name") or ""
+    said = f"{user} says: {text}" if user and p.get("sayname", True) is not False else text
+    name = chat.symbols()[:1] + (msg.get("command") or "")
+
+    def made(clip_id, ok, error):
+        if ok:
+            ALERTS.say("speak", said, user=user, title=name,
+                       detail={"layer": str(layer_id), "scene": sid,
+                               "clip": f"/api/tts/{clip_id}.wav", "said": said})
+    ok, res = TTS.say(said, voice=p.get("voice") or "", rate=p.get("rate") or 0, done=made)
+    return (True, "") if ok else (False, res)
+
+
+def post_gift(user, gift, coins, count=1, avatar=""):
+    """One finished gift on the bus (T8), in the shape T6's TikTok reader will
+    post it. `coins` is the total after a combo is coalesced - TikTok streams
+    repeats as increments with a "finished" flag, and only the finish belongs
+    here. The avatar is a local asset id, an /avatar/ address avatars.py
+    made, or nothing: a picture this app does
+    not hold is dropped rather than passed on, and scene.js refuses remote
+    URLs outright (DECISIONS, "A scene that could call home")."""
+    def num(value, lo, hi, default):
+        try:
+            return max(lo, min(hi, int(value)))
+        except (TypeError, ValueError):
+            return default
+    user = str(user or "Someone").strip()[:40] or "Someone"
+    gift = str(gift or "a gift").strip()[:40] or "a gift"
+    coins = num(coins, 0, 1_000_000, 1)
+    count = num(count, 1, 100_000, 1)
+    avatar = str(avatar or "")
+    if avatar.startswith("/avatar/"):
+        # A TikTok sender's picture, fetched and kept by avatars.py.
+        avatar = avatar if AVATARS.path(avatar[len("/avatar/"):]) else ""
+    elif avatar and not ASSET_STORE.path(avatar):
+        avatar = ""
+    text = f"{user} sent {gift}" + (f" x{count}" if count > 1 else "")
+    return ALERTS.say("gift", text, user=user, title=gift,
+                      detail={"user": user, "gift": gift, "coins": coins, "count": count, "avatar": avatar})
+
+
+def post_follow(user, avatar=""):
+    """One new follower on the bus (T6). TikTok announces a follow on the same
+    socket the gifts arrive on (webcast.social); the picture is a local asset
+    id, an /avatar/ address avatars.py made, or nothing - post_gift says why."""
+    user = str(user or "Someone").strip()[:40] or "Someone"
+    avatar = str(avatar or "")
+    if avatar.startswith("/avatar/"):
+        avatar = avatar if AVATARS.path(avatar[len("/avatar/"):]) else ""
+    elif avatar and not ASSET_STORE.path(avatar):
+        avatar = ""
+    return ALERTS.say("follow", f"{user} followed", user=user, title="New follower",
+                      detail={"user": user, "avatar": avatar})
+
+
+def command_effect(layer_id, msg):
+    """A layer's own command (T11). The layer already holds its picture and
+    its clip, so the event only says which layer - and on which scene, so a
+    page showing some other scene with a layer of the same id stays still.
+    No text back, for command_gif's reason. A Voice layer's command goes to
+    command_speak instead: it has words to make into a clip first."""
+    kind = next((c.get("layer_type") for c in live_layer_commands() if c.get("target") == layer_id), "")
+    if kind == "speak":
+        return command_speak(layer_id, msg)
+    user = (msg.get("user") or {}).get("name") or ""
+    name = chat.symbols()[:1] + (msg.get("command") or "")
+    ALERTS.say("effect", (user + " ran " + name).strip(), user=user, title=name,
+               detail={"layer": str(layer_id or ""),
+                       "scene": CONFIG.get("canvas", {}).get("live", "")})
+    return True, ""
+
+
+def command_coins(msg):
+    """What a chatter has gifted this stream, for a command's price in coins
+    (commands.py): the coin ledger, by TikTok @handle - never by display name.
+    A line read from the page has no handle; its login is marked so it can
+    never match one (tiktok_chat.to_message). Twitch has no coins."""
+    if (msg or {}).get("service") != "tiktok":
+        return 0
+    return LEDGER.coins_from((msg.get("user") or {}).get("login") or "")
+
+
+COMMANDS = commands.Engine(run_scene=command_scene, run_request=command_request,
+                           run_poll=command_poll, run_gif=command_gif,
+                           run_sound=command_sound, run_stop=command_stop,
+                           run_effect=command_effect, layers=live_layer_commands,
+                           coins=command_coins, log=_log)
+COMMANDS.load((CONFIG.get("commands") or {}).get("list") or [])
+# Written back as kept, for the reason command_symbol gives: a config holding a
+# budget the engine is not honoring would be a setting that lies.
+CONFIG.setdefault("commands", {})["budget"] = COMMANDS.set_budget(
+    (CONFIG.get("commands") or {}).get("budget"))
+# The floor under every command ("Commands are for"), kept the same way.
+CONFIG["commands"]["floor"] = COMMANDS.set_floor((CONFIG.get("commands") or {}).get("floor"))
+
+
+def command_symbol():
+    """Apply the saved symbol and write back what was accepted. A config
+    holding a symbol the app is not honoring would be a setting that lies -
+    the panel reads this value to label every command it shows."""
+    kept = chat.set_symbols((CONFIG.get("commands") or {}).get("symbol") or chat.SYMBOL_DEFAULT)
+    CONFIG.setdefault("commands", {})["symbol"] = kept
+    return kept
+
+
+command_symbol()
+def after_command(msg):
+    """Run the command, then tell the canvas about it.
+
+    Only a command that ran becomes an alert. A refusal or a cooldown is worth
+    writing in the log the streamer reads, and is not worth putting on screen
+    for everybody watching somebody else be turned down.
+    """
+    entry = COMMANDS.handle(msg)
+    if entry and entry.get("outcome") == "ran" and entry.get("response"):
+        ALERTS.say("command", entry["response"], user=entry.get("user", ""),
+                   # On stream, so it shows the symbol actually in force. One
+                   # of them, not all: "!/queue" would read as a typo.
+                   title=chat.symbols()[:1] + entry.get("command", ""))
+    return entry
+
+
+CHAT.watch(after_command)
+# Beside the command engine, not behind it: a vote is not a command anyone
+# registered, and it wants neither a role gate nor a cooldown - just one each.
+CHAT.watch(POLLS.handle)
 CANVAS_SWITCHED = [0.0]         # when the live scene last changed
 
 
@@ -1429,9 +1894,63 @@ LYRICS = Lyrics(CACHE)
 SPOTIFY = SpotifyAccount(CACHE, f"http://127.0.0.1:{CONFIG['port']}/spotify/callback")
 SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
 BROWSER = overlay_mod.find_browser()
+# TikTok chat (T4, T5): the streamer's TikTok live page, in a Chrome of its own
+# whose profile - and so any sign-in - lives in the cache and nowhere else.
+# Hidden (headless) unless the streamer asks to see it, to sign in there
+# (/api/chat/tiktok/window); the rig's is never shown. A hidden one left running
+# by a run that ended without stopping it is closed now: nobody could see it
+# to close it (tiktok_chat.close_hidden).
+tiktok_chat.TikTokAdapter.browser = BROWSER
+tiktok_chat.TikTokAdapter.profile = os.path.join(CACHE, "chrome-tiktok")
+tiktok_chat.TikTokAdapter.headless = TEST_RIG or not ((CONFIG.get("chat") or {}).get("tiktok") or {}).get("show")
+try:
+    tiktok_chat.close_hidden(tiktok_chat.TikTokAdapter.profile)
+except Exception as exc:
+    _log(f"chat: tiktok: a reader left running could not be closed: {exc}")
+
+
+def tiktok_gift(g):
+    """A finished gift from the TikTok reader's page (T6, webcast.py): a
+    one-off at once, a streak at its end with its total. Not held by Stop
+    effects' pause - that pause is for chat's commands, and a gift is not one;
+    the stop itself still takes a gift that is showing down. Its coins go in
+    the ledger at once, so the sender counts as a gifter by their next line;
+    the sender's picture is fetched first, off the reader's thread
+    (avatars.Poster)."""
+    LEDGER.record(g.get("handle"), g.get("user"), g.get("coins"), g.get("count", 1))
+    GIFT_POSTER.put(g)
+
+
+# Gift senders' pictures (avatars.py): fetched here from TikTok's image servers,
+# never by a scene, and kept in a cache of their own - not the asset library.
+# The rig may fetch from its own fixture on 127.0.0.1, and nowhere else.
+AVATARS = avatars.AvatarCache(os.path.join(CACHE, "avatars"), log=_log, allow_local=TEST_RIG)
+GIFT_POSTER = avatars.Poster(AVATARS, lambda g, aid: post_gift(
+    g.get("user"), g.get("gift"), g.get("coins"), g.get("count", 1), ("/avatar/" + aid) if aid else ""))
+tiktok_chat.TikTokAdapter.on_gift = tiktok_gift
+# A new follower, the same way: their picture first, off the reader's thread.
+FOLLOW_POSTER = avatars.Poster(AVATARS, lambda f, aid: post_follow(f.get("user"), ("/avatar/" + aid) if aid else ""))
+tiktok_chat.TikTokAdapter.on_follow = FOLLOW_POSTER.put
+# The coins gifted, per sender and in all (gifts.py), kept in the cache across
+# a restart until the streamer resets it; and the reader asks it who has gifted.
+LEDGER = gifts.GiftLedger(os.path.join(CACHE, "gift-ledger.json"))
+tiktok_chat.TikTokAdapter.gifted = LEDGER.coins_from
+
+
+def tiktok_live_found(room_id):
+    """The streamer's live, by TikTok's room id (tiktok_chat's on_room): a live
+    other than the one the coin ledger is counting starts a new count, and
+    the one before is kept as the last stream's (gifts.py begin)."""
+    if LEDGER.begin(room_id):
+        last = LEDGER.snapshot(0).get("last") or {}
+        _log(f"gifts: a new live - the coin count starts again (the last stream: {last.get('coins', 0)} coins)")
+
+
+tiktok_chat.TikTokAdapter.on_room = tiktok_live_found
 # Going LIVE from the app: the output page encodes, this pushes RTMP.
 LIVE = live.LiveEngine(CACHE, log=lambda msg: print("  " + msg))
 LIVE.on_change = lambda: HUB.broadcast()
+LIVE.local_only = TEST_RIG          # NEVER GO LIVE from the rig: see TEST_RIG
 NATIVE = nativelive.NativeVideo(LIVE, log=lambda msg: print("  " + msg))
 # TikTok's own side of the show: the key Go LIVE asks for, and the session
 # End Live closes. The engine above streams; this opens and shuts the live.
@@ -1764,13 +2283,32 @@ class Handler(BaseHTTPRequestHandler):
             mime, data = art
             return self._send(200, data, mime, {"Cache-Control": "max-age=600"})
 
+        if path.startswith("/avatar/"):
+            # A gift sender's picture (avatars.py): only a file the cache made,
+            # by an id of its own shape, served as the picture it checked it was.
+            full = AVATARS.path(path[len("/avatar/"):])
+            if not full:
+                return self._send(404, "no avatar", "text/plain")
+            with open(full, "rb") as f:
+                data_bytes = f.read()
+            return self._send(200, data_bytes, avatars.TYPES[full.rsplit(".", 1)[1]],
+                              {"Cache-Control": "max-age=86400", "X-Content-Type-Options": "nosniff"})
+
         if path.startswith("/asset/"):
             asset = ASSET_STORE.path(path[len("/asset/"):])
             if not asset:
                 return self._send(404, "no asset", "text/plain")
             with open(asset, "rb") as f:
                 data_bytes = f.read()
-            mime = mimetypes.guess_type(asset)[0] or "image/png"
+            # The store's own table first, and the OS only as a fallback:
+            # mimetypes reads the registry on Windows, so a machine missing an
+            # association would get the old "image/png" default - and with
+            # nosniff set below, a sound served as a picture simply never
+            # plays, with nothing said anywhere. This ships as an .exe to
+            # other people's machines, so that is not hypothetical.
+            ext = os.path.splitext(asset)[1].lower()
+            mime = (ASSET_STORE.OK_EXT.get(ext)
+                    or mimetypes.guess_type(asset)[0] or "application/octet-stream")
             # A picture can come from someone else's scene now (an import): an
             # SVG opened on its own must not run script on this origin.
             extra = {"Cache-Control": "max-age=86400", "X-Content-Type-Options": "nosniff"}
@@ -1916,6 +2454,16 @@ class Handler(BaseHTTPRequestHandler):
             return LIVE.serve_websocket(self)
         if path == "/ws/events":
             return feeds.serve_ws_feed(self, HUB, FEEDS)
+        if path == "/ws/chat":
+            # The same server, a different hub: ChatHub offers the same
+            # subscribe/unsubscribe contract the state hub does, so one
+            # implementation serves both.
+            return feeds.serve_ws_feed(self, CHAT, FEEDS)
+        if path == "/ws/alerts":
+            # A third hub through the same endpoint. A scene page opens this
+            # only when the scene it is showing has a layer that wants alerts -
+            # a scene that wants nothing costs nothing.
+            return feeds.serve_ws_feed(self, ALERTS, FEEDS)
         if path == "/api/live/status":
             return self._json(live_status())
         if path == "/api/live/program.png":
@@ -2081,6 +2629,61 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, f"no picture: {exc}", "text/plain")
             return self._send(200, png, "image/png", {"Cache-Control": "no-store"})
 
+        if path == "/api/chat/status":
+            return self._json(CHAT.status())
+        if path == "/api/commands":
+            return self._json({"commands": COMMANDS.list(), "status": COMMANDS.status(),
+                               "roles": list(commands.ROLES), "actions": list(commands.ACTIONS),
+                               # So the editor labels every row with the symbol
+                               # in force rather than the one it was written with.
+                               "symbol": chat.symbols(),
+                               "budget": COMMANDS.budget(), "paused": COMMANDS.paused,
+                               "floor": COMMANDS.floor(),
+                               # T11: the ones that belong to layers on the
+                               # scene on air, each with any conflict it has.
+                               "layers": COMMANDS.layer_list()})
+        if path == "/api/tts/voices":
+            return self._json({"voices": TTS.voices(), "status": TTS.status()})
+        m = re.match(r"^/api/tts/([0-9a-f]{16})\.wav$", path)
+        if m:
+            wav = TTS.clip(m.group(1))
+            if not wav:
+                return self._send(404, "no such clip", "text/plain")
+            return self._send(200, wav, "audio/wav", {"Cache-Control": "no-store"})
+        if path == "/api/commands/recent":
+            # What fired, for the editor's log. Off the state feed on purpose:
+            # it changes whenever anyone types, which is the wrong cadence for
+            # a whole-state broadcast.
+            return self._json({"log": COMMANDS.recent(int((query.get("n") or ["100"])[0] or 100))})
+        if path == "/api/requests":
+            return self._json({"pending": REQUESTS.pending(), "status": REQUESTS.status()})
+        if path == "/api/requests/recent":
+            return self._json({"log": REQUESTS.recent(int((query.get("n") or ["100"])[0] or 100))})
+        if path == "/api/polls":
+            return self._json({"current": POLLS.current(), "recent": POLLS.recent(10),
+                               "status": POLLS.status(),
+                               # The panel tells people to vote by typing "!1".
+                               # That sentence has to name the symbol actually
+                               # in force or it is instructions to fail.
+                               "symbol": chat.symbols()})
+        if path == "/api/gifts/ledger":
+            # The coins gifted this stream, in all and by the top senders
+            # (gifts.py). Read by the Live view while it is open, not pushed on
+            # the state feed: a gift storm must not send the whole state per gift.
+            try:
+                top = max(0, min(50, int((query.get("top") or ["5"])[0])))
+            except ValueError:
+                top = 5
+            return self._json(LEDGER.snapshot(top))
+        if path == "/api/alerts/recent":
+            # For a page that opened late, and for the tests. The feed itself
+            # sends nothing on connect, exactly as the chat one does not.
+            return self._json({"events": ALERTS.recent(int((query.get("n") or ["50"])[0] or 50)),
+                               "status": ALERTS.status()})
+        if path == "/api/chat/recent":
+            # A page that opens mid-stream would otherwise show an empty panel
+            # until somebody happened to type.
+            return self._json({"messages": CHAT.recent(int((query.get("n") or ["100"])[0] or 100))})
         if path == "/api/voice":
             return self._json(VOICE.status())
         if path == "/api/camera/devices":
@@ -2149,6 +2752,13 @@ class Handler(BaseHTTPRequestHandler):
             CAPTIONS.configure(captions_settings())
             BRIDGE.set_interval(bridge_interval())
             SPOTIFY.configure(CONFIG["spotify"].get("client_id", ""))
+            # An edited block list or length cap has to take effect now, not at
+            # the next restart - the moment you want one is mid-stream.
+            REQUESTS.configure(CONFIG.get("requests"))
+            # And the command symbol, for the same reason: the moment somebody
+            # changes what starts a command is mid-stream, not at the next
+            # restart. This also catches a config restored from a backup.
+            command_symbol()
             sur = CONFIG["nowplaying"].get("surround") or {}
             backdrop = sur.get("color", "#000000") if sur.get("mode") == "solid" else "#000000"
             OVERLAY.set_backdrop(backdrop)
@@ -2279,11 +2889,95 @@ class Handler(BaseHTTPRequestHandler):
             if ok and CONFIG["canvas"].get("remote_on_top", True):
                 threading.Thread(target=remote_on_top, args=(True,), daemon=True, name="remote on top").start()
             return self._json({"ok": bool(ok)})
+        if path == "/api/live/view/open":
+            # The Live view (S9): what is on air, its health, the scene
+            # switcher, sound and chat in one window - a window of its own like
+            # the editor and the remote, not a component. Components are
+            # overlays that go on the stream; this is the desk you run it from.
+            ok = launch_deck(f"http://127.0.0.1:{CONFIG['port']}/liveview.html", 1280, 880)
+            return self._json({"ok": bool(ok)})
         if path == "/api/canvas/remote/topmost":
             on = bool(data.get("on"))
             CONFIG.setdefault("canvas", {})["remote_on_top"] = on
             save_config(CONFIG)
             return self._json({"ok": remote_on_top(on, wait=1.0), "on": on})
+
+        if path == "/api/debug/spotify-fake":
+            # The same idea as the chat hook below, and refused on the real app
+            # for a sharper reason: there it would quietly cut song requests off
+            # from the account they are meant to reach, while still looking as
+            # though they had worked. Pass a track to fake with, or nothing at
+            # all to put the real Spotify back.
+            if int(CONFIG.get("port") or 8713) == 8713:
+                return self._json({"ok": False, "error": "test hook: not on the real app"}, 403)
+            track = data.get("track")
+            if not isinstance(track, dict):
+                REQUESTS.find, REQUESTS.enqueue = spotify_find, spotify_enqueue
+                return self._json({"ok": True, "fake": False})
+            ok = bool(data.get("ok", True))
+            reason = str(data.get("reason") or ("queued" if ok else "Spotify would not take it"))
+            REQUESTS.find = lambda text, t=dict(track): (True, dict(t))
+            REQUESTS.enqueue = lambda uri, o=ok, r=reason: (o, r)
+            return self._json({"ok": True, "fake": True, "track": track})
+        if path == "/api/debug/tiktok-page":
+            # Points the TikTok reader at a local fixture page (tools/ui/
+            # tiktokchat.js) - the rig's alone, and only ever at 127.0.0.1.
+            # Empty puts it back to www.tiktok.com.
+            if not TEST_RIG:
+                return self._json({"ok": False, "error": "test hook: the test rig only"}, 403)
+            base = str(data.get("base") or "").strip().rstrip("/")
+            if base and not tiktok_chat._is_local(base):
+                return self._json({"ok": False, "error": "a local address only"}, 400)
+            tiktok_chat.TikTokAdapter.base = base or tiktok_chat.TIKTOK
+            tiktok_chat.TikTokAdapter.allow_local_base = bool(base)
+            # And how soon the reader looks again at a page with no live on it
+            # (tiktok_chat.REOPEN_MAX): a probe cannot wait a minute a time.
+            try:
+                first = max(2, min(60, int(data.get("reopen") or 60))) if base else 60
+            except (TypeError, ValueError):
+                first = 60
+            tiktok_chat.TikTokAdapter.reopen_first = first
+            # And how long a room socket may say nothing before the page is
+            # opened again (tiktok_chat.SILENT): a probe cannot wait minutes,
+            # and the probes that are not about silence want it never to fire.
+            try:
+                silent = max(2, min(3600, int(data.get("silent") or tiktok_chat.SILENT))) if base else tiktok_chat.SILENT
+            except (TypeError, ValueError):
+                silent = tiktok_chat.SILENT
+            tiktok_chat.TikTokAdapter.silent_after = silent
+            return self._json({"ok": True, "base": tiktok_chat.TikTokAdapter.base, "reopen": first, "silent": silent})
+        if path == "/api/debug/gift":
+            # A test hook for the Gift layer (T8), and the test rig's alone -
+            # gated on TEST_RIG, not the port, because a gift that reached a
+            # real stream from here would be a lie told to an audience. The
+            # editor's "Try it" never comes here: it plays in the editor's own
+            # preview. Real gifts arrive from TikTok (T6) through post_gift().
+            if not TEST_RIG:
+                return self._json({"ok": False, "error": "test hook: the test rig only"}, 403)
+            # With a handle, as a TikTok gift comes: its coins go in the ledger
+            # first - tiktok_gift's order - so coin layers and gates see them.
+            if data.get("handle"):
+                LEDGER.record(data.get("handle"), data.get("user"), data.get("coins"), data.get("count", 1))
+            ev = post_gift(data.get("user"), data.get("gift"), data.get("coins"),
+                           data.get("count", 1), data.get("avatar", ""))
+            return self._json({"ok": True, "event": ev})
+        if path == "/api/debug/chat-endpoint":
+            # A test hook, and the only one in the app that is refused on the
+            # real thing. Saying "speaking" below is harmless; telling a network
+            # client where to dial is not, so this answers on the rig's port
+            # only. The rig check stands a plain IRC server on localhost and
+            # points the adapter at it, which exercises the reading loop, the
+            # PING answer and the reconnect - the parts a mocked socket would
+            # not touch.
+            if int(CONFIG.get("port") or 8713) == 8713:
+                return self._json({"ok": False, "error": "test hook: not on the real app"}, 403)
+            ad = chat.ADAPTERS.get(str(data.get("service") or "twitch").lower())
+            if not ad:
+                return self._json({"ok": False, "error": "no such adapter"})
+            ad.host = str(data.get("host") or chat.TWITCH_HOST)
+            ad.port = int(data.get("port") or chat.TWITCH_PORT)
+            ad.tls = bool(data.get("tls", True))
+            return self._json({"ok": True, "host": ad.host, "port": ad.port, "tls": ad.tls})
 
         if path == "/api/voice/override":
             # A test hook: a rig without a microphone can still say "speaking".
@@ -2349,6 +3043,93 @@ class Handler(BaseHTTPRequestHandler):
                                    "scene": SCENES.get(sid)}, 409)
             refresh_native_sources(sid)
             return self._json({"ok": True, "scene": scene})
+
+        if path == "/api/chat/tiktok/window":
+            # Show the TikTok reader as a window - to sign in there - or keep it
+            # hidden, the default. Kept; a reader already running starts again
+            # as the kind asked for. The rig's is never shown (TEST_RIG).
+            show = data.get("show") is True
+            CONFIG.setdefault("chat", {}).setdefault("tiktok", {})["show"] = show
+            save_config(CONFIG)
+            tiktok_chat.TikTokAdapter.headless = TEST_RIG or not show
+            running = next((s for s in CHAT.status()["services"] if s.get("service") == "tiktok"), None)
+            res = CHAT.connect("tiktok", running["channel"]) if running else {"ok": True}
+            HUB.broadcast()
+            return self._json(dict(res, show=show, shown=not tiktok_chat.TikTokAdapter.headless))
+        if path == "/api/chat/connect":
+            service = str(data.get("service") or "twitch").lower()
+            channel = str(data.get("channel") or "").strip()
+            res = CHAT.connect(service, channel)
+            if res.get("ok"):
+                CONFIG.setdefault("chat", {}).setdefault(service, {})["channel"] = channel.lstrip("#@").lower()
+                save_config(CONFIG)
+                HUB.broadcast()
+            return self._json(res)
+        if path == "/api/polls/open":
+            res = POLLS.open(data.get("question"), data.get("choices"))
+            HUB.broadcast()
+            return self._json(res)
+        if path == "/api/polls/close":
+            res = POLLS.close()
+            HUB.broadcast()
+            return self._json(res)
+        if path == "/api/requests/approve":
+            # The one-way door: Spotify can be appended to but not un-appended,
+            # so this is the press that cannot be taken back.
+            res = REQUESTS.approve(str(data.get("id") or ""))
+            alert_for_request(res.get("request"))    # moderated: it becomes news here
+            HUB.broadcast()
+            return self._json(res)
+        if path == "/api/requests/skip":
+            res = REQUESTS.skip(str(data.get("id") or ""))
+            HUB.broadcast()
+            return self._json(res)
+        if path == "/api/commands/save":
+            items = data.get("commands")
+            if not isinstance(items, list):
+                return self._json({"ok": False, "error": "a list of commands is needed"}, 400)
+            CONFIG.setdefault("commands", {})["list"] = items
+            # The symbol rides the same save as the list: the panel has one
+            # Save button, and two round trips could leave a list saved beside
+            # a symbol that was refused.
+            if "symbol" in data:
+                CONFIG["commands"]["symbol"] = str(data.get("symbol") or "")
+            symbol = command_symbol()
+            if "budget" in data:
+                CONFIG["commands"]["budget"] = COMMANDS.set_budget(data.get("budget"))
+            if "floor" in data:
+                CONFIG["commands"]["floor"] = COMMANDS.set_floor(data.get("floor"))
+            save_config(CONFIG)
+            kept = COMMANDS.load(items)          # what survived cleaning, so the editor can show it
+            HUB.broadcast()
+            return self._json({"ok": True, "commands": kept, "symbol": symbol,
+                               "budget": COMMANDS.budget(), "floor": COMMANDS.floor()})
+        if path == "/api/gifts/reset":
+            # A new stream: the coin ledger starts again (gifts.py).
+            return self._json({"ok": True, "ledger": LEDGER.reset()})
+        if path == "/api/commands/stop":
+            stop_everything()
+            return self._json({"ok": True, "paused": COMMANDS.paused})
+        if path == "/api/tts/test":
+            # The inspector's "Hear it": made exactly as chat's clips are, and
+            # played by the editor page that asked - never on stream.
+            text, why = tts.clean_text(data.get("text") or "This is how chat will sound.",
+                                       data.get("maxlen", tts.MAXLEN), data.get("blocked", ""))
+            if text is None:
+                return self._json({"ok": False, "error": why})
+            ok, res = TTS.say_and_wait(text, voice=data.get("voice") or "", rate=data.get("rate") or 0)
+            return self._json({"ok": True, "clip": f"/api/tts/{res}.wav"} if ok else {"ok": False, "error": res})
+        if path == "/api/tts/skip":
+            # The Live view's Skip: the clip being read ends, the next starts.
+            ALERTS.say("skip", "")
+            return self._json({"ok": True})
+        if path == "/api/commands/resume":
+            resume_commands()
+            return self._json({"ok": True, "paused": COMMANDS.paused})
+        if path == "/api/chat/disconnect":
+            res = CHAT.disconnect(str(data.get("service") or "twitch").lower())
+            HUB.broadcast()
+            return self._json(res)
 
         if path in ("/api/voice/hold", "/api/voice/release"):
             if path.endswith("hold"):
@@ -2482,6 +3263,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(NATIVE.start(title=data.get("title"), hwnd=data.get("hwnd"),
                                            monitor=data.get("monitor"), fps=data.get("fps", 30),
                                            kbps=data.get("kbps", 3400)))
+        if TEST_RIG and path in ("/api/tiktok/token", "/api/tiktok/start"):
+            # The rig never opens a live at TikTok, and never goes looking for
+            # the token Streamlabs keeps on this PC - which is the user's own.
+            return self._json({"ok": False, "refused": True,
+                               "error": "this is the test rig - it never goes live at TikTok and "
+                                        "never loads the Streamlabs token"}, 403)
         if path == "/api/tiktok/token":
             # Pasted, read off this PC, or fetched through the browser. The
             # token is kept encrypted and never handed back to the page.
@@ -2517,6 +3304,9 @@ class Handler(BaseHTTPRequestHandler):
                 VOICE.stop()
                 BRIDGE.stop()        # and the PowerShell helper would outlive us
                 CAPTIONS.stop()      # likewise the one holding the microphone
+                TTS.close()          # and the voice's
+                CHAT.stop()          # and the TikTok reader's window with it
+                LEDGER.save()        # the coins gifted, whatever the last save missed
                 live_stop()          # unpublish cleanly rather than vanish
                 time.sleep(0.4)
                 os._exit(0)

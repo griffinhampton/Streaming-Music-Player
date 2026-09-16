@@ -169,13 +169,24 @@ function onConflict(serverScene) {
   announce('The scene was changed elsewhere; the newer version is loaded.');
 }
 
+// Said once per run of failures, not on every retry.
+let toldSaveFailed = false;
 function setSaveState(state, why) {
   const el = $('saveState');
   el.dataset.state = state;
+  // A failed autosave used to report itself only as a small red word in a
+  // corner - for the one condition where the work is not being kept. The
+  // conflict path has raised a toast for a while; this one had none unless you
+  // happened to press the indicator yourself.
+  if (state === 'error' && !toldSaveFailed) {
+    toldSaveFailed = true;
+    toast('Your work is not being saved: ' + (why || 'the app is not answering') + '. It will keep trying.');
+  }
+  if (state === 'saved') toldSaveFailed = false;
   el.textContent = { saved: 'Saved', saving: 'Saving…', pending: 'Saving…',
                      error: 'Not saved' + (why ? ': ' + why : ''), conflict: 'Reloaded a newer version' }[state] || state;
   // Said out loud, because there is no File menu and nobody believes a small
-  // grey word in a corner. Pressing it saves now, which is mostly a way of
+  // gray word in a corner. Pressing it saves now, which is mostly a way of
   // being told that it is already saved.
   el.title = state === 'error' ? 'This did not save. Press to try again.'
     : state === 'saving' || state === 'pending' ? 'Saving your work now.'
@@ -357,7 +368,6 @@ $('zoomFit').addEventListener('click', zoomFit);
 $('zoom100').addEventListener('click', () => zoomAt(1));
 $('zoomIn').addEventListener('click', () => zoomAt(view.z * 1.25));
 $('zoomOut').addEventListener('click', () => zoomAt(view.z / 1.25));
-window.addEventListener('resize', () => applyView());
 
 vp.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -599,15 +609,21 @@ function renderAll() {
   renderInspector();
 }
 
-const TYPE_ICON = { text: 'T', image: '▣', shape: '■', component: '♫', camera: '◉', capture: '▭',
-                    reactive: '☺', background: '▤' };
+// Every kind's mark is drawn now (B4 of the walk-through). They were typed
+// characters: a letter T, then a run of geometric shapes and dingbats. The
+// filled circle was the worst of it - it meant "visible" in the row's buttons
+// and "camera" two columns to the left, so the same mark said two things in one
+// row. S6 replaced the smiling face and deferred the rest here.
+const TYPE_ICON = { text: svgIcon('tText'), image: svgIcon('tImage'), shape: svgIcon('tShape'),
+                    component: svgIcon('tWindow'), camera: svgIcon('tCamera'), capture: svgIcon('tScreen'),
+                    reactive: svgIcon('talk'), mic: svgIcon('mic'), background: svgIcon('tFill') };
 // What each kind is called in words. The icon's tooltip used to show the raw
 // type - "capture", "reactive", "component" - which are our words for these
 // things, not anybody else's.
 const TYPE_WORD = { text: 'Text', image: 'Picture or video', shape: 'Shape',
                     component: 'A window from the deck', camera: 'Camera',
-                    capture: 'Screen or window', reactive: 'Reactive image',
-                    background: 'Background' };
+                    capture: 'Screen or window', reactive: 'You, talking',
+                    mic: 'Microphone', background: 'Background' };
 
 function renderTree() {
   const tree = $('layerTree');
@@ -616,8 +632,13 @@ function renderTree() {
     ? document.activeElement.closest('.row').dataset.key : '';
   const editing = tree.querySelector('.row-name input');
   if (editing) return;                      // don't pull the field out from under the typing
-  if (!s) { tree.innerHTML = ''; $('treeEmpty').hidden = true; return; }
+  if (!s) { tree.innerHTML = ''; $('treeEmpty').hidden = true; $('firstRun').hidden = true; return; }
   $('treeEmpty').hidden = s.layers.length > 0;
+  // What all this is for, while there is nothing to look at yet.
+  $('firstRun').hidden = s.layers.length > 0;
+  // "The top of this list is the front" is only true once there is a list, and
+  // only useful once there are two things to put in an order.
+  document.querySelector('.pane-note').hidden = s.layers.length < 2;
   const rows = [];
   const groupsDone = new Set();
   const groups = s.groups || {};
@@ -652,7 +673,7 @@ function renderTree() {
 function layerRow(l, level) {
   const hidden = l.visible === false;
   const under = zoneHits(l);              // TikTok's controls over it (a phone scene)
-  const warn = under.length ? `<span class="row-warn" role="img" title="Under TikTok's ${esc(under.join(' and '))}" aria-label="Under TikTok's ${esc(under.join(' and '))}">⚠</span>` : '';
+  const warn = under.length ? `<span class="row-warn" role="img" title="Under TikTok's ${esc(under.join(' and '))}" aria-label="Under TikTok's ${esc(under.join(' and '))}">${svgIcon('warn')}</span>` : '';
   return `<div class="row${hidden ? ' is-hidden' : ''}${liveIds.has(l.id) ? ' live-src' : ''}" role="treeitem" aria-level="${level}" aria-selected="${store.sel.has(l.id)}"
     tabindex="-1" data-key="${esc(l.id)}" data-id="${esc(l.id)}" draggable="true" style="--indent:${(level - 1) * 18}px">
     <span class="row-type" aria-hidden="true" title="${esc(TYPE_WORD[l.type] || l.type)}">${TYPE_ICON[l.type] || '□'}</span>
@@ -965,6 +986,13 @@ $('inspector').addEventListener('click', (e) => {
 /* ------------------------------------------------------------- sources */
 
 const ADD = [
+  // First, and across the width: this is the PNGtuber layer, and the whole
+  // complaint about it was that nobody could find it. "Reactive image" is our
+  // word for it, not anybody else's; the sub-line carries the word people
+  // actually search for.
+  { type: 'reactive', label: 'You, talking', sub: 'a PNGtuber: your picture changes when you speak',
+    icon: 'talk', featured: true, w: 360, h: 360,
+    props: { idle: '', talking: '', blink: '', bounce: 14, fit: 'contain' } },
   { type: 'text', label: 'Text', sub: 'words, live song info', w: 900, h: 140,
     props: { text: 'Your text', size: 72, weight: 700, color: '#ffffff', align: 'center', valign: 'center',
              shadow: { x: 0, y: 2, blur: 12, color: 'rgba(0,0,0,.6)' } } },
@@ -972,21 +1000,79 @@ const ADD = [
   { type: 'image', label: 'Image or video', sub: 'from Assets', w: 640, h: 360, props: { src: '', fit: 'cover' } },
   { type: 'camera', label: 'Camera', sub: 'your webcam', w: 480, h: 360,
     props: { width: 1280, height: 720, fps: 30, mirror: true, mask: 'rounded' } },
+  { type: 'mic', label: 'Microphone', sub: 'your voice, as a meter', w: 480, h: 160,
+    props: { device: '', style: 'bars', bars: 24, color: '#8b5cf6', gain: 1, smooth: 0.7 } },
   { type: 'component', label: 'Now Playing', sub: 'the track window', w: 760, h: 190, props: { component: 'np', design: 'linked', options: {} } },
   { type: 'component', label: 'Lyrics', sub: 'the words', w: 560, h: 320, props: { component: 'lyrics', design: 'linked', options: {} } },
   { type: 'component', label: 'Queue', sub: 'up next', w: 420, h: 320, props: { component: 'queue', design: 'linked', options: {} } },
   { type: 'component', label: 'Captions', sub: 'what you say', w: 900, h: 200, props: { component: 'captions', design: 'linked', options: {} } },
-  { type: 'reactive', label: 'Reactive image', sub: 'talks when you do', w: 360, h: 360, props: { idle: '', talking: '', blink: '', bounce: true } },
+  { type: 'effect', label: 'Effect', sub: 'a picture or clip when something happens', w: 480, h: 480,
+    props: { src: '', sound: '', volume: 0.8, kinds: 'command', seconds: 5, max: 3, fit: 'contain',
+             enter: { kind: 'pop', ms: 400 } } },
+  // T7. The abuse controls' defaults are written into the layer rather than
+  // left to fallbacks, so a Voice layer from this grid arrives already safe:
+  // a thirty-second wait per person, five seconds between anyone, 150 letters.
+  { type: 'speak', label: 'Voice', sub: 'reads chat out loud', w: 1000, h: 140,
+    props: { command: 'tts', role: 'everyone', cooldown: 5, user_cooldown: 30, voice: '', rate: 0,
+             volume: 0.9, maxlen: 150, max: 3, blocked: '', sayname: true, show: true,
+             size: 30, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
+  // T8. Full size, like a background, because the throws cross the whole
+  // scene - from its edges to whatever "Throw them at" names.
+  { type: 'gift', label: 'Gift', sub: 'a spinning coin, and a throw for every coin', w: 99999, h: 99999,
+    props: { mode: 'both', min: 0, only: '', target: '', seconds: 4, max: 5, max_objects: 30,
+             object_size: 64, object: '', face: '', coin: 220,
+             size: 28, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
+  // The coins gifted this stream (gifts.py's ledger), for the audience: a bar
+  // toward a goal, and who gave most. The props are what their opts() fall
+  // back to, so a layer from this grid looks the way the runtime would draw it.
+  { type: 'goal', label: 'Coin goal', sub: 'a bar filling with the coins gifted this stream', w: 900, h: 140,
+    props: { title: 'Coin goal', target: 1000, done: 'Goal reached!', size: 30, color: '#ffffff',
+             bg: 'rgba(0, 0, 0, .55)', bar: '#f5b50a', radius: 14 } },
+  { type: 'topgifters', label: 'Top gifters', sub: 'who gifted the most coins this stream', w: 520, h: 300,
+    props: { title: 'Top gifters', count: 3, showcoins: true, hideempty: true, size: 28, color: '#ffffff',
+             bg: 'rgba(0, 0, 0, .55)', accent: '#f5b50a', radius: 14 } },
+  // S15's and S14's layers. Both have had a full inspector and a working
+  // runtime since the day they shipped, and no way at all to create one - the
+  // only route was the API, which is how the test rig made them. The defaults
+  // here are the values their own code falls back to, so a layer added from
+  // this grid looks the same as one the server would have built.
+  { type: 'alert', label: 'Alert', sub: 'says what just happened - a command, a song request', w: 1200, h: 160,
+    props: { kinds: '', seconds: 6, max: 5, size: 34, color: '#ffffff',
+             bg: 'rgba(0, 0, 0, .55)', radius: 14 } },
+  { type: 'poll', label: 'Poll', sub: 'the question, and the bars filling up', w: 1100, h: 420,
+    props: { size: 30, color: '#ffffff', bg: 'rgba(0, 0, 0, .55)', radius: 14,
+             bar: '#8b5cf6', linger: 15 } },
   { type: 'background', label: 'Background layer', sub: 'a full-size fill', w: 99999, h: 99999, props: { mode: 'solid', color: '#1a1030' } },
 ];
-$('addGrid').innerHTML = ADD.map((a, i) =>
-  `<button type="button" class="btn" data-add="${i}"><span>${esc(a.label)}</span><small>${esc(a.sub)}</small></button>`).join('');
+$('addGrid').innerHTML = ADD.map((a, i) => {
+  const words = `<span>${esc(a.label)}</span><small>${esc(a.sub)}</small>`;
+  return a.featured
+    ? `<button type="button" class="btn featured" data-add="${i}">${svgIcon(a.icon)}<span class="lines">${words}</span></button>`
+    : `<button type="button" class="btn" data-add="${i}">${words}</button>`;
+}).join('');
 $('addGrid').addEventListener('click', (e) => {
   const b = e.target.closest('[data-add]');
   if (!b || !store.scene) return;
   const a = ADD[+b.dataset.add];
   addLayer(makeLayer(a.type, a.label, a.props, a.w, a.h));
+  // Show what was just made. The panel used to stay on the Add list, so the
+  // only sign anything had happened was a shape appearing in the middle of the
+  // canvas - and nothing said what it was called or where it now lived. The
+  // window picker already ends this way.
+  showTab('Layers');
 });
+
+// The top bar's undo and redo were the bare characters U+21BA and U+21BB, whose
+// only explanation was a hover tooltip - the same typed-glyph problem icons.js
+// exists to solve. Only the mark inside changes: both buttons keep the
+// aria-label and the tooltip that name them and their keys.
+$('undoBtn').innerHTML = svgIcon('undo');
+$('redoBtn').innerHTML = svgIcon('redo');
+
+// The empty-canvas panel's two ways out: into the Add list, and into the
+// window this scene goes out of.
+$('frAdd').addEventListener('click', () => showTab('Sources', true));
+$('frOutput').addEventListener('click', () => $('openOutput').click());
 
 /* The window and screen picker. One button opens a gallery of everything that
    is open, each with its own picture, and one click puts it in the scene at
@@ -1060,7 +1146,11 @@ async function loadAssets() {
   const grid = $('assetGrid');
   grid.innerHTML = assets.length ? assets.map((a, i) =>
     `<button type="button" class="btn asset" data-asset="${i}" title="${esc(a.name)}">` +
-    (a.kind === 'video' && !a.thumb ? `<video muted preload="metadata" src="${esc(a.url)}"></video>` : `<img loading="lazy" alt="" src="${esc(a.thumb || a.url)}">`) +
+    // Sound has no picture of itself: an <img> pointed at an .mp3 draws the
+    // broken-image icon and reads as a damaged file.
+    (a.kind === 'audio' ? '<span class="asset-audio" aria-hidden="true">&#9835;</span>'
+      : a.kind === 'video' && !a.thumb ? `<video muted preload="metadata" src="${esc(a.url)}"></video>`
+        : `<img loading="lazy" alt="" src="${esc(a.thumb || a.url)}">`) +
     `<span>${esc(a.name)}</span></button>`).join('') : '<p class="hint">No pictures yet &mdash; upload one.</p>';
 }
 $('assetGrid').addEventListener('click', (e) => {
@@ -1218,6 +1308,18 @@ function applyTheme(ui) {
 /* ------------------------------------------------------------- boot */
 
 (async () => {
+  /* Every other script tag first. canvas.html loads canvas.js before
+     canvastools.js, inspectors.js, newscene.js and the rest, and this file calls
+     into all of them - loadScene() below reaches paintHud(), a canvastools.js
+     function, through zoomFit(). The awaits after this are localhost fetches and
+     normally lose the race to a script tag, but nothing guarantees it: holding
+     canvastools.js open with Fetch.requestPaused and letting boot proceed threw
+     `ReferenceError: paintHud is not defined` at applyView <- zoomFit <-
+     loadScene, every round. DOMContentLoaded is after every classic script has
+     run, so waiting for it removes the race instead of narrowing it. */
+  if (document.readyState === 'loading') {
+    await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
+  }
   try { applyTheme((await (await fetch('/api/config')).json()).ui); } catch (_) { /* default look */ }
   await refreshScenes();
   const want = Q.get('scene');
@@ -1227,6 +1329,17 @@ function applyTheme(ui) {
   connectFeed();
   vp.focus({ preventScroll: true });
 })();
+/* The only resize handler, and guarded on purpose. There was a second one up
+   beside the zoom buttons - `() => applyView()`, no guard - which could also
+   reach paintHud() before canvastools.js had run. Removed rather than given this
+   guard, which would only have left two handlers doing one job.
+
+   It was not, as first supposed, the cause of the "paintHud is not defined"
+   error. Holding canvastools.js open showed that arriving through boot instead
+   (applyView <- zoomFit <- loadScene), with no resize involved, which is why the
+   boot IIFE waits for DOMContentLoaded. Removing the second handler stands on
+   its own as duplication, not as the cure. This one cannot fire in that window
+   regardless: store.scene is null until a scene has loaded. */
 window.addEventListener('resize', () => { if (store.scene && !pan) applyView(); });
 
 /* For tests: the store, and the same commands the UI runs. */

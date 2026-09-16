@@ -73,6 +73,34 @@ class SceneSchema(Temp):
         self.assertEqual((s["width"], s["height"]), (640, 360))
         self.assertEqual(s["layers"][0]["type"], "text")
 
+    def test_migrate_trigger_vocabulary(self):
+        """S6 cut triggers to two moments and four actions. Files already
+        written carry the old words, and have to come forward saying the same
+        thing they said before - or not come forward at all."""
+        raw = {"version": 1, "name": "old", "layers": [{"type": "text", "triggers": [
+            {"on": "silent", "do": "show"},                        # the same sentence inverted
+            {"on": "silent", "do": "hide"},
+            {"on": "silent", "do": "bounce"},                      # no equivalent: dropped, not inverted
+            {"on": "speaking", "do": "pop"},                       # pop was always that one moment
+            {"on": "speech_start", "do": "pop"},
+            {"on": "speaking", "do": "class", "value": "myrule"},  # named a CSS rule living elsewhere
+            {"on": "speaking", "do": "glow", "value": "#ff7ab6"},  # kept whole, color and all
+            {"on": "speaking", "do": "show"},                      # already in the new words
+        ]}]}
+        self.assertEqual(scenes.migrate(raw)["layers"][0]["triggers"], [
+            {"on": "speaking", "do": "hide"},
+            {"on": "speaking", "do": "show"},
+            {"on": "speech_start", "do": "bounce"},
+            {"on": "speech_start", "do": "bounce"},
+            {"on": "speaking", "do": "glow", "value": "#ff7ab6"},
+            {"on": "speaking", "do": "show"},
+        ])
+
+    def test_migrate_leaves_current_files_alone(self):
+        s = scenes.migrate({"version": scenes.VERSION, "layers": [
+            {"type": "text", "triggers": [{"on": "speaking", "do": "show"}]}]})
+        self.assertEqual(s["layers"][0]["triggers"], [{"on": "speaking", "do": "show"}])
+
 
 class SceneStoreTests(Temp):
     def test_create_save_backup_conflict_restore(self):

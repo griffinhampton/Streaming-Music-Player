@@ -40,8 +40,172 @@ body.see-through { background: transparent; }
 .shape-line { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); }
 .shape-ellipse { border-radius: 50% !important; }
 .shape-hole { position: absolute; }
+/* A frame layer's dressing: the title plate on its edge, and corner badges.
+   Both are sized from --frame-em, which scene.js works out from the layer's
+   own box - the frame windows use 3.4vmin of the viewport, which would letter
+   every frame in a scene the same whatever size it was drawn at. */
+.layer > .frame-title {
+  position: absolute; left: 50%; z-index: 4;
+  transform: translate(-50%, -50%);
+  max-width: 80%; padding: .22em .9em;
+  border-radius: 999px;
+  font-weight: 700; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Grows with its text: a badge reading "LIVE" spilled out of a fixed 2em
+   circle. frame.css had the same fault and is fixed the same way, so the
+   window and the layer keep drawing the same badge. */
+.layer > .frame-badge {
+  position: absolute; z-index: 4;
+  min-width: 2em; height: 2em; padding: 0 .5em;
+  box-sizing: border-box;
+  display: grid; place-items: center;
+  border-radius: 999px;
+  color: #fff; line-height: 1;
+  transform: translate(-50%, -50%);
+}
 
 /* components, camera, capture */
+/* The alert layer (S15). The card carries the showing/hiding, not the layer
+   box: applyBox writes el.style.opacity inline, and an inline style would beat
+   any rule here - so on the box it would never hide at all. */
+.type-alert { display: grid; place-items: center; overflow: visible; }
+.type-alert .alert-card {
+  display: flex; align-items: baseline; gap: .5em;
+  max-width: 100%; padding: .35em .8em; line-height: 1.25;
+  /* The default, so props.font overrides something sensible instead of being
+     the only thing that sets a face at all. Left out, an alert with no font
+     chosen draws in the browser's serif. */
+  font-family: "Segoe UI", system-ui, sans-serif;
+  opacity: 0; transition: opacity 140ms linear;
+}
+.type-alert.showing .alert-card { opacity: 1; }
+/* The editor's sample, so the layer is something you can see to style. */
+.type-alert.sample .alert-card { opacity: .5; }
+.type-alert .alert-title { font-size: .62em; opacity: .75; white-space: nowrap; }
+.type-alert .alert-text { overflow-wrap: anywhere; }
+
+/* The effect layer. The box inside carries the showing and hiding, for the
+   same reason the alert card does: applyBox writes el.style.opacity inline on
+   the layer, and an inline style beats any rule written here. */
+.type-effect { display: grid; place-items: center; overflow: visible; }
+.type-effect .fx-box {
+  display: grid; place-items: center; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 140ms linear;
+}
+.type-effect.showing .fx-box { opacity: 1; }
+.type-effect.sample .fx-box { opacity: .5; }
+.type-effect .media { max-width: 100%; max-height: 100%; }
+
+/* The voice layer (T7): the words being read, on a card like an alert's - and
+   for the same reason the card carries the showing, not the box. */
+.type-speak { display: grid; place-items: center; overflow: visible; }
+.type-speak .speak-card {
+  max-width: 100%; padding: .35em .8em; line-height: 1.25; overflow-wrap: anywhere;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  opacity: 0; transition: opacity 140ms linear;
+}
+.type-speak.showing .speak-card { opacity: 1; }
+.type-speak.sample .speak-card { opacity: .5; }
+
+/* The gift layer (T8). The stage inside carries the showing and hiding, for
+   the alert card's reason; the thrown things live in .gift-fly beside it so
+   they can finish their flight while the coin fades. The spin is a CSS
+   animation that runs only while a gift is showing, so motion.js's 30 fps
+   stepping and Ultra's stilling both apply to it. */
+.type-gift { overflow: visible; }
+.type-gift .gift-stage {
+  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 18px;
+  perspective: 900px; opacity: 0; transition: opacity 160ms linear;
+}
+.type-gift.showing .gift-stage { opacity: 1; }
+.type-gift.sample .gift-stage { opacity: .5; }
+.type-gift .gift-coin { position: relative; display: none; transform-style: preserve-3d; }
+.type-gift.with-coin .gift-coin { display: block; animation: gift-spin 2.4s linear infinite; }
+@keyframes gift-spin { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
+.type-gift .gift-face, .type-gift .gift-back {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; backface-visibility: hidden;
+}
+.type-gift .gift-face {
+  background: radial-gradient(circle at 35% 30%, #ffe89a, #f5b700 55%, #b07800);
+  box-shadow: inset 0 0 0 10px #d49a00, 0 0 40px rgba(255, 200, 0, .35);
+  color: #5a3a00; font-weight: 700; font-family: "Segoe UI", system-ui, sans-serif;
+}
+.type-gift .gift-face img { width: 80%; height: 80%; border-radius: 50%; object-fit: cover; }
+.type-gift .gift-back {
+  transform: rotateY(180deg);
+  background: radial-gradient(circle at 35% 30%, #ffe89a, #e0a800 55%, #8a5d00);
+  box-shadow: inset 0 0 0 10px #c48d00;
+}
+.type-gift .gift-back::after { content: ''; width: 44%; height: 44%; border-radius: 50%; border: 8px solid rgba(90, 58, 0, .45); }
+.type-gift .gift-card {
+  display: flex; align-items: baseline; gap: .45em; padding: .35em .8em; line-height: 1.25;
+  max-width: 100%; overflow-wrap: anywhere; font-family: "Segoe UI", system-ui, sans-serif;
+}
+.type-gift .gift-what { opacity: .85; }
+.type-gift .gift-fly { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.type-gift .gift-token {
+  position: absolute; border-radius: 50%; will-change: transform, opacity;
+  background: radial-gradient(circle at 35% 30%, #ffe89a, #f5b700 55%, #b07800);
+  box-shadow: inset 0 0 0 4px #d49a00;
+}
+.type-gift img.gift-token { background: none; box-shadow: none; border-radius: 0; object-fit: contain; }
+
+/* The poll layer (S14). Same trick as the alert layer: the card carries the
+   showing and hiding, because applyBox writes el.style.opacity inline and an
+   inline style would beat anything here. */
+/* The coins gifted this stream (gifts.py): a goal bar, and who gave most. */
+.type-goal .goal-card, .type-topgifters .top-card {
+  box-sizing: border-box; width: 100%; height: 100%; padding: .5em .8em; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; gap: .35em;
+  transition: opacity 240ms ease;
+}
+.goal-head { display: flex; justify-content: space-between; align-items: baseline; gap: .6em; }
+.goal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-num { font-variant-numeric: tabular-nums; opacity: .9; font-size: .85em; white-space: nowrap; }
+.goal-track { position: relative; height: .55em; border-radius: 999px; background: rgba(255, 255, 255, .18); overflow: hidden; }
+.goal-track > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit;
+  background: var(--goal-bar, #f5b50a); transition: width 400ms ease; }
+.type-goal.cheer .goal-card { animation: goal-cheer 800ms ease 3; }
+@keyframes goal-cheer { 50% { transform: scale(1.04); } }
+:root.ultra .goal-track > i { transition: none; }
+.top-title { font-size: 1.05em; }
+.top-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25em; }
+.top-rows li { display: grid; grid-template-columns: 1.4em minmax(0, 1fr) auto; gap: .45em; align-items: baseline; }
+.top-n { color: var(--top-accent, #f5b50a); font-weight: 700; font-variant-numeric: tabular-nums; }
+.top-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-coins { font-variant-numeric: tabular-nums; opacity: .85; font-size: .85em; }
+.type-topgifters.sample .top-card { opacity: .55; }
+.type-topgifters.empty.hide-empty .top-card { opacity: 0; }
+
+.type-poll { display: grid; place-items: center; }
+.type-poll .poll-card {
+  display: flex; flex-direction: column; gap: .35em;
+  width: 100%; padding: .5em .8em; line-height: 1.25;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  opacity: 0; transition: opacity 160ms linear;
+}
+.type-poll.showing .poll-card { opacity: 1; }
+.type-poll.sample .poll-card { opacity: .55; }
+.type-poll .poll-q { font-size: 1.05em; }
+.type-poll .poll-rows { display: flex; flex-direction: column; gap: .3em; }
+.poll-row { display: grid; grid-template-columns: 1.5em minmax(0, 1fr) auto; gap: .45em; align-items: baseline; }
+.poll-n { opacity: .6; font-variant-numeric: tabular-nums; }
+.poll-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poll-count { font-variant-numeric: tabular-nums; opacity: .8; font-size: .85em; }
+/* The track spans the row underneath, so the bar has the full width to grow
+   across rather than whatever is left beside the label. */
+.poll-track {
+  grid-column: 1 / -1; position: relative; height: .5em;
+  border-radius: .25em; overflow: hidden;
+  background: color-mix(in srgb, #ffffff 16%, transparent);
+}
+.poll-track > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--poll-bar, #8b5cf6); transition: width 240ms ease; }
+/* motion.js stops CSS animations under Ultra but not transitions, and a bar
+   easing on every tally is exactly the endless redrawing Ultra exists to end. */
+:root.ultra .poll-track > i { transition: none; }
+
 .type-component iframe.embed {
   position: absolute; inset: 0; width: 100%; height: 100%;
   border: 0; display: block; background: transparent;
@@ -63,12 +227,51 @@ body.see-through { background: transparent; }
 .source-note[hidden] { display: none; }
 .source-error { outline: 2px dashed #f87171; outline-offset: -2px; }
 
-/* speech: a bounce while talking, a pop when speech starts. The individual
-   transform properties leave the layer's rotation alone. */
+/* microphone: the level as bars, one bar, or a waveform (scene.js TYPES.mic).
+   The bars are scaled rather than resized - a transform stays on the
+   compositor, where setting a height thirty times a second would lay the row
+   out again on every frame. */
+.mic-bars {
+  position: absolute; inset: 0;
+  display: flex; align-items: flex-end;
+  /* scene.js sets --mic-gap from the number of bars: a fixed percentage is
+     either invisible at eight bars or wider than the box at sixty-four. */
+  gap: var(--mic-gap, 1%);
+  padding: 0;
+}
+.mic-bars > i {
+  flex: 1 1 auto; height: 100%;
+  background: var(--mic-color, #8b5cf6);
+  border-radius: 3px;
+  transform: scaleY(.02); transform-origin: 50% 100%;
+}
+/* One bar, lying down: it fills from the left instead of standing up. */
+.mic-bars.one { align-items: stretch; }
+.mic-bars.one > i {
+  border-radius: 999px;
+  transform: scaleX(.005); transform-origin: 0 50%;
+}
+.mic-wave { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* speech: what holds while you talk, and the one beat when you start. The
+   individual transform properties leave the layer's rotation alone.
+
+   --bounce falls back to 10px rather than 0px because only the PNGtuber layer
+   ever sets it: a "bounce" trigger on a text, camera or frame layer added the
+   class and then animated a movement of zero. */
 .bounce { animation: bob .5s steps(15) infinite; }
-@keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 calc(-1 * var(--bounce, 0px)); } }
-.pop { animation: pop .6s steps(18) 1; }
-@keyframes pop { 0% { scale: 1; } 30% { scale: 1.12; } 100% { scale: 1; } }
+.beat-bounce { animation: bob .55s steps(15) 1; }
+@keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 calc(-1 * var(--bounce, 10px)); } }
+/* The talk-driven outline - "highlight the camera frame while talking".
+   drop-shadow follows what is actually drawn, so a round camera or a frame's
+   ring lights up on its own shape instead of inside a rectangle. */
+.talk-glow, .beat-glow {
+  filter: drop-shadow(0 0 var(--glow-size, 14px) var(--glow, #fff))
+          drop-shadow(0 0 calc(var(--glow-size, 14px) / 2) var(--glow, #fff));
+}
+/* The beat's own show and hide, which have to win over .layer.hidden. */
+.layer.beat-show { display: block !important; }
+.layer.beat-hide { display: none !important; }
 
 /* Loops a layer can run (P9): endless, so motion.js steps them at 30 fps and
    Ultra stops them. */
@@ -111,6 +314,65 @@ body.see-through { background: transparent; }
   background: rgba(200, 40, 40, .85); padding: 6px 10px; border-radius: 8px;
 }
 .banner[hidden] { display: none; }
+
+/* ------------------------------------------------------- the window's own controls
+
+   The output window is borderless on purpose - hostwin.py builds it WS_POPUP
+   with no WS_CAPTION, because a title bar would be captured into the stream -
+   so Windows gives it nothing to drag and no close button. windowctl.js
+   forwards pointer deltas to the server instead, which drives the host with
+   Win32 calls: the same arrangement the four component pop-outs and the two
+   frame windows have always used. This page loaded that script and never
+   called it, which is why this one window could not be moved or shut.
+
+   Two things differ from frame.css, which is otherwise the model here. The
+   overlay is a sibling of #root, because fit() scales #root to the scene and
+   controls inside it would scale with the picture. And hover is keyed off the
+   body rather than the stage, since the stage is now inside that scaled box. */
+.handles { display: none; }
+body.has-winctl .handles {
+  display: block; position: fixed; inset: 0; z-index: 60;
+  opacity: 0; transition: opacity 140ms ease; pointer-events: none;
+}
+body.has-winctl:hover .handles { opacity: 1; }
+.handles .hint {
+  position: absolute; left: 50%; top: 6px; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
+  color: rgba(255, 255, 255, .7); background: rgba(0, 0, 0, .55);
+  padding: 3px 12px; border-radius: 1em; font-family: system-ui, sans-serif;
+}
+.handles .winbtn {
+  position: absolute; top: 6px;
+  width: 22px; height: 22px; display: grid; place-items: center;
+  font-size: 13px; line-height: 1; color: #fff;
+  border: none; border-radius: 50%;
+  cursor: pointer; pointer-events: auto; font-family: system-ui, sans-serif;
+}
+.handles .winbtn.close { right: 6px; background: rgba(220, 40, 60, .85); }
+.handles .winbtn.close:hover { background: rgb(230, 50, 70); }
+.handles .winbtn.min { right: 32px; background: rgba(255, 255, 255, .14); }
+.handles .winbtn.min:hover { background: rgba(255, 255, 255, .3); }
+.handles .rz { position: absolute; pointer-events: auto; }
+.rz-n, .rz-s { left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+.rz-n { top: 0; } .rz-s { bottom: 0; }
+.rz-e, .rz-w { top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+.rz-w { left: 0; } .rz-e { right: 0; }
+.rz-nw, .rz-ne, .rz-sw, .rz-se { width: 16px; height: 16px; }
+.rz-nw { top: 0; left: 0; cursor: nwse-resize; }
+.rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.rz-ne { top: 0; right: 0; cursor: nesw-resize; }
+.rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.rz-n:hover, .rz-s:hover, .rz-e:hover, .rz-w:hover { background: rgba(255, 255, 255, .28); }
+.rz-se.grip {
+  background:
+    linear-gradient(135deg, transparent 0 55%, rgba(255, 255, 255, .75) 55% 62%, transparent 62% 70%,
+                    rgba(255, 255, 255, .75) 70% 77%, transparent 77% 85%,
+                    rgba(255, 255, 255, .75) 85% 92%, transparent 92%);
+}
+/* First open: the pill on its own for a few seconds, so the window says how to
+   move it before anybody goes looking for a title bar that is not there. */
+body.has-winctl.show-hint .handles { opacity: 1; }
+body.has-winctl.show-hint .winbtn, body.has-winctl.show-hint .rz { opacity: 0; }
 
 /* A decorative border loop on any layer: decor.js paints it, the same way it
    frames the Now Playing window. */

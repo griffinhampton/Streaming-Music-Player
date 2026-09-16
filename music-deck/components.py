@@ -157,12 +157,18 @@ def builtin(cache_dir):
     # Screen sharing: decorative frames with a hole the game or the camera
     # shows through - see-through (in a scene, or a capture that keeps
     # transparency) or the key color (for chroma key).
+    # These are windows of their own, with their own settings, which is exactly
+    # why they feel disconnected while a scene is being built: a scene cannot
+    # see them. The Canvas Builder draws the same frame as a layer now (the
+    # shape layer's "Frame with a hole"), so these have moved out of the main
+    # strip. They keep working - a frame window is still the way to put a
+    # border round a game in LIVE Studio or OBS without a scene at all.
     reg.add(Component("screenframe", "Screen frame", "frame.html?kind=screen", "screenframe", (1280, 720),
-                      group="sharing", capabilities=("frame", "designer"),
-                      sub="A border around your game or screen"))
+                      group="legacy", capabilities=("frame", "designer"),
+                      sub="A window of its own. In a scene, use a Frame layer"))
     reg.add(Component("camframe", "Camera frame", "frame.html?kind=camera", "camframe", (480, 480),
-                      group="sharing", capabilities=("frame", "designer"),
-                      sub="A border around your camera"))
+                      group="legacy", capabilities=("frame", "designer"),
+                      sub="A window of its own. In a scene, use a Frame layer"))
     # The output that follows whatever scene is live; it takes the live
     # scene's size when the switch happens.
     reg.add(Component("live", "Canvas (live)", "scene.html?follow=1", None, (1920, 1080),

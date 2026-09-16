@@ -188,9 +188,9 @@ own shape). Start one blank or from a template with **New scene**.
 
 - **Layers** – text (including the song playing), shapes, pictures and videos,
   the Now Playing / Lyrics / Queue / Captions windows, your camera, a screen or
-  a window (your game), a *reactive image* that talks when you do, and
-  full-size backgrounds. Add them from the left panel; pick one on the canvas or
-  in the list to change it on the right.
+  a window (your game), **You, talking** – a PNGtuber whose picture changes as
+  you speak – and full-size backgrounds. Add them from the left panel; pick one
+  on the canvas or in the list to change it on the right.
 - **Moving things** – drag, resize from the handles, rotate from the top
   handle. Things snap to the canvas, the center and each other (hold **Alt** to
   place freely); rulers and guides are there if you want them. Number fields
@@ -294,6 +294,67 @@ words (delete the test source afterwards). A scene with see-through parts looks
 right on stream when the app goes LIVE itself, since it draws the whole scene;
 through a window capture, give such a scene a solid background.
 
+## TikTok chat, gifts and coins
+
+The app can read your TikTok LIVE's chat and gifts, count the coins, and put
+them to work: chat commands, a voice reading chat aloud, gift animations, a coin
+goal and a top-gifters list.
+
+1. In the Live view's chat panel (or the deck's **Chat...**), type your TikTok
+   username and press **Open TikTok**. It reads your live page in the
+   background - no window on your screen, and muted. **You do not have to sign
+   in**: TikTok shows a live's chat and gifts to viewers who are signed out,
+   and a reader that never signed in keeps no TikTok login. Open it before or
+   after you go live - if your live has not started yet, it looks again by
+   itself until it has.
+2. It reads only your own live page: if TikTok moves it on to someone else's
+   live, nothing from there reaches your stream, and it goes back to yours by
+   itself. To sign in anyway, tick **Show the TikTok window**, sign in there,
+   and untick it - the reader carries on hidden, still signed in.
+3. From then on TikTok chat works in the app the way Twitch chat does:
+   commands, the **Voice** layer's `!tts`, polls, song requests.
+
+**Who may run commands** - in **Commands...**:
+
+- **Commands are for**: *Anyone*, or *Followers & gifters* - the people who
+  follow you on TikTok or have gifted you (TikTok's own mark, or a gift this
+  stream). Your own messages count as you, by your @username, which nobody can
+  copy; TikTok's moderators count as moderators.
+- Each command's own **who** still applies on top, and a command can cost
+  coins: **needs N coins gifted** this stream. You and your moderators never
+  need any.
+- Twitch chat says neither who follows nor who gifted, so there *Followers &
+  gifters* means subscribers and up.
+
+**Coins.** Every gift counts as its price times how many were sent - a Rose x5
+is 5 coins. The Live view's **Gifts** box shows the coins this stream, the gifts
+and who gave most. **A new live starts a new count by itself** - TikTok gives
+every live an id of its own - and the box keeps the last stream's totals below.
+Restarting the app mid-stream keeps counting the same live; **Reset the count**
+starts it again by hand.
+
+**On stream**, from the Canvas Builder's Add grid:
+
+- **Gift** - a spinning coin with the sender's picture, and a throw for every coin.
+- **Coin goal** - a bar filling toward a number you choose.
+- **Top gifters** - who gave most, hidden until someone has gifted.
+- **Voice** - reads chat out loud (`!tts`) in a Windows voice made on this PC.
+- **Alert** or **Effect** - put `follow` in "Only these kinds" to show new
+  followers (TikTok announces them), or `gift` for gifts.
+
+**What the TikTok reader costs.** About a fifth of one CPU core while it reads
+a live, hidden - which is how it runs unless you ask to see it. Shown as a
+window it may use more.
+
+**If TikTok goes quiet**, the reader opens your live page again by itself: a
+room socket can stop delivering without closing, and gifts arrive on nothing
+else. Ten minutes of silence is enough for it to look again - real lives go
+quiet for a couple of minutes at a time, so it waits well past that.
+
+**If chat stops arriving**, TikTok may have changed its page. From the
+`music-deck` folder, `python tools/ui/ttrealreader.py <someone who is live>`
+checks the reader against a real live and says which part stopped matching.
+
 ## Camera, capture and privacy
 
 - **Nothing is uploaded.** The app answers only this PC (`127.0.0.1`). The one
@@ -313,6 +374,13 @@ through a window capture, give such a scene a solid background.
   `cache\live.json`: another account or another PC cannot read it. It is
   never written to a log or shown again. **Forget** in the LIVE panel removes
   it.
+- **The TikTok reader** is TikTok's own live page, hidden unless you ask to
+  see it, and talks to TikTok the way any browser showing your live would. The
+  app reads what arrives in it, on this PC, and sends nothing of its own -
+  apart from fetching each gift sender's picture from TikTok's image servers,
+  once, so the stream page never has to. A reader you never signed in holds no
+  TikTok login. The coin totals keep viewers' names on this PC: this stream's
+  gifters, and the last stream's top five, until the next live starts.
 - **A scene export** holds the scene's pictures and fonts. Look at what is in a
   scene before you give it away.
 
@@ -609,7 +677,7 @@ music-deck/
   assets.py, fonts.py  the pictures and fonts people add
   capture.py         screen and window capture (Windows Graphics Capture)
   camera.py          the camera, read natively while LIVE
-  voice.py           is the streamer talking (for reactive images)
+  voice.py           is the streamer talking (for "You, talking" and triggers)
   live.py            going LIVE: RTMP, quality presets, reconnects, the key vault
   mfenc.py, nativelive.py, audio.py   hardware H.264, the compositor, the sound
   web/               the deck and the pop-outs (plain HTML/CSS/JS, no build step)

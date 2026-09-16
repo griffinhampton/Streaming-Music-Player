@@ -34,7 +34,28 @@ const px = (n) => `${Math.round(Number(n) || 0)}px`;
 const ORIGIN = { tl: '0% 0%', tc: '50% 0%', tr: '100% 0%', ml: '0% 50%', mc: '50% 50%', mr: '100% 50%',
                  bl: '0% 100%', bc: '50% 100%', br: '100% 100%' };
 const fmtTime = (s) => { s = Math.max(0, Math.floor(Number(s) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-const assetUrl = (src) => !src ? '' : /^(\/|https?:|data:|blob:)/.test(src) ? src : '/asset/' + encodeURIComponent(src);
+/* An asset id becomes a URL under /asset. Anything carrying a scheme is
+   refused, and that is a boundary rather than tidiness: a scene can arrive
+   from somebody else through /api/scenes/import, and props are the one part
+   of it the server does not check - scenes.py's _layer() coerces the
+   transform and the style and then passes props through exactly as they came.
+   A src of "https://..." would be fetched from wherever it points, on this
+   machine, live on stream: an IP and a timing beacon for whoever wrote the
+   scene, and a picture they can change whenever they like. Nothing here makes
+   one - the picker uploads the file and keeps the id it gets back
+   (canvas.js:1123) - and an import calls such a scene clean, because
+   used_assets() only counts strings shaped like an asset id, which
+   "beacon.png" is not. "//host/x" is remote as well, so a leading "/" is not
+   enough on its own. "builtin:" is this app's own name for shipped artwork
+   (assets.py:156) and stays. An empty result is the same state a layer with
+   no picture chosen is already in. */
+const assetUrl = (src) => {
+  const s = src ? String(src) : '';
+  if (!s || s.startsWith('//')) return '';
+  if (s.startsWith('/')) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^builtin:/i.test(s)) return '';
+  return '/asset/' + encodeURIComponent(s);
+};
 /* A picture or video whose file is gone (deleted anyway, or a scene imported
    without it) shows nothing on stream instead of a broken-image icon; the
    editor's preview outlines the empty box so it can be found and fixed. */
@@ -198,7 +219,9 @@ TYPES.image = {
       const still = window.stillOf ? window.stillOf(src) : src;
       if (m.dataset.src !== still) { m.dataset.src = still; m.src = still; }
     } else if (want === 'DIV') {
-      m.style.backgroundImage = `url("${window.stillOf ? window.stillOf(src) : src}")`;
+      // Quoted and escaped: a src holding a quote would otherwise close the
+      // url("...") and write CSS of its own after it.
+      m.style.backgroundImage = `url(${JSON.stringify(window.stillOf ? window.stillOf(src) : src)})`;
       m.style.backgroundRepeat = 'repeat';
       m.style.backgroundSize = p.tile_size ? px(p.tile_size) : 'auto';
     } else if (isUltra()) {
@@ -218,6 +241,69 @@ TYPES.image = {
   },
   motion(entry) { this.update(entry); },
 };
+
+const FRAME_STYLES = ['solid', 'double', 'dashed', 'glow', 'none'];
+
+/* The dressing a frame layer can wear: a title plate riding its edge, and up
+   to four corner badges.
+
+   Sized against the layer's own box rather than the window. frame.html sets
+   `font-size: max(12px, 3.4vmin)` on a stage fixed to the viewport, which
+   means nothing inside a scene that is scaled to fit and can hold frames of
+   several sizes - a 480 px camera frame and a 1920 px screen frame would come
+   out lettered the same. The transform is the layer's box (applyBox writes the
+   element straight from it), so there is nothing to measure and nothing to
+   invalidate: a resize already comes back through update(). */
+function frameDressing(el, p, t, pad, bw, color) {
+  const em = Math.max(12, Math.min(Number(t.w) || 0, Number(t.h) || 0) * 0.034);
+  el.style.setProperty('--frame-em', px(em));
+  // The title and the badges ride the ring's stroke, and here the ring is the
+  // hole's own border - so its center line is the frame's thickness plus half
+  // the border, in from the layer's edge.
+  //
+  // Not the windows' --ring-inset, which is their decor band plus 0.9em: their
+  // ring sits at the stage edge and has to be pushed inside the loop, while
+  // this one already sits at a thickness the user chose. Borrowing their
+  // formula put every badge inside the ring instead of on it, and read the
+  // band off the DOM a step before applyDecor had set it.
+  const edge = pad + bw / 2;
+  const ti = p.title || {};
+  const text = String(ti.text || '').trim();
+  if (text) {
+    const plate = document.createElement('div');
+    plate.className = 'frame-title';
+    plate.textContent = text;
+    plate.style.fontSize = `calc(var(--frame-em) * ${Number(ti.size) || 1})`;
+    plate.style.background = color;
+    plate.style.color = ti.color || '#ffffff';
+    if (ti.place === 'bottom') {
+      plate.style.bottom = px(edge);
+      plate.style.transform = 'translate(-50%, 50%)';
+    } else {
+      plate.style.top = px(edge);
+    }
+    el.appendChild(plate);
+  }
+  const bd = p.badges || {};
+  // A circle's corners are outside it, so its badges come in onto the ring -
+  // the windows' own 15% and 85%, with the inset added rather than folded into
+  // the percentage.
+  const circle = p.shape === 'circle';
+  const near = circle ? `calc(${px(pad)} + 15%)` : px(edge);
+  const far = circle ? `calc(85% - ${px(pad)})` : `calc(100% - ${px(edge)})`;
+  for (const k of ['tl', 'tr', 'bl', 'br']) {
+    const v = String(bd[k] || '').trim();
+    if (!v) continue;
+    const badge = document.createElement('div');
+    badge.className = 'frame-badge';
+    badge.textContent = v;
+    badge.style.fontSize = `calc(var(--frame-em) * ${Number(bd.size) || 1})`;
+    badge.style.background = bd.color || color;
+    badge.style.left = k[1] === 'l' ? near : far;
+    badge.style.top = k[0] === 't' ? near : far;
+    el.appendChild(badge);
+  }
+}
 
 TYPES.shape = {
   create(entry) { this.update(entry); },
@@ -240,14 +326,36 @@ TYPES.shape = {
       // A frame with a hole: the hole is a box whose huge shadow paints the
       // frame around it, clipped to the layer. What shows through the hole is
       // whatever sits under the layer - the key color, a game, the desktop.
+      //
+      // Everything the Screen frame and Camera frame windows draw, a layer can
+      // draw here: the hole's shape, an edge in one of a few styles, a title
+      // plate riding that edge, four corner badges, and - through props.decor,
+      // like any layer - the loop. The windows go on working; this is so a
+      // scene does not have to leave the canvas to get a frame around its game
+      // or its camera.
       const hole = document.createElement('div');
       hole.className = 'shape-hole';
       const pad = Number(p.pad ?? 24);
+      const shape = p.shape || 'rounded';
+      const b = p.border || {};
+      const style = FRAME_STYLES.includes(b.style) ? b.style : 'solid';
+      const color = b.color || '#8b5cf6';
+      // Double needs room for two lines and a gap, as it does on the windows.
+      const bw = style === 'none' ? 0 : style === 'double'
+        ? Math.max(6, Number(b.width ?? 0)) : Number(b.width ?? 0);
       hole.style.inset = px(pad);
-      hole.style.borderRadius = px(p.hole_radius ?? 16);
+      hole.style.borderRadius = shape === 'circle' ? '50%'
+        : shape === 'rect' ? '0' : px(p.hole_radius ?? 16);
+      // Painted the key color instead of see-through, for a chroma key.
+      hole.style.background = p.hole === 'key' ? (p.key_color || '#00ff00') : '';
+      // The edge is the hole's own border: it lands exactly on the frame's
+      // inner edge, with no second element to keep in step with it.
+      if (bw) hole.style.border = `${px(bw)} ${style === 'glow' ? 'solid' : style} ${color}`;
       hole.style.boxShadow = `0 0 0 20000px ${p.fill || 'rgba(255,255,255,.9)'}` +
-        (st.w ? `, inset 0 0 0 ${px(st.w)} ${st.color || '#fff'}` : '');
+        (st.w ? `, inset 0 0 0 ${px(st.w)} ${st.color || '#fff'}` : '') +
+        (bw && style === 'glow' ? `, 0 0 ${px(bw * 1.6)} ${color}, inset 0 0 ${px(bw * 1.2)} ${color}` : '');
       el.appendChild(hole);
+      frameDressing(el, p, entry.layer.transform || {}, pad, bw, color);
       el.style.background = '';
     } else {
       el.style.background = p.fill || 'rgba(255,255,255,.9)';
@@ -465,6 +573,174 @@ TYPES.capture = {
   destroy(entry) { entry.gone = true; dropStream(entry); },
 };
 
+/* Microphone: your own voice as something you can put on the canvas - bars, a
+   single level bar, or a waveform.
+
+   The level is read here, with WebAudio, rather than asked of the server. The
+   feed carries "speaking" but no level, and a meter wants thirty readings a
+   second: an absurd thing to poll a server for when this page can listen to
+   the same microphone itself, exactly as the camera layer opens its own
+   device. Nothing is recorded and nothing leaves the page.
+
+   motion.js steps CSS animations at 30 fps but has no ticker to join, so this
+   runs its own and throttles itself to the same rate. Ultra stops it, and the
+   meter holds the last shape it drew. */
+async function pickAudioDevice(hint) {
+  if (!hint) return undefined;
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const hit = devs.find((d) => d.kind === 'audioinput'
+      && (d.deviceId === hint || (d.label || '').toLowerCase().includes(String(hint).toLowerCase())));
+    return hit ? { exact: hit.deviceId } : undefined;
+  } catch (_) { return undefined; }
+}
+
+const MIC_STYLES = ['bars', 'level', 'wave'];
+
+TYPES.mic = {
+  create(entry) { entry.gone = false; this.update(entry); },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const style = MIC_STYLES.includes(p.style) ? p.style : 'bars';
+    const count = Math.max(4, Math.min(64, Math.round(Number(p.bars) || 24)));
+    // The looks, every update, without touching the device.
+    entry.gain = Math.max(0.2, Math.min(4, Number(p.gain) || 1));
+    entry.color = p.color || '#8b5cf6';
+    entry.el.style.setProperty('--mic-color', entry.color);
+    if (entry.analyser) entry.analyser.smoothingTimeConstant = Math.max(0, Math.min(0.95, Number(p.smooth ?? 0.7)));
+    // visible is in the key on purpose: hiding the layer changes it, which
+    // tears the microphone down and skips the re-open below (the camera layer
+    // releases its device the same way).
+    const key = JSON.stringify([p.device, style, count, entry.layer.visible]);
+    if (entry.mediaKey === key) return;
+    entry.mediaKey = key;
+    this.stop(entry);                       // not destroy(): that marks the layer gone
+    entry.el.querySelectorAll('.mic-bars, .mic-wave').forEach((n) => n.remove());
+    if (entry.layer.visible === false) return;
+    this.build(entry, style, count);
+    this.start(entry, p);
+  },
+  build(entry, style, count) {
+    entry.style = style;
+    if (style === 'wave') {
+      const c = document.createElement('canvas');
+      c.className = 'mic-wave';
+      entry.el.appendChild(c);
+      entry.canvas = c;
+      return;
+    }
+    const box = document.createElement('div');
+    box.className = 'mic-bars' + (style === 'level' ? ' one' : '');
+    const n = style === 'level' ? 1 : count;
+    // The gap has to shrink as the bars multiply. A flat 6% put 23 gaps of 86px
+    // into a 1440px box - more gap than box - so every bar flexed down to no
+    // width at all, while their transforms went on changing perfectly and every
+    // check that read the DOM passed against a layer drawing nothing.
+    box.style.setProperty('--mic-gap', (100 / (n * 7)).toFixed(2) + '%');
+    box.innerHTML = new Array(n).fill('<i></i>').join('');
+    entry.el.appendChild(box);
+    entry.bars = [...box.querySelectorAll('i')];
+  },
+  async start(entry, p) {
+    noteSource(entry, 'microphone starting', false);
+    try {
+      const deviceId = await pickAudioDevice(p.device);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId } : true, video: false });
+      // Deleted or hidden while Windows was thinking about it.
+      if (entry.gone || entry.layer.visible === false) { stream.getTracks().forEach((t) => t.stop()); return; }
+      entry.stream = stream;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      entry.actx = new Ctx();
+      // A page nobody clicked starts its AudioContext suspended, and a
+      // suspended analyser reads silence for ever. A scene output window is
+      // opened by the app rather than by a person, so that is the normal case
+      // here, not an edge one.
+      if (entry.actx.state === 'suspended') entry.actx.resume().catch(() => {});
+      const an = entry.actx.createAnalyser();
+      an.fftSize = 1024;
+      an.smoothingTimeConstant = Math.max(0, Math.min(0.95, Number(p.smooth ?? 0.7)));
+      entry.actx.createMediaStreamSource(stream).connect(an);
+      entry.analyser = an;
+      entry.bins = new Uint8Array(an.frequencyBinCount);
+      entry.wave = new Uint8Array(an.fftSize);
+      noteSource(entry, 'microphone' + (p.device ? ': ' + p.device : ''), false);
+      this.loop(entry);
+    } catch (e) {
+      noteSource(entry, 'microphone: ' + (e.message || e.name), true);
+    }
+  },
+  loop(entry) {
+    cancelAnimationFrame(entry.raf);
+    let last = 0;
+    const draw = (t) => {
+      // Stop outright rather than wake 165 times a second to do nothing: in
+      // Ultra, or while the window is hidden, this ends and motion() starts it
+      // again - scene.js calls that on the Ultra switch and on visibilitychange.
+      if (!entry.analyser || document.hidden || isUltra()) { entry.raf = 0; return; }
+      entry.raf = requestAnimationFrame(draw);
+      if (t - last < 1000 / 30) return;                  // 30 a second, as motion.js does
+      last = t;
+      this.paint(entry);
+    };
+    entry.raf = requestAnimationFrame(draw);
+  },
+  paint(entry) {
+    const an = entry.analyser;
+    if (entry.style === 'wave') {
+      const c = entry.canvas;
+      if (!c) return;
+      const w = entry.el.clientWidth, h = entry.el.clientHeight;
+      if (!w || !h) return;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      an.getByteTimeDomainData(entry.wave);
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      ctx.lineWidth = Math.max(2, h * 0.025);
+      ctx.strokeStyle = entry.color;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      const n = entry.wave.length;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h / 2 + ((entry.wave[i] - 128) / 128) * (h / 2) * entry.gain;
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+      return;
+    }
+    if (!entry.bars || !entry.bars.length) return;
+    if (entry.style === 'level') {
+      an.getByteTimeDomainData(entry.wave);
+      let sum = 0;
+      for (let i = 0; i < entry.wave.length; i++) { const d = (entry.wave[i] - 128) / 128; sum += d * d; }
+      const rms = Math.sqrt(sum / entry.wave.length);
+      entry.bars[0].style.transform = `scaleX(${Math.max(0.005, Math.min(1, rms * 4 * entry.gain)).toFixed(3)})`;
+      return;
+    }
+    an.getByteFrequencyData(entry.bins);
+    const bars = entry.bars, n = bars.length, bins = entry.bins.length;
+    for (let i = 0; i < n; i++) {
+      // Bunched towards the low end, where a voice actually is.
+      const from = Math.floor(((i / n) ** 1.6) * bins);
+      const to = Math.max(from + 1, Math.floor((((i + 1) / n) ** 1.6) * bins));
+      let sum = 0;
+      for (let j = from; j < to; j++) sum += entry.bins[j];
+      const v = (sum / (to - from) / 255) * entry.gain;
+      bars[i].style.transform = `scaleY(${Math.max(0.02, Math.min(1, v)).toFixed(3)})`;
+    }
+  },
+  stop(entry) {
+    cancelAnimationFrame(entry.raf);
+    entry.raf = 0;
+    if (entry.actx) { try { entry.actx.close(); } catch (_) { /* already closed */ } entry.actx = null; }
+    entry.analyser = null; entry.bins = null; entry.wave = null;
+    entry.bars = null; entry.canvas = null;
+    dropStream(entry);                      // stops the microphone's track
+  },
+  destroy(entry) { entry.gone = true; this.stop(entry); },
+  motion(entry) { if (entry.analyser && !entry.raf && !isUltra() && !document.hidden) this.loop(entry); },
+};
+
 /* Reactive image: one picture while quiet, another while talking, an
    optional blink, an optional bounce. Speaking comes from the server's voice
    state on the feed. */
@@ -502,6 +778,735 @@ TYPES.reactive = {
   motion(entry) { this.update(entry); },
 };
 
+/* Alerts (S15): a layer that shows nothing at all until something happens.
+
+   The show/hide is on the card inside rather than on the layer box, because
+   applyBox writes el.style.opacity inline on every layer and an inline style
+   beats a stylesheet rule - put it on the box and the alert would simply always
+   be on screen.
+
+   In the editor it would otherwise be an invisible rectangle with nothing to
+   style, so a sample is drawn there. On stream it stays empty until an event
+   arrives. */
+TYPES.alert = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="alert-card"><b class="alert-title"></b><span class="alert-text"></span></div>';
+    entry.queue = [];
+    entry.showing = null;
+    this.update(entry);
+  },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const card = entry.el.querySelector('.alert-card');
+    // The text layer's rule, and for the same two reasons: quote the family so
+    // one with spaces in it applies at all, keep the fallbacks, and clear back
+    // to the stylesheet when none is chosen - without that last part an unset
+    // font lands on the browser's serif default, which looks nothing like the
+    // rest of the app.
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 34);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    if (PREVIEW && !entry.showing) {
+      this.paint(entry, { kind: 'command', title: '!hello', text: 'Amy ran !hello' }, true);
+    }
+  },
+  /* One event, from the page's single alert socket. */
+  alert(entry, ev) {
+    const p = entry.layer.props || {};
+    const want = String(p.kinds || '').trim();
+    if (want && !want.split(/[\s,]+/).includes(ev.kind)) return;
+    const max = Math.max(1, Math.min(20, Number(p.max) || 5));
+    entry.queue.push(ev);
+    // A burst must not become a backlog that plays for a minute after it: keep
+    // the newest and drop the rest, which is what somebody watching wants.
+    if (entry.queue.length > max) entry.queue.splice(0, entry.queue.length - max);
+    if (!entry.showing) this.next(entry);
+  },
+  next(entry) {
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing');
+      return;
+    }
+    entry.showing = ev;
+    this.paint(entry, ev, false);
+    const secs = Math.max(1, Math.min(60, Number((entry.layer.props || {}).seconds) || 6));
+    clearTimeout(entry.hold);
+    entry.hold = setTimeout(() => { entry.showing = null; this.next(entry); }, secs * 1000);
+  },
+  paint(entry, ev, sample) {
+    entry.el.querySelector('.alert-title').textContent = ev.title || '';
+    entry.el.querySelector('.alert-text').textContent = ev.text || '';
+    entry.el.classList.toggle('sample', !!sample);
+    entry.el.classList.add('showing');
+    if (!sample) playEnter(entry);          // the layer's own entrance, per alert
+  },
+  /* T10: off the stream now, and nothing waiting to follow it. update() puts
+     the editor's sample back; on stream it draws nothing. */
+  takeDown(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    entry.el.classList.remove('showing');
+    this.update(entry);
+  },
+  destroy(entry) { clearTimeout(entry.hold); },
+};
+
+/* An effect: a picture or a clip, shown when something happens.
+
+   The alert layer says what happened in words; this one shows something. It
+   rides the same socket - declaring alert() is what makes needsAlerts() open
+   it - and copies the alert layer's queue rule deliberately: keep the newest
+   few and drop the rest. That matters more here than it does for text. A
+   burst of gifts turning into a minute of backlog would leave the stream
+   showing an event that finished long ago.
+
+   It plays a clip as well (T3, sound() below), and T10's takeDown() takes the
+   picture, the clip and everything queued behind them off the stream at once.
+
+   The source goes through assetUrl like every other layer, so a scene shared
+   by somebody else cannot aim this at their server. */
+TYPES.effect = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="fx-box"></div>';
+    entry.queue = [];
+    entry.showing = null;
+    this.update(entry);
+  },
+  update(entry) {
+    this.show(entry, assetUrl((entry.layer.props || {}).src));
+    // In the editor nothing is ever going to happen, so it sits there visible
+    // and half lit rather than being an empty rectangle you cannot style.
+    if (PREVIEW && !entry.showing) entry.el.classList.add('showing', 'sample');
+  },
+  /* Put one source in the box. The element type is decided here rather than
+     once when the layer is made, because a gif command names its own picture
+     and that picture can be a clip: an .mp4 arriving by event would otherwise
+     land in an <img> and draw nothing at all. */
+  show(entry, src) {
+    const p = entry.layer.props || {};
+    const want = isVideo(src) ? 'VIDEO' : 'IMG';
+    let m = entry.media;
+    if (!m || m.tagName !== want) {
+      if (m) m.remove();
+      m = document.createElement(want.toLowerCase());
+      m.className = 'media';
+      watchMissing(m, entry);           // the missing-source treatment, free
+      if (want === 'VIDEO') { m.loop = false; m.muted = true; m.playsInline = true; }
+      entry.el.querySelector('.fx-box').appendChild(m);
+      entry.media = m;
+    }
+    const shown = window.stillOf ? window.stillOf(src) : src;
+    if (m.dataset.src !== shown) { m.dataset.src = shown; if (shown) m.src = shown; }
+    m.style.objectFit = { cover: 'cover', stretch: 'fill' }[p.fit] || 'contain';
+  },
+  /* One event, from the page's single alert socket. */
+  alert(entry, ev, scene) {
+    const p = entry.layer.props || {};
+    const d = ev.detail || {};
+    if (d.layer) {
+      // T11: a command this layer owns is addressed to it by id and by scene,
+      // and it answers whatever kinds it listens for - the command is part of
+      // its own setup. Every other effect layer ignores it, including one
+      // listening for everything: it was not theirs.
+      if (d.layer !== entry.layer.id || (d.scene && scene && d.scene !== scene.id)) return;
+    } else {
+      const want = String(p.kinds || '').trim();
+      if (want && !want.split(/[\s,]+/).includes(ev.kind)) return;
+    }
+    const max = Math.max(1, Math.min(20, Number(p.max) || 3));
+    entry.queue.push(ev);
+    if (entry.queue.length > max) entry.queue.splice(0, entry.queue.length - max);
+    if (!entry.showing) this.next(entry);
+  },
+  /* Play the clip an event names. One element per layer, reused on purpose:
+     a new event stops whatever was playing rather than layering over it,
+     which is what keeps two clips from talking over each other. */
+  sound(entry, id) {
+    const src = assetUrl(id);
+    if (!src) { this.hush(entry); return; }
+    const p = entry.layer.props || {};
+    let a = entry.audio;
+    if (!a) { a = entry.audio = new Audio(); a.preload = 'auto'; }
+    // An unset volume has to mean "most of the way up", not silence: a
+    // Number(undefined) of 0 would look exactly like a broken feature.
+    a.volume = Math.max(0, Math.min(1, p.volume === undefined ? 0.8 : Number(p.volume) || 0));
+    if (entry.audioSrc !== src) { entry.audioSrc = src; a.src = src; }
+    try { a.currentTime = 0; } catch (_) { /* not seekable yet */ }
+    // A page nobody clicked can refuse to play. The app starts its own
+    // windows with --autoplay-policy=no-user-gesture-required (overlay.py:32)
+    // for exactly this, and a refusal must not throw into the alert loop.
+    const started = a.play();
+    if (started && started.catch) started.catch(() => {});
+  },
+  hush(entry) {
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} }
+  },
+  next(entry) {
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing');
+      this.hush(entry);            // the clip stops when the box does
+      return;
+    }
+    entry.showing = ev;
+    entry.el.classList.remove('sample');
+    // The event may name its own picture - a gif command carries one in
+    // detail.asset - and the layer's own src is the fallback for events that
+    // do not, which is how a single "reaction" layer with one picture works.
+    this.show(entry, assetUrl((ev.detail && ev.detail.asset) || (entry.layer.props || {}).src));
+    entry.el.classList.add('showing');
+    const m = entry.media;
+    // A clip starts again for each event rather than playing once ever.
+    if (m && m.tagName === 'VIDEO') { try { m.currentTime = 0; m.play().catch(() => {}); } catch (_) {} }
+    playEnter(entry);
+    // The event may name its own clip, exactly as it may name its own
+    // picture; the layer's own is the fallback. A layer with a sound and no
+    // picture is a legitimate thing to build - it simply shows nothing.
+    this.sound(entry, (ev.detail && ev.detail.sound) || (entry.layer.props || {}).sound);
+    const secs = Math.max(1, Math.min(60, Number((entry.layer.props || {}).seconds) || 5));
+    clearTimeout(entry.hold);
+    entry.hold = setTimeout(() => { entry.showing = null; this.next(entry); }, secs * 1000);
+  },
+  /* T10: the picture, the clip and the queue behind them, all at once. The
+     queue matters most - clearing only what is showing would let the next
+     two events of the flood that made you press stop walk straight on.
+     update() points the box back at the layer's own picture, so the event's
+     one is not left loaded behind a hidden box. */
+  takeDown(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    entry.el.classList.remove('showing');
+    this.hush(entry);
+    const m = entry.media;
+    if (m && m.tagName === 'VIDEO') { try { m.pause(); } catch (_) {} }
+    this.update(entry);
+  },
+  destroy(entry) {
+    clearTimeout(entry.hold);
+    // Or a layer somebody deleted mid-clip keeps playing to the stream.
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} entry.audio = null; }
+    entry.audioSrc = '';
+    if (entry.media) { entry.media.remove(); entry.media = null; }
+  },
+  motion(entry) { this.update(entry); },
+};
+
+/* Voice (T7): chat, read out loud.
+
+   The server makes each clip with Windows' own voices (tts.py) and posts it
+   here, addressed to this layer the way a layer's own command is (T11). The
+   page plays it rather than the server because a clip played here obeys the
+   canvas: this layer's volume, Stop effects (takeDown), the Live view's Skip
+   (skipCurrent), and "only the scene on air answers". One clip at a time, in
+   order; a flood keeps the newest few - the effect layer's rule.
+
+   The words can show while they are read, on a card styled like an alert's. */
+const SPEAK_MAX_SECONDS = 45;          // a clip that never says it ended still gives way
+TYPES.speak = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="speak-card"><span class="speak-text"></span></div>';
+    entry.queue = [];
+    entry.showing = null;
+    this.update(entry);
+  },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const card = entry.el.querySelector('.speak-card');
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 30);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    if (entry.audio) entry.audio.volume = this.volume(p);
+    if (PREVIEW && !entry.showing) {
+      entry.el.querySelector('.speak-text').textContent = 'Amy says: this is how chat will sound';
+      entry.el.classList.add('showing', 'sample');
+    }
+  },
+  // Unset means most of the way up, never silence - effect.sound()'s reason.
+  volume(p) { return Math.max(0, Math.min(1, p.volume === undefined ? 0.9 : Number(p.volume) || 0)); },
+  alert(entry, ev, scene) {
+    if (ev.kind !== 'speak') return;
+    const d = ev.detail || {};
+    if (d.layer !== entry.layer.id || (d.scene && scene && d.scene !== scene.id)) return;
+    const max = Math.max(1, Math.min(10, Number((entry.layer.props || {}).max) || 3));
+    entry.queue.push(ev);
+    if (entry.queue.length > max) entry.queue.splice(0, entry.queue.length - max);
+    if (!entry.showing) this.next(entry);
+  },
+  next(entry) {
+    clearTimeout(entry.hold);
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing');
+      return;
+    }
+    entry.showing = ev;
+    const p = entry.layer.props || {};
+    const d = ev.detail || {};
+    entry.el.querySelector('.speak-text').textContent = d.said || ev.text || '';
+    entry.el.classList.remove('sample');
+    const words = p.show !== false;
+    entry.el.classList.toggle('showing', words);
+    if (words) playEnter(entry);
+    let a = entry.audio;
+    if (!a) {
+      a = entry.audio = new Audio();
+      a.preload = 'auto';
+      // Whichever comes first moves on, once: the clip ending, failing, or the timer.
+      a.addEventListener('ended', () => this.done(entry, entry.showing));
+      a.addEventListener('error', () => this.done(entry, entry.showing));
+    }
+    a.volume = this.volume(p);
+    const src = assetUrl(d.clip);
+    if (!src) { this.done(entry, ev); return; }
+    a.src = src;
+    const started = a.play();
+    if (started && started.catch) started.catch(() => this.done(entry, ev));
+    entry.hold = setTimeout(() => this.done(entry, ev), SPEAK_MAX_SECONDS * 1000);
+  },
+  /* One clip over. With more waiting the next starts at once; with nothing,
+     the words stay a moment so the last line does not vanish mid-thought. */
+  done(entry, ev) {
+    if (!ev || entry.showing !== ev) return;
+    clearTimeout(entry.hold);
+    if (entry.queue.length) { this.next(entry); return; }
+    entry.hold = setTimeout(() => { if (entry.showing === ev) this.next(entry); }, 1200);
+  },
+  /* T10: the words, the voice and everything waiting, all at once. */
+  takeDown(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    entry.el.classList.remove('showing');
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} }
+    this.update(entry);
+  },
+  /* The Live view's Skip: this clip ends and the next one starts. */
+  skipCurrent(entry) {
+    if (!entry.showing) return;
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} }
+    clearTimeout(entry.hold);
+    entry.showing = null;
+    this.next(entry);
+  },
+  destroy(entry) {
+    clearTimeout(entry.hold);
+    // Or a layer somebody deleted mid-sentence keeps talking to the stream.
+    if (entry.audio) { try { entry.audio.pause(); } catch (_) {} entry.audio = null; }
+  },
+};
+
+/* Gift (T8): what a gift looks like on stream.
+
+   A coin that spins wearing the sender's picture, one thing thrown at a
+   target for every coin, or both - and a card saying who sent what. Every
+   gift layer hears every gift (a gift is the stream's, not one layer's) and
+   keeps the ones it wants: at least so many coins, or only these gifts. So
+   one layer can take the small ones and another the big ones.
+
+   The throws are the costly part and the dangerous one. One element per
+   coin, flown by the Web Animations API - composited transforms, no script
+   per frame - capped at the layer's "most in the air", and never past
+   GIFT_HARD_CAP whatever the layer says. A gift bigger than the cap throws
+   the same number of things, faster: 5,000 coins is a flurry, not 5,000
+   elements and a frozen stream.
+
+   The sender's picture is a local asset id, never a remote URL: T6 fetches
+   avatars through the server, and assetUrl refuses anything else. */
+const GIFT_HARD_CAP = 60;
+TYPES.gift = {
+  create(entry) {
+    entry.el.innerHTML =
+      '<div class="gift-stage"><div class="gift-coin"><div class="gift-face"></div><div class="gift-back"></div></div>' +
+      '<div class="gift-card"><b class="gift-who"></b><span class="gift-what"></span></div></div>' +
+      '<div class="gift-fly"></div>';
+    entry.queue = [];
+    entry.showing = null;
+    entry.flying = new Set();
+    entry.timers = [];
+    entry.launched = 0; entry.peak = 0; entry.landed = []; entry.lastFlight = 0;
+    this.update(entry);
+  },
+  /* The settings, with the same fallbacks the inspector shows (TYPE_DEFAULTS). */
+  opts(entry) {
+    const p = entry.layer.props || {};
+    const n = (v, d, lo, hi) => {
+      const x = (v === undefined || v === '' || v === null) ? NaN : Number(v);
+      return Math.max(lo, Math.min(hi, Number.isFinite(x) ? x : d));
+    };
+    return {
+      mode: ['coin', 'throw', 'both'].includes(p.mode) ? p.mode : 'both',
+      min: n(p.min, 0, 0, 1e9),
+      seconds: n(p.seconds, 4, 1, 30),
+      max: Math.round(n(p.max, 5, 1, 20)),
+      cap: Math.round(n(p.max_objects, 30, 1, GIFT_HARD_CAP)),
+      size: n(p.object_size, 64, 16, 240),
+      coin: n(p.coin, 220, 60, 600),
+      only: String(p.only || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    };
+  },
+  update(entry) {
+    const p = entry.layer.props || {}, g = this.opts(entry);
+    const coin = entry.el.querySelector('.gift-coin');
+    coin.style.width = coin.style.height = px(g.coin);
+    coin.querySelector('.gift-face').style.fontSize = px(g.coin * 0.42);
+    const card = entry.el.querySelector('.gift-card');
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 28);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    if (PREVIEW && !entry.showing) {
+      this.paint(entry, { user: 'Amy', gift: 'Rose', count: 5, coins: 5 });
+      entry.el.classList.add('showing', 'sample');
+      entry.el.classList.toggle('with-coin', g.mode !== 'throw');
+    }
+  },
+  paint(entry, d) {
+    const p = entry.layer.props || {};
+    const face = entry.el.querySelector('.gift-face');
+    const pic = assetUrl(d.avatar) || assetUrl(p.face);
+    const who = String(d.user || 'Someone');
+    if (pic) {
+      let img = face.querySelector('img');
+      if (!img) { face.textContent = ''; img = document.createElement('img'); img.alt = ''; face.appendChild(img); }
+      if (img.getAttribute('src') !== pic) img.src = pic;
+    } else {
+      face.textContent = (who.trim()[0] || '?').toUpperCase();     // no picture: their initial
+    }
+    const coins = Math.max(0, Math.floor(Number(d.coins) || 0));
+    const count = Math.max(1, Math.floor(Number(d.count) || 1));
+    entry.el.querySelector('.gift-who').textContent = who;
+    entry.el.querySelector('.gift-what').textContent =
+      `sent ${d.gift || 'a gift'}${count > 1 ? ' × ' + count : ''} · ${coins} coin${coins === 1 ? '' : 's'}`;
+  },
+  alert(entry, ev, scene) {
+    if (ev.kind !== 'gift') return;
+    const d = ev.detail || {}, g = this.opts(entry);
+    const coins = Math.max(0, Math.floor(Number(d.coins) || 0));
+    if (coins < g.min) return;
+    if (g.only.length && !g.only.includes(String(d.gift || '').trim().toLowerCase())) return;
+    if (scene) entry.scene = scene;                 // for the target, which is another layer
+    entry.queue.push(ev);
+    if (entry.queue.length > g.max) entry.queue.splice(0, entry.queue.length - g.max);
+    if (!entry.showing) this.next(entry);
+  },
+  next(entry) {
+    clearTimeout(entry.hold);
+    const ev = entry.queue.shift();
+    if (!ev) {
+      entry.showing = null;
+      entry.el.classList.remove('showing', 'with-coin');
+      if (PREVIEW) this.update(entry);             // the editor's sample comes back
+      return;
+    }
+    entry.showing = ev;
+    const d = ev.detail || {}, g = this.opts(entry);
+    this.paint(entry, d);
+    entry.el.classList.remove('sample');
+    entry.el.classList.add('showing');
+    entry.el.classList.toggle('with-coin', g.mode !== 'throw');
+    playEnter(entry);
+    if (g.mode !== 'coin') this.throwAll(entry, Math.max(0, Math.floor(Number(d.coins) || 0)), g);
+    entry.hold = setTimeout(() => this.next(entry), g.seconds * 1000);
+  },
+  throwAll(entry, coins, g) {
+    const n = Math.min(coins, g.cap);
+    if (!n || isUltra()) return;                   // Ultra: the card says it, and nothing flies
+    entry.timers = [];
+    const every = n > 1 ? (g.seconds * 1000 * 0.6) / n : 0;
+    // Past the cap, the same number of things fly faster rather than more of them.
+    const flight = Math.round(900 * Math.max(0.4, Math.min(1, g.cap / coins)));
+    entry.lastFlight = flight;
+    const target = this.target(entry);
+    for (let i = 0; i < n; i++) {
+      entry.timers.push(setTimeout(() => this.throwOne(entry, target, flight, g), Math.round(i * every)));
+    }
+  },
+  /* Where things fly: the middle of another layer - a camera, say - or the
+     middle of this one. Both in this layer's own coordinates, from the
+     layers' transforms, so nothing has to be measured on screen. */
+  target(entry) {
+    const me = entry.layer.transform || {};
+    const want = (entry.layer.props || {}).target;
+    const other = want && entry.scene ? (entry.scene.layers || []).find((l) => l.id === want && l.visible !== false) : null;
+    const t = other && other.transform;
+    if (t) return { x: t.x + t.w / 2 - (me.x || 0), y: t.y + t.h / 2 - (me.y || 0), r: Math.max(10, Math.min(t.w, t.h) * 0.3) };
+    return { x: (me.w || 0) / 2, y: (me.h || 0) / 2, r: 40 };
+  },
+  throwOne(entry, target, flight, g) {
+    if (!entry.el.isConnected || entry.flying.size >= GIFT_HARD_CAP) return;
+    const p = entry.layer.props || {};
+    const me = entry.layer.transform || {};
+    const w = me.w || 0, h = me.h || 0, s = g.size;
+    const src = assetUrl(p.object);
+    const o = document.createElement(src ? 'img' : 'div');
+    o.className = 'gift-token';
+    if (src) { o.src = src; o.alt = ''; }
+    o.style.width = o.style.height = px(s);
+    // From a point on this layer's edge to somewhere on the target: a pile, not a laser.
+    const side = Math.floor(Math.random() * 4);
+    const sx = side === 0 ? 0 : side === 1 ? w : Math.random() * w;
+    const sy = side === 2 ? 0 : side === 3 ? h : Math.random() * h;
+    const a = Math.random() * Math.PI * 2, rr = Math.random() * target.r;
+    const dx = target.x + Math.cos(a) * rr - sx, dy = target.y + Math.sin(a) * rr - sy;
+    const lift = Math.min(260, Math.hypot(dx, dy) * 0.3);          // thrown, so it arcs
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 480);
+    o.style.left = px(sx - s / 2);
+    o.style.top = px(sy - s / 2);
+    entry.el.querySelector('.gift-fly').appendChild(o);
+    entry.flying.add(o);
+    entry.launched += 1;
+    entry.peak = Math.max(entry.peak, entry.flying.size);
+    const anim = o.animate([
+      { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
+      { transform: `translate(${dx / 2}px, ${dy / 2 - lift}px) rotate(${spin / 2}deg)`, opacity: 1, offset: 0.45 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg)`, opacity: 1, offset: 0.85 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg) scale(1.5)`, opacity: 0 },
+    ], { duration: Math.round(flight / 0.85), easing: 'linear', fill: 'forwards' });
+    o._anim = anim;
+    anim.onfinish = () => {
+      if (!entry.flying.has(o)) return;
+      const r = o.getBoundingClientRect();         // where it landed, for SceneDebug
+      entry.landed.push([Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]);
+      if (entry.landed.length > 60) entry.landed.splice(0, entry.landed.length - 60);
+      entry.flying.delete(o);
+      o.remove();
+    };
+  },
+  /* Everything flying comes down at once, synchronously - a cancel() event
+     arrives a task later, and "stop" means now. */
+  clear(entry) {
+    entry.queue = [];
+    clearTimeout(entry.hold);
+    for (const t of entry.timers) clearTimeout(t);
+    entry.timers = [];
+    for (const o of [...entry.flying]) {
+      entry.flying.delete(o);
+      try { o._anim.cancel(); } catch (_) { /* never started */ }
+      o.remove();
+    }
+    entry.showing = null;
+    entry.el.classList.remove('showing', 'with-coin');
+  },
+  takeDown(entry) { this.clear(entry); this.update(entry); },
+  destroy(entry) { this.clear(entry); },
+};
+
+/* The coins gifted this stream, on stream (gifts.py's ledger): a goal bar, and
+   who gave most. Both draw /api/gifts/ledger - read when the layer appears,
+   again a moment after every gift that comes down the alert socket (declaring
+   alert() is what opens it for them), and every LEDGER_POLL_MS besides, so a
+   Reset in the Live view shows within seconds. One read serves every coin
+   layer on the page. Names are chatters': set as text, never as markup.
+   Neither holds an event, so Stop effects leaves them be (test_takedown.py). */
+const LEDGER_POLL_MS = 10000;
+const coinLayers = new Set();
+const coinsText = (n) => Math.max(0, Math.floor(Number(n) || 0)).toLocaleString();
+let ledgerLast = null, ledgerSoon = 0, ledgerBusy = false;
+async function readLedger() {
+  if (ledgerBusy) return;
+  ledgerBusy = true;
+  try {
+    const r = await fetch('/api/gifts/ledger?top=10', { cache: 'no-store' });
+    if (r.ok) ledgerLast = await r.json();
+  } catch (_) { /* the next read */ }
+  ledgerBusy = false;
+  for (const entry of [...coinLayers]) {
+    // A layer taken out of the scene is retired without its destroy(); one
+    // that is no longer on the page leaves the set here, whichever way it went.
+    if (!entry.el.isConnected) { coinLayers.delete(entry); continue; }
+    if (TYPES[entry.type]) TYPES[entry.type].show(entry, ledgerLast);
+  }
+}
+function readLedgerSoon() {
+  clearTimeout(ledgerSoon);
+  ledgerSoon = setTimeout(readLedger, 300);        // a burst of gifts is one read
+}
+setInterval(() => { if (coinLayers.size) readLedger(); }, LEDGER_POLL_MS);
+function coinCard(entry, sel) {
+  const p = entry.layer.props || {};
+  const card = entry.el.querySelector(sel);
+  card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+  card.style.fontSize = px(Number(p.size) || 30);
+  card.style.color = p.color || '#ffffff';
+  card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+  card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+}
+
+TYPES.goal = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="goal-card"><div class="goal-head"><b class="goal-title"></b>' +
+      '<span class="goal-num"></span></div><div class="goal-track"><i></i></div></div>';
+    entry.reached = null;
+    coinLayers.add(entry);
+    this.update(entry);
+    if (!ledgerLast) readLedger();
+  },
+  /* The settings, with the same fallbacks the inspector shows (TYPE_DEFAULTS). */
+  opts(entry) {
+    const p = entry.layer.props || {};
+    const t = Math.floor(Number(p.target));
+    return { target: Number.isFinite(t) && t > 0 ? Math.min(t, 100000000) : 1000,
+             title: String(p.title ?? 'Coin goal'), done: String(p.done ?? 'Goal reached!') };
+  },
+  update(entry) {
+    coinLayers.add(entry);                          // back from hidden: it counts again
+    coinCard(entry, '.goal-card');
+    entry.el.style.setProperty('--goal-bar', (entry.layer.props || {}).bar || '#f5b50a');
+    this.show(entry, ledgerLast);
+  },
+  show(entry, d) {
+    const g = this.opts(entry);
+    const coins = Math.max(0, Math.floor(Number((d || {}).coins) || 0));
+    const reached = coins >= g.target;
+    entry.el.querySelector('.goal-title').textContent = reached && g.done ? g.done : g.title;
+    entry.el.querySelector('.goal-num').textContent = `${coinsText(coins)} / ${coinsText(g.target)}`;
+    entry.el.querySelector('.goal-track > i').style.width = `${Math.min(100, (coins / g.target) * 100)}%`;
+    entry.el.classList.toggle('reached', reached);
+    // A cheer the moment it is reached - once, and not on the first read of a
+    // goal that was already met when the page opened.
+    if (reached && entry.reached === false && !isUltra()) {
+      entry.el.classList.remove('cheer');
+      void entry.el.offsetWidth;                    // so the animation starts over
+      entry.el.classList.add('cheer');
+      clearTimeout(entry.cheerT);
+      entry.cheerT = setTimeout(() => entry.el.classList.remove('cheer'), 2400);
+    }
+    if (d) entry.reached = reached;
+  },
+  alert(entry, ev) { if (ev.kind === 'gift') readLedgerSoon(); },
+  destroy(entry) { coinLayers.delete(entry); clearTimeout(entry.cheerT); },
+};
+
+TYPES.topgifters = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="top-card"><b class="top-title"></b><ol class="top-rows"></ol></div>';
+    coinLayers.add(entry);
+    this.update(entry);
+    if (!ledgerLast) readLedger();
+  },
+  opts(entry) {
+    const p = entry.layer.props || {};
+    return { count: Math.max(1, Math.min(10, Math.round(Number(p.count) || 3))), title: String(p.title ?? 'Top gifters'),
+             showcoins: p.showcoins !== false, hideempty: p.hideempty !== false };
+  },
+  update(entry) {
+    coinLayers.add(entry);
+    coinCard(entry, '.top-card');
+    entry.el.style.setProperty('--top-accent', (entry.layer.props || {}).accent || '#f5b50a');
+    this.show(entry, ledgerLast);
+  },
+  show(entry, d) {
+    const g = this.opts(entry);
+    let top = ((d || {}).top || []).slice(0, g.count);
+    // In the editor an empty list would be nothing to style.
+    const sample = PREVIEW && !top.length;
+    if (sample) top = [{ name: 'Amy', coins: 1000 }, { name: 'Bob', coins: 500 }, { name: 'Cy', coins: 99 }].slice(0, g.count);
+    entry.el.querySelector('.top-title').textContent = g.title;
+    entry.el.querySelector('.top-rows').replaceChildren(...top.map((t, i) => {
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'top-n';
+      n.textContent = String(i + 1);
+      const who = document.createElement('span');
+      who.className = 'top-who';
+      who.textContent = t.name || t.handle || 'Someone';
+      li.append(n, who);
+      if (g.showcoins) {
+        const c = document.createElement('span');
+        c.className = 'top-coins';
+        c.textContent = coinsText(t.coins);
+        li.append(c);
+      }
+      return li;
+    }));
+    entry.el.classList.toggle('sample', sample);
+    entry.el.classList.toggle('empty', !top.length);
+    entry.el.classList.toggle('hide-empty', g.hideempty);
+  },
+  alert(entry, ev) { if (ev.kind === 'gift') readLedgerSoon(); },
+  destroy(entry) { coinLayers.delete(entry); },
+};
+
+/* Polls (S14): the bars people are voting on.
+
+   The tally comes down the same alert socket S15 opened - which is why this
+   declares an alert() hook: needsAlerts() only opens that socket for types that
+   have one, so a scene holding nothing but a poll layer would otherwise never
+   hear a thing.
+
+   It draws the last whole tally it was given and holds it. Never a running
+   total of its own: that is what lets a page which joined halfway through a
+   poll be right at the very next vote instead of adding up what it missed. */
+TYPES.poll = {
+  create(entry) {
+    entry.el.innerHTML = '<div class="poll-card"><b class="poll-q"></b><div class="poll-rows"></div></div>';
+    entry.tally = null;
+    this.update(entry);
+  },
+  update(entry) {
+    const p = entry.layer.props || {};
+    const card = entry.el.querySelector('.poll-card');
+    card.style.fontFamily = p.font ? `"${p.font}", "Segoe UI", system-ui, sans-serif` : '';
+    card.style.fontSize = px(Number(p.size) || 30);
+    card.style.color = p.color || '#ffffff';
+    card.style.background = p.bg || 'rgba(0, 0, 0, .55)';
+    card.style.borderRadius = px(p.radius === undefined ? 14 : Number(p.radius));
+    entry.el.style.setProperty('--poll-bar', p.bar || '#8b5cf6');
+    // In the editor it would be an empty box with nothing to style.
+    if (PREVIEW && !entry.tally) {
+      this.paint(entry, { question: 'Which song next?', choices: ['Sabotage', 'Intergalactic'],
+                          counts: [7, 3], total: 10, shares: [0.7, 0.3], open: true }, true);
+    }
+  },
+  alert(entry, ev) {
+    if (ev.kind !== 'poll') return;
+    const tally = (ev.detail || {}).poll;
+    if (!tally || !Array.isArray(tally.choices)) return;
+    entry.tally = tally;
+    this.paint(entry, tally, false);
+    clearTimeout(entry.linger);
+    if (!tally.open) {
+      // Keep the result up for a moment - that is the point of closing - then
+      // take it away, so a poll from twenty minutes ago is not still on screen.
+      const secs = Math.max(0, Math.min(600, Number((entry.layer.props || {}).linger ?? 15)));
+      entry.linger = setTimeout(() => entry.el.classList.remove('showing'), secs * 1000);
+    }
+  },
+  paint(entry, t, sample) {
+    const total = Number(t.total) || 0;
+    entry.el.querySelector('.poll-q').textContent = t.question || '';
+    entry.el.querySelector('.poll-rows').innerHTML = (t.choices || []).map((label, i) => {
+      const count = (t.counts || [])[i] || 0;
+      const share = Math.round(((t.shares || [])[i] || 0) * 100);
+      return `<div class="poll-row">
+          <span class="poll-n">${i + 1}</span>
+          <span class="poll-label"></span>
+          <span class="poll-count">${count}${total ? ` &middot; ${share}%` : ''}</span>
+          <span class="poll-track"><i style="width:${share}%"></i></span>
+        </div>`;
+    }).join('');
+    // Labels are viewers' words in the open case and the streamer's otherwise:
+    // set as text, never as markup.
+    entry.el.querySelectorAll('.poll-row .poll-label').forEach((el, i) => {
+      el.textContent = (t.choices || [])[i] || '';
+    });
+    entry.el.classList.toggle('sample', !!sample);
+    entry.el.classList.add('showing');
+  },
+  destroy(entry) { clearTimeout(entry.linger); },
+};
+
 /* Any layer: a decorative border loop (decor.js), and "while speaking" triggers. */
 function applyDecor(entry) {
   const d = (entry.layer.props || {}).decor;
@@ -519,20 +1524,45 @@ function applyDecor(entry) {
   renderDecor(entry.el, box, d, d.color || '#ffffff');
 }
 
+/* Two moments, four things to do. "While I talk" holds for as long as you are
+   talking; "when I start talking" does the same thing once, for a beat, at the
+   moment speech starts.
+
+   That beat is what "pop" used to be: an action welded to one moment, which is
+   why the editor had to keep the two dropdowns in step behind your back - pick
+   pop and the when changed itself. Every action can use either moment now, and
+   the coupling is gone with it.
+
+   The beat's classes are separate from the held ones on purpose: a layer diff
+   landing in the middle of a beat would otherwise clear the class and cut it
+   short. */
+const TRIG_BEAT = 650;
+const GLOW = '#ffffff';
+function beatClass(entry, cls) {
+  entry.beats = entry.beats || {};
+  clearTimeout(entry.beats[cls]);
+  entry.el.classList.add(cls);
+  entry.beats[cls] = setTimeout(() => entry.el.classList.remove(cls), TRIG_BEAT);
+}
 function applyTriggers(entry, v) {
   const trig = entry.layer.triggers || [];
   if (!trig.length) return;
-  let visible = entry.layer.visible !== false, bounce = false;
+  let visible = entry.layer.visible !== false, bounce = false, glow = '';
   for (const t of trig) {
-    const active = t.on === 'speaking' ? v.speaking : t.on === 'silent' ? !v.speaking : false;
-    if (t.do === 'show') visible = visible && active;
-    else if (t.do === 'hide') visible = visible && !active;
-    else if (t.do === 'bounce') bounce = bounce || active;
-    else if (t.do === 'class' && t.value) entry.el.classList.toggle('t-' + t.value, active);
-    if (t.on === 'speech_start' && v.started && t.do === 'pop') {
-      entry.el.classList.add('pop');
-      setTimeout(() => entry.el.classList.remove('pop'), 650);
+    if (t.on === 'speech_start') {
+      // Ultra keeps everything still, and a beat is motion.
+      if (!v.started || isUltra()) continue;
+      if (t.do === 'bounce') beatClass(entry, 'beat-bounce');
+      else if (t.do === 'glow') { entry.el.style.setProperty('--glow', t.value || GLOW); beatClass(entry, 'beat-glow'); }
+      else if (t.do === 'show') beatClass(entry, 'beat-show');
+      else if (t.do === 'hide') beatClass(entry, 'beat-hide');
+      continue;
     }
+    if (t.on !== 'speaking') continue;      // "silent" and the rest: migrated away in scenes.py
+    if (t.do === 'show') visible = visible && v.speaking;
+    else if (t.do === 'hide') visible = visible && !v.speaking;
+    else if (t.do === 'bounce') bounce = bounce || v.speaking;
+    else if (t.do === 'glow' && v.speaking) glow = t.value || GLOW;
   }
   // Shown by a trigger (talking, going quiet): it comes in the way it enters.
   const was = entry.trigShown;
@@ -540,6 +1570,9 @@ function applyTriggers(entry, v) {
   if (visible && was === false) playEnter(entry);
   entry.el.classList.toggle('hidden', !visible);
   entry.el.classList.toggle('bounce', bounce && !isUltra());
+  // A glow is a still outline, not motion, so Ultra leaves it alone.
+  if (glow) entry.el.style.setProperty('--glow', glow);
+  entry.el.classList.toggle('talk-glow', !!glow);
 }
 
 /* Motion a layer asks for (P9). An enter animation plays when the layer
@@ -590,6 +1623,17 @@ function identity(layer) {
     case 'component': return 'component:' + (p.component || 'np');
     case 'camera': return 'camera:' + JSON.stringify([p.mode, p.device, p.width, p.height, p.fps]);
     case 'capture': return 'capture:' + JSON.stringify([p.mode, p.source, p.fps]);
+    // A microphone is a device too: without this a scene switch would close it
+    // and ask Windows for it again.
+    case 'mic': return 'mic:' + JSON.stringify([p.device]);
+    // An alert layer holds no device, but it does hold an alert part way
+    // through showing and a queue of ones waiting. Rebuilt on a switch, both
+    // are simply dropped - so it is kept for the same reason, by what it
+    // listens for rather than by how it looks.
+    case 'alert': return 'alert:' + String(p.kinds || 'all');
+    // A poll layer holds the tally it is drawing. Rebuilt on a switch it would
+    // blank in the middle of a poll and stay blank until the next vote.
+    case 'poll': return 'poll';
     case 'image': return isVideo(assetUrl(p.src)) ? 'video:' + p.src : '';
     default: return '';
   }
@@ -782,6 +1826,50 @@ class Stage {
     }
   }
 
+  /* One event in, dispatched to whichever layers want it - the same shape as
+     voice() above, so the page holds one socket however many alert layers a
+     scene has. */
+  alert(ev) {
+    // T10's stop is not an event for anybody to show. It goes to every layer
+    // that can hold something on screen, whatever kinds that layer listens
+    // for - a layer filtering for "gif" must still hear it - and never to
+    // alert(), where a layer listening for everything would show a blank card.
+    //
+    // takeDown, not stop, and the name is the whole contract: every type that
+    // defines it is called. The first version said stop(), which TYPES.mic
+    // already had - "release the microphone" - so pressing Stop effects froze
+    // a meter on stream. tests/test_takedown.py pins who may define this.
+    if (ev && ev.kind === 'stop') {
+      for (const entry of this.layers.values()) {
+        const t = TYPES[entry.type];
+        if (t.takeDown) t.takeDown(entry);
+      }
+      return;
+    }
+    // The Live view's Skip (T7): the clip a Voice layer is reading ends and
+    // the next starts. By its own hook name, for takeDown's reason.
+    if (ev && ev.kind === 'skip') {
+      for (const entry of this.layers.values()) {
+        const t = TYPES[entry.type];
+        if (t.skipCurrent) t.skipCurrent(entry);
+      }
+      return;
+    }
+    // The scene rides along so a layer can tell an event addressed to it
+    // (T11) from one addressed to a layer of the same id on another scene.
+    for (const entry of this.layers.values()) {
+      const t = TYPES[entry.type];
+      if (t.alert) t.alert(entry, ev, this.scene);
+    }
+  }
+
+  needsAlerts() {
+    for (const entry of this.layers.values()) {
+      if (TYPES[entry.type] && TYPES[entry.type].alert && entry.layer.visible !== false) return true;
+    }
+    return false;
+  }
+
   needsVoice() {
     for (const entry of this.layers.values()) {
       if (entry.type === 'reactive' || (entry.layer.triggers || []).length) return true;
@@ -834,6 +1922,7 @@ async function show(scene, transition) {
   current.state(lastState);
   fit();
   holdVoice();
+  holdAlerts();
 }
 
 async function loadScene(id, transition) {
@@ -864,6 +1953,14 @@ if (PREVIEW) {
     if (e.data.type === 'editor-replay') {                   // the inspector's "Play" button
       const entry = current && current.layers.get(e.data.id);
       if (entry) playEnter(entry);
+      return;
+    }
+    // The Gift layer's "Try it" (T8): a sample gift for this one layer, in
+    // this preview alone. It never touches the bus, so it cannot reach a
+    // stream - a pretend gift on air would be a lie told to an audience.
+    if (e.data.type === 'editor-gift') {
+      const entry = current && current.layers.get(e.data.id);
+      if (entry && entry.type === 'gift') TYPES.gift.alert(entry, { kind: 'gift', detail: e.data.detail || {} }, current.scene);
       return;
     }
     if (e.data.type !== 'editor-scene' || !e.data.scene) return;
@@ -932,8 +2029,33 @@ function holdVoice() {
     voiceToken = null;
   }
 }
+/* Alerts (S15): one socket for the page, and only while the scene on it has a
+   layer that wants events. A scene with nothing listening costs nothing, and a
+   scene with three alert layers still costs one - the Stage hands the event to
+   each of them. */
+let alertWs = null;
+function holdAlerts() {
+  const need = current && current.needsAlerts();
+  if (need && !alertWs) {
+    const page = encodeURIComponent(location.pathname.split('/').pop() + location.search);
+    try { alertWs = new WebSocket(`ws://${location.host}/ws/alerts?page=${page}`); } catch (_) { alertWs = null; return; }
+    alertWs.onmessage = (e) => { try { if (current) current.alert(JSON.parse(e.data)); } catch (_) { /* next one */ } };
+    alertWs.onclose = () => {
+      alertWs = null;
+      setTimeout(() => { if (current && current.needsAlerts()) holdAlerts(); }, 1500);
+    };
+    alertWs.onerror = () => { try { alertWs.close(); } catch (_) {} };
+  } else if (!need && alertWs) {
+    const gone = alertWs;
+    alertWs = null;
+    gone.onclose = null;                      // deliberate: do not reconnect
+    try { gone.close(); } catch (_) {}
+  }
+}
+
 window.addEventListener('pagehide', () => {
   if (voiceToken) navigator.sendBeacon('/api/voice/release', new Blob([JSON.stringify({ token: voiceToken })], { type: 'application/json' }));
+  if (alertWs) { const gone = alertWs; alertWs = null; gone.onclose = null; try { gone.close(); } catch (_) {} }
 });
 
 onMotionChange(() => { if (current) current.motion(); });
@@ -945,12 +2067,37 @@ window.addEventListener('resize', () => {
 });
 if (!PREVIEW) reportWindowMetrics(API);
 
+/* The window's own controls. This page has loaded windowctl.js all along and
+   never called it, so the one window a scene actually goes out of was the one
+   window with no way to move it, resize it or shut it - the four component
+   pop-outs and the frames have had this since they were written.
+
+   The body is the drag surface, not #stage: #stage lives inside the box fit()
+   scales, and the class windowctl adds for the first-open hint has to land
+   somewhere the stylesheet can see. Deltas are screen pixels, so the scale
+   does not disturb them. Never in the editor's preview, and never when a scene
+   is embedded in another page. */
+if (!PREVIEW && !window.EMBED) {
+  document.body.classList.add('has-winctl');
+  attachWindowControls({
+    stage: document.body,
+    close: document.getElementById('closeBtn'),
+    api: API,
+  });
+}
+
 /* For tests and the editor: what the runtime holds right now. */
 window.SceneDebug = {
   scene: () => currentScene(),
   layers: () => current ? [...current.layers.values()].map((e) => ({ id: e.layer.id, type: e.type, status: e.status || '', media: !!e.media, src: e.media && e.media.dataset ? e.media.dataset.src : '' })) : [],
   embeds: () => ({ live: EmbedHost.count(), created: EmbedHost.created() }),
   voice: () => voiceNow,
+  // T8's gift layers: what flew, how many at once at most, and where it landed.
+  gifts: () => current ? [...current.layers.values()].filter((e) => e.type === 'gift').map((e) => ({
+    id: e.layer.id, showing: e.el.classList.contains('showing'), coin: e.el.classList.contains('with-coin'),
+    flying: e.flying ? e.flying.size : 0, launched: e.launched || 0, peak: e.peak || 0,
+    lastFlight: e.lastFlight || 0, landed: (e.landed || []).slice(),
+  })) : [],
 };
 
 connectFeed();

@@ -3,6 +3,11 @@ CPU at each step, then remedies (a host resize nudge, a rebuild)."""
 import json, os, subprocess, sys, time, urllib.request
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
+# wgc.py is in tools/p0 (cpuby.ps1 sits here beside the P5 scripts on purpose);
+# the shot goes to <repo>/.rig, beside the repo, like every runner .sh.
+P0 = os.path.abspath(os.path.join(S, "..", "p0"))
+LIVE = os.path.abspath(os.path.join(S, "..", "..", "..", ".rig", "live"))
+os.makedirs(LIVE, exist_ok=True)
 
 def get(path):
     with urllib.request.urlopen(BASE + path, timeout=30) as r:
@@ -14,11 +19,11 @@ def post(path, data=None):
         return json.loads(r.read())
 
 def cpu(seconds=6):
-    out = subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\cpuby.ps1" -Match testrig -Seconds {seconds}'], capture_output=True, text=True, timeout=120).stdout
+    out = subprocess.run(creationflags=0x08000000, args=["powershell", "-NoProfile", "-Command", f'& "{S}\\cpuby.ps1" -Match testrig -Seconds {seconds}'], capture_output=True, text=True, timeout=120).stdout
     return " | ".join(l.strip().replace(" % of one core", "%").replace("  ", " ") for l in out.splitlines() if any(k in l for k in ("browser", "gpu-process", "renderer", "TOTAL")))
 
 def fps(title="Canvas: P5 park"):
-    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(S, "wgc.py"), "window", title, os.path.join(S, "live", "p5park.png"), "1", "half"], capture_output=True, text=True).stdout
+    out = subprocess.run(creationflags=0x08000000, args=[sys.executable, os.path.join(P0, "wgc.py"), "window", title, os.path.join(LIVE, "p5park.png"), "1", "half"], capture_output=True, text=True).stdout
     return " ".join(l.split(";")[0] for l in out.splitlines() if l.startswith("frames"))
 
 def step(tag):

@@ -8,6 +8,13 @@ import base64, json, os, struct, subprocess, sys, time, urllib.request, zlib
 
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
+# The shared helpers (wgc.py, windiag2.py, cdp.js, cpuby.ps1) live in tools/p0;
+# the rig and its scratch files sit in <repo>/.rig, beside the repo. The same
+# two anchors every runner .sh uses.
+P0 = os.path.abspath(os.path.join(S, "..", "p0"))
+O = os.path.abspath(os.path.join(S, "..", "..", "..", ".rig"))
+SHOTS = os.path.join(O, "apps")
+os.makedirs(SHOTS, exist_ok=True)
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 PARTS = set(sys.argv[1:]) or {"all"}
 results = []
@@ -39,20 +46,20 @@ def ps(script, timeout=120):
 
 
 def windiag():
-    out = subprocess.run([sys.executable, os.path.join(S, "windiag2.py"), "8799"], capture_output=True, text=True).stdout
+    out = subprocess.run([sys.executable, os.path.join(P0, "windiag2.py"), "8799"], capture_output=True, text=True).stdout
     print("   " + out.strip().replace("\n", "\n   "))
     return out
 
 
 def wgc(title, name, seconds=1.0):
-    out = subprocess.run([sys.executable, os.path.join(S, "wgc.py"), "window", title,
-                          os.path.join(S, "apps", name), str(seconds), "half"], capture_output=True, text=True).stdout
+    out = subprocess.run([sys.executable, os.path.join(P0, "wgc.py"), "window", title,
+                          os.path.join(SHOTS, name), str(seconds), "half"], capture_output=True, text=True).stdout
     lines = [l for l in out.splitlines() if l.startswith(("capture item", "frames", "wrote"))]
     return out, lines
 
 
 def cpu(match, seconds=15):
-    out = ps(f'& "{S}\\cpuby.ps1" -Match \'{match}\' -Seconds {seconds}')
+    out = ps(f'& "{P0}\\cpuby.ps1" -Match \'{match}\' -Seconds {seconds}')
     total = [l for l in out.splitlines() if "TOTAL" in l]
     print("   " + out.strip().replace("\n", "\n   "))
     return float(total[0].split()[1]) if total else -1
@@ -98,7 +105,7 @@ def close_all():
 
 
 def source_window(on):
-    prof = os.path.join(S, "prof-srcwin")
+    prof = os.path.join(O, "prof-srcwin")
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-srcwin*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     if on:
         subprocess.Popen([CHROME, "--app=http://127.0.0.1:8799/p0-anim.html?title=P0%20Anim%20Source&label=SRC&fps=30",
@@ -223,9 +230,9 @@ if want("live"):
     check("live output opens", r.get("ok") and r.get("hosted"), json.dumps(r))
     time.sleep(8)
     st, before = get("/api/components/live/status")
-    cap = subprocess.Popen([sys.executable, os.path.join(S, "wgc.py"), "window", "Awesome Streaming Deck - Canvas (live)",
-                            os.path.join(S, "apps", "p3_live.png"), "26", "half"], stdout=subprocess.PIPE, text=True)
-    meter = subprocess.Popen(["powershell", "-NoProfile", "-Command", f'& "{S}\\cpuby.ps1" -Match testrig -Seconds 24'],
+    cap = subprocess.Popen([sys.executable, os.path.join(P0, "wgc.py"), "window", "Awesome Streaming Deck - Canvas (live)",
+                            os.path.join(SHOTS, "p3_live.png"), "26", "half"], stdout=subprocess.PIPE, text=True)
+    meter = subprocess.Popen(["powershell", "-NoProfile", "-Command", f'& "{P0}\\cpuby.ps1" -Match testrig -Seconds 24'],
                              stdout=subprocess.PIPE, text=True)
     t0 = time.time()
     for i in range(20):
@@ -250,14 +257,14 @@ if want("live"):
 if want("latency"):
     # ------------------------------------------------------------ reactive latency and source status (DevTools)
     close_all()
-    prof = os.path.join(S, "prof-p3")
+    prof = os.path.join(O, "prof-p3")
     ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*prof-p3*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     subprocess.Popen([CHROME, f"--app={BASE}/scene.html?id={ALL['id']}&preview=1", "--window-size=1296,760", "--window-position=300,200",
                       "--no-first-run", "--no-default-browser-check", "--force-device-scale-factor=1", "--remote-debugging-port=9448",
                       "--disable-component-update", "--disable-background-networking", "--autoplay-policy=no-user-gesture-required",
                       "--disable-features=CalculateNativeWinOcclusion", f"--user-data-dir={prof}"])
     time.sleep(7)
-    ev = lambda expr: subprocess.run(["node", os.path.join(S, "cdp.js"), "9448", "Canvas", expr], capture_output=True, text=True).stdout.strip()
+    ev = lambda expr: subprocess.run(["node", os.path.join(P0, "cdp.js"), "9448", "Canvas", expr], capture_output=True, text=True).stdout.strip()
     print("   layers:", ev("SceneDebug.layers().map(l => [l.type, l.status])"))
     print("   embeds:", ev("SceneDebug.embeds()"))
     print("   fitted font sizes:", ev("[...document.querySelectorAll('.type-text .text-body')].map(b => b.style.fontSize)"))

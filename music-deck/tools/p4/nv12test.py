@@ -10,7 +10,7 @@ import sys
 import time
 
 S = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(S, "..", "..")))   # music-deck
 import capture  # noqa: E402
 import mfenc  # noqa: E402
 

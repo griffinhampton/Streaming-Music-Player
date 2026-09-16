@@ -4,7 +4,16 @@ import base64, hashlib, json, os, socket, struct, subprocess, sys, time, urllib.
 
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(S, "testrig"))
+# Two anchors, the same pair every runner .sh sets up: the shared helpers
+# (wgc.py, windiag2.py, cdp.js) live in tools/p0, and the rig with its scratch
+# files sits in <repo>/.rig, beside the repo. Reaching for either one beside
+# this script is what broke when the rig was gathered into .rig - the shell
+# runners were moved over, the Python ones were not.
+P0 = os.path.abspath(os.path.join(S, "..", "p0"))
+O = os.path.abspath(os.path.join(S, "..", "..", "..", ".rig"))
+SHOTS = os.path.join(O, "apps")
+os.makedirs(SHOTS, exist_ok=True)
+sys.path.insert(0, os.path.join(O, "testrig"))
 results = []
 
 
@@ -30,7 +39,7 @@ def post(path, data=None):
 
 
 def windiag():
-    out = subprocess.run([sys.executable, os.path.join(S, "windiag2.py"), "8799"], capture_output=True, text=True).stdout
+    out = subprocess.run([sys.executable, os.path.join(P0, "windiag2.py"), "8799"], capture_output=True, text=True).stdout
     print("   " + out.strip().replace("\n", "\n   "))
     return out
 
@@ -71,8 +80,8 @@ rect = status.get("rect") or {}
 check("output host is 1080x1920", (rect.get("w"), rect.get("h")) == (1080, 1920), json.dumps(rect))
 out = windiag()
 check("five windows aligned incl. the tall one", "5 window(s)" in out and "all aligned" in out)
-cap = subprocess.run([sys.executable, os.path.join(S, "wgc.py"), "window", "Awesome Streaming Deck - Canvas: Phone test",
-                      os.path.join(S, "apps", "p2_scene.png"), "1.0", "half"], capture_output=True, text=True).stdout
+cap = subprocess.run([sys.executable, os.path.join(P0, "wgc.py"), "window", "Awesome Streaming Deck - Canvas: Phone test",
+                      os.path.join(SHOTS, "p2_scene.png"), "1.0", "half"], capture_output=True, text=True).stdout
 check("WGC captures the output whole", "capture item size: 1080x1920" in cap and "frames: " in cap,
       [l for l in cap.splitlines() if l.startswith(("capture item", "frames"))])
 
@@ -80,8 +89,8 @@ check("WGC captures the output whole", "capture item size: 1080x1920" in cap and
 st, r = post(f"/api/components/scene:{sid}/park")
 check("park moves it off screen", r.get("ok") and (r.get("rect") or {}).get("x", 0) <= -10000, json.dumps(r))
 time.sleep(0.8)
-cap = subprocess.run([sys.executable, os.path.join(S, "wgc.py"), "window", "Awesome Streaming Deck - Canvas: Phone test",
-                      os.path.join(S, "apps", "p2_parked.png"), "1.0", "half"], capture_output=True, text=True).stdout
+cap = subprocess.run([sys.executable, os.path.join(P0, "wgc.py"), "window", "Awesome Streaming Deck - Canvas: Phone test",
+                      os.path.join(SHOTS, "p2_parked.png"), "1.0", "half"], capture_output=True, text=True).stdout
 frames = [l for l in cap.splitlines() if l.startswith("frames")]
 check("parked window still captures", frames and int(frames[0].split()[1]) > 0, frames)
 st, status = get(f"/api/components/scene:{sid}/status")

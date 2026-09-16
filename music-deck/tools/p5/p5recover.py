@@ -10,7 +10,7 @@ import ctypes, json, os, subprocess, sys, time, urllib.request
 BASE = "http://127.0.0.1:8799"
 S = os.path.dirname(os.path.abspath(__file__))
 FF = r"C:\Users\ghamp\Downloads\ffmpeg-8.0-essentials_build\bin"
-PY = r"C:\Users\ghamp\streaming stuff\.build-env\Scripts\python.exe"
+PY = os.path.abspath(os.path.join(S, "..", "..", "..", ".build-env", "Scripts", "python.exe"))
 sys.path.insert(0, os.path.join(S, "testrig"))
 import capture  # noqa: E402
 results = []

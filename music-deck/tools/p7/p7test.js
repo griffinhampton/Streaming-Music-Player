@@ -16,7 +16,9 @@ const check = (name, ok, detail = '') => { results.push([name, !!ok]); console.l
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function open(url) {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT' })).json();
+  // encodeURIComponent, not encodeURI: encodeURI leaves `&` alone, so a page
+  // URL with two parameters loses the second to /json/new itself (S17b).
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   const page = { ws, id: 0, pending: new Map(), errors: [], paused: [] };
@@ -80,7 +82,14 @@ const shape = (s) => JSON.stringify({ layers: s.layers.map((l) => [l.id, l.name,
 
   // ---- structure and accessibility
   const a11y = await ed.ev(`(() => ({
-    tabs: [...document.querySelectorAll('[role=tablist] [role=tab]')].map((t) => t.textContent + ':' + t.getAttribute('aria-controls')),
+    // The editor's own group, by its accessible name. This counted every tab
+    // on the page, which worked only while the editor owned the only tablist:
+    // the LIVE panel has had one of its own since a024091, and the inspector's
+    // design editor makes a third. Two named tab groups is correct ARIA, so it
+    // was this selector that went stale, not the app.
+    tabs: [...document.querySelectorAll('[role=tablist][aria-label="Panels"] [role=tab]')].map((t) => t.textContent + ':' + t.getAttribute('aria-controls')),
+    tablists: [...document.querySelectorAll('[role=tablist]')].map((l) => l.getAttribute('aria-label') || '(unnamed)'),
+    looseTabs: [...document.querySelectorAll('[role=tab]')].filter((t) => !t.getAttribute('aria-controls') || !t.closest('[role=tablist][aria-label]')).length,
     tree: !!document.querySelector('[role=tree][aria-multiselectable=true]'),
     items: document.querySelectorAll('[role=treeitem]').length,
     layers: Editor.scene().layers.length,
@@ -89,6 +98,11 @@ const shape = (s) => JSON.stringify({ layers: s.layers.map((l) => [l.id, l.name,
     oneTabStopInTree: [...document.querySelectorAll('#layerTree .row')].filter((r) => r.tabIndex === 0).length,
   }))()`);
   check('panels are tabs, the layers a multi-select tree, the inspector labeled', a11y.tabs.length === 3 && a11y.tree && a11y.toolbar && a11y.inspector === 'Inspector', JSON.stringify(a11y.tabs));
+  // Sharper rather than looser: the tabs the count above no longer reaches are
+  // still held to something - a group that has to be named, and tabs that have
+  // to control a pane - so narrowing the count did not drop them from the test.
+  check('every tab group on the page is named, and every tab controls a pane', a11y.looseTabs === 0,
+    `${a11y.tablists.length} groups: ${a11y.tablists.join(', ')}`);
   check('one tree item per layer, one Tab stop in the tree', a11y.items === a11y.layers && a11y.oneTabStopInTree === 1, `${a11y.items} items, ${a11y.layers} layers`);
   // Focus order: Tab from the start of the page.
   // From the page's first control (a blur leaves Chrome's starting point where it was).

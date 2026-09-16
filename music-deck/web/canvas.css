@@ -43,6 +43,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .btn:disabled { opacity: .4; cursor: default; }
 .btn.icon { width: 30px; padding: 0; font-size: 16px; }
+/* A drawn mark in a top-bar button, sized by the button as the layer list's
+   glyphs are (canvas.css .row-btn .glyph) rather than filling it. */
+.btn.icon .glyph { width: 17px; height: 17px; display: block; margin: 0 auto; }
 .btn.sm { height: 26px; padding: 0 9px; font-size: .9em; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn.ghost { background: transparent; }
@@ -57,6 +60,29 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .seg button + button { border-left: 1px solid var(--line-strong); }
 .seg button[aria-checked="true"], .seg button.on { background: color-mix(in srgb, var(--accent) 28%, transparent); color: var(--fg); }
 .hint { color: var(--dim); font-size: .88em; margin: 8px 2px; }
+/* A hint that is telling you something will not work (T11's command note). */
+.hint.warn { color: #f5a524; }
+.pane-note { margin-top: 0; }
+
+/* An empty canvas used to say "No layers yet" in 12 px gray and nothing else -
+   no word about what a scene is, what it becomes, or which of the three
+   buttons that make it real to press first. It goes when the first layer
+   arrives, so it is never in the way. */
+.firstrun {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 4; width: min(540px, 82%); max-height: 86%; overflow: auto;
+  padding: 20px 22px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+}
+.firstrun h2 { margin: 0 0 8px; font-size: 1.25em; }
+.firstrun p { margin: 0 0 12px; color: var(--label); line-height: 1.5; }
+.fr-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; line-height: 1.5; }
+.fr-steps li { color: var(--label); }
+.fr-steps b { color: var(--fg); }
+.fr-steps .btn { margin: 0 2px; vertical-align: baseline; }
+.fr-note { margin: 14px 0 0 !important; font-size: .9em; color: var(--dim); }
 
 /* ---------------------------------------------------------------- top bar */
 
@@ -71,7 +97,10 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .cb-brand .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 #scenePick { min-width: 180px; max-width: 260px; }
 .cb-group { display: inline-flex; align-items: center; gap: 4px; }
-.zoom-label { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--label); font-size: .9em; }
+/* The zoom readout sat in the dimmest weight the bar has, at .9em, which is a
+   poor showing for the number that tells you how much of the scene you are
+   looking at - and it changes under you as the wheel turns. */
+.zoom-label { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; color: var(--fg); font-size: .95em; }
 .spacer { flex: 1 1 auto; }
 /* A button that keeps the exact box of the label it replaced: the bar cannot
    wrap where it did not before, and the shot the P9 goldens hide is the same
@@ -84,10 +113,24 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .cb-save:hover, .cb-save:focus-visible { color: var(--fg); }
 .cb-save[data-state="saving"], .cb-save[data-state="pending"] { color: var(--label); }
 .cb-save[data-state="error"], .cb-save[data-state="conflict"] { color: var(--bad); }
+/* It reads as a label and is a button: it opens the LIVE panel. Given a hand,
+   a hover and a mark that says something opens, it stops being a status
+   somebody is afraid to touch. */
 .cb-live {
   font-size: .8em; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
   border: 1px solid var(--line-strong); color: var(--dim);
+  cursor: pointer;
 }
+/* Drawn, not typed - the same reason the inspector's folding marker stopped
+   being U+25BE a few rules further down. */
+.cb-live::after {
+  content: ""; display: inline-block; width: 9px; height: 9px;
+  margin-left: 5px; vertical-align: -1px; opacity: .8;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 9l7 7 7-7' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 9l7 7 7-7' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.cb-live:hover, .cb-live:focus-visible { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 50%, var(--line-strong)); }
 .cb-live[data-state="scene"] { color: var(--fg); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
 .cb-live[data-state="onair"] { color: #fff; background: var(--bad); border-color: var(--bad); font-weight: 600; }
 
@@ -117,7 +160,9 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .tree { display: flex; flex-direction: column; gap: 2px; outline: none; }
 .row {
   display: flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 6px 0 calc(6px + var(--indent, 0px));
+  /* A row is a thing to hit with a mouse, not a line of text: 38 px, with the
+     eye and the lock big enough to aim at without care. */
+  height: 38px; padding: 0 6px 0 calc(6px + var(--indent, 0px));
   border-radius: calc(var(--radius) * .5);
   border: 1px solid transparent;
   cursor: default; user-select: none;
@@ -132,19 +177,31 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-name input { width: 100%; height: 24px; }
 .row-btn {
-  width: 24px; height: 24px; padding: 0; flex: 0 0 auto;
+  width: 30px; height: 30px; padding: 0; flex: 0 0 auto;
   background: transparent; border: 0; border-radius: 6px; color: var(--dim); cursor: pointer; font-size: 13px;
 }
 .row-btn:hover { color: var(--fg); background: var(--panel-2); }
 /* Sized by the button, the way deck.css sizes .icon and .icon-btn glyphs. */
-.row-btn .glyph { width: 15px; height: 15px; display: block; margin: 0 auto; }
+.row-btn .glyph { width: 17px; height: 17px; display: block; margin: 0 auto; }
 .row-btn.on { color: var(--fg); }
 .caret { width: 18px; }
+/* A type mark that is drawn rather than typed (icons.js), in the same 20 px
+   cell the typed ones sit in. */
+.row-type .glyph { width: 14px; height: 14px; display: block; margin: 0 auto; }
 
 /* sources and assets */
 .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .add-grid .btn { height: auto; min-height: 44px; flex-direction: column; gap: 2px; padding: 6px; white-space: normal; text-align: center; }
 .add-grid .btn small { color: var(--dim); font-size: .78em; }
+/* One entry is featured across the top: the PNGtuber layer was the thing
+   nobody could find. A lone icon among nine plain buttons reads as a mistake,
+   where a full-width row with its picture reads as meant. */
+.add-grid .btn.featured {
+  grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 9px;
+  text-align: left; padding: 8px 10px;
+}
+.add-grid .btn.featured .glyph { width: 26px; height: 26px; flex: 0 0 auto; color: var(--accent); }
+.add-grid .btn.featured .lines { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .btn.wide { width: 100%; }
 /* The window and screen picker: big pictures, because a title on its own does
    not tell you which of nine open windows is the one you meant. */
@@ -168,6 +225,11 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .asset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .asset { padding: 4px; height: auto; flex-direction: column; align-items: stretch; }
 .asset img, .asset video { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; background: #111; display: block; }
+/* A clip stands in the same box a picture would, so the grid keeps its shape.
+   The font-size has to be stated because `.asset span` below styles the name
+   underneath and would otherwise shrink this to label size. */
+.asset .asset-audio { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 10;
+  border-radius: 6px; background: #111; font-size: 1.8em; line-height: 1; color: var(--label); }
 .asset span { font-size: .84em; color: var(--label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- canvas */
@@ -325,7 +387,11 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
    panel, and growing its headings changes the height of all ten of them. The
    inspector's type is its own change, with the goldens rewritten as the point
    of it rather than as a side effect. The left panel's headings are done. */
-.insp h3 { font-size: .74em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 16px 0 8px; }
+/* 11.5 px a step lighter, matching what the left panel's headings were already
+   given: .pane-h is .82em in --label. These were left at 10.4 px in --dim on
+   purpose, because changing them moves the clip height of all ten P9 goldens
+   at once - which is this step rather than a side effect of another one. */
+.insp h3 { font-size: .82em; letter-spacing: .08em; text-transform: uppercase; color: var(--label); margin: 16px 0 8px; }
 .insp .f { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
 .insp .f > span { color: var(--label); font-size: .88em; }
 .insp .f .input, .insp .f select { width: 100%; }
@@ -358,13 +424,24 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 /* The deck's control vocabulary (designer.js: .field, .segmented, .check,
    .range, .color ...) on the editor's own tokens. */
 .cb-right .sec { border-top: 1px solid var(--line-strong); margin: 12px -12px 0; padding: 0 12px; }
+/* The folding section headers are the same role as .insp h3 above and move with
+   it - left behind, the inspector would have had two heading sizes. */
 .cb-right .sec > summary {
   list-style: none; cursor: pointer; padding: 10px 0; display: flex; align-items: center; gap: 8px;
-  font-size: .74em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+  font-size: .82em; letter-spacing: .08em; text-transform: uppercase; color: var(--label);
 }
 .cb-right .sec > summary::-webkit-details-marker { display: none; }
-.cb-right .sec > summary::before { content: "▸"; font-size: 1.3em; line-height: 1; width: 10px; }
-.cb-right .sec[open] > summary::before { content: "▾"; }
+/* One chevron that turns, drawn from a mask rather than typed: the folding
+   marker was the characters U+25B8 and U+25BE at about 13 px, which is both
+   small and at the mercy of whichever font Windows picked. */
+.cb-right .sec > summary::before {
+  content: ""; flex: 0 0 auto; width: 12px; height: 12px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 5l7 7-7 7' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 5l7 7-7 7' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform 120ms ease;
+}
+.cb-right .sec[open] > summary::before { transform: rotate(90deg); }
 .cb-right .sec > summary:hover { color: var(--fg); }
 .cb-right .sec > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .cb-right .count { background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 7px; letter-spacing: 0; }
@@ -406,6 +483,9 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .cb-right select.input, .cb-right textarea.input, .cb-right input.input:not([data-kind="num"]) { width: 100%; }
 .cb-right .color-row { display: flex; gap: 6px; align-items: center; }
 .cb-right .reset-dot { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; background: transparent; color: var(--label); cursor: pointer; }
+/* The arrow inside it, drawn (inspectors.js cleanPane) rather than typed. */
+.cb-right .reset-dot .glyph { width: 13px; height: 13px; display: block; margin: 0 auto; }
+.cb-right .reset-dot:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
 .cb-right .swatches { display: none; }
 .cb-right details.adv > summary { cursor: pointer; color: var(--label); font-size: .9em; margin-bottom: 6px; }
 .vars { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -424,16 +504,40 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
   background: #111; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--label); font-size: .76em;
 }
 .ap img, .ap video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Sound, which has no picture of itself. The cell already centres its content
+   and carries the file's name on the button's title, so the mark is all that
+   is needed here - a name as well would overflow a quarter-width cell. */
+.ap .ap-audio { font-size: 2em; line-height: 1; color: var(--label); }
 .ap.up { background: var(--panel-2); }
 .ap.up b { font-size: 1.5em; font-weight: 400; line-height: 1; }
 .ap.on, .scene-thumb.on, .srcgrid .src[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--fg); }
+/* Pictures, scenes and the Add cards rise a little under the pointer, the way
+   the deck's picture tiles do - one idiom across both windows, so a grid of
+   pictures behaves the same wherever it appears. The press puts it back down. */
+.ap, .scene-thumb, .srcgrid .src {
+  transition: border-color 120ms ease, transform 90ms ease, box-shadow 120ms ease;
+}
+.ap:hover, .scene-thumb:hover, .srcgrid .src:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .34);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line-strong));
+}
+.ap:active, .scene-thumb:active, .srcgrid .src:active { transform: translateY(0); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ap:hover, .scene-thumb:hover, .srcgrid .src:hover { transform: none; }
+}
 .scpick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .scene-thumb {
   padding: 0; overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
   background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: 7px; color: var(--label); font-size: .72em;
 }
 .scene-thumb-img { display: block; height: 42px; background-size: cover; background-position: center; }
-.scene-thumb > span:last-child { padding: 3px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+/* Two lines rather than an ellipsis. These names are how one piece of artwork
+   is told from another, and "Watercolor blo..." tells nobody anything. */
+.scene-thumb > span:last-child {
+  padding: 3px 4px; text-align: left; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
 .srcgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; max-height: 270px; overflow: auto; padding: 2px; }
 .srcgrid .src {
   display: flex; flex-direction: column; gap: 3px; padding: 4px; cursor: pointer; text-align: left;
@@ -470,7 +574,12 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
   display: grid; place-items: center; font-size: 12px; line-height: 1;
   background: var(--warn); color: #1a1200; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
 }
-.row-warn { flex: 0 0 auto; color: var(--warn); font-size: .85em; cursor: help; }
+.row-warn { flex: 0 0 auto; color: var(--warn); cursor: help; display: flex; }
+/* Drawn, not typed: an emoji is a different picture on every machine, and
+   these two sit beside icons that are drawn. Sized by their host, the way
+   deck.css sizes .icon and .icon-btn glyphs. */
+.row-warn .glyph { width: 14px; height: 14px; display: block; }
+.zone-badge .glyph { width: 13px; height: 13px; display: block; }
 .insp-warn { margin: 0 0 8px; padding: 5px 9px; border-radius: 8px; font-size: .86em; background: color-mix(in srgb, var(--warn) 18%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
 /* The New scene gallery. */
 .nd-box { width: min(1000px, 94vw); display: flex; flex-direction: column; gap: 12px; }
@@ -519,9 +628,16 @@ button.cb-live:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(-
 /* The window's title already says Canvas Builder: below this width its room
    keeps the bar on one row (with the live-media badge and Studio/Remote). */
 @media (max-width: 1700px) { .cb-brand { display: none; } }
-/* The grid's size only matters while the grid is on. */
-#gridBtn[aria-pressed="false"] + #gridSize { display: none; }
-/* 150% on a 1920 x 1080 screen is 1280 wide: a tighter bar still fits one row. */
+/* The grid's size used to disappear whenever the grid was switched off. A
+   control that comes and goes reads as the app mislaying things, and it moved
+   everything to its right while the pointer was on the way to it. Choosing a
+   size with the grid off is harmless, so it simply stays. */
+/* 150% on a 1920 x 1080 screen is 1280 wide. This used to claim the tighter
+   bar still fits one row; it does not, and never did - measured at 1280, 1440
+   and 1600 it wraps at every one of them, with or without the groups. So what
+   this tightening decides is how much of the bar lands on the second row, not
+   whether there is one. Keeping each group's buttons together is what stops
+   that row from opening with a lone "?". */
 @media (max-width: 1440px) {
   .cb-top { gap: 6px; padding-left: 10px; padding-right: 10px; }
   #scenePick { min-width: 140px; }

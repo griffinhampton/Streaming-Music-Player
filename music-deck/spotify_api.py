@@ -438,7 +438,65 @@ class SpotifyAccount:
         self._poke.set()
         return {"ok": True}
 
+    def add_to_queue(self, uri):
+        """Append one track to wherever Spotify is playing (S13).
+
+        Premium only, and only when something is already playing: Spotify
+        answers 403 and 404 for those two, and _explain already puts both into
+        words worth passing on rather than flattening. There is no endpoint to
+        take a track back out again - _fetch_queue has said so since P0 - so
+        this is a one-way door, and songreq.py is built around that.
+        """
+        if not self.connected():
+            return False, "not connected"
+        if not str(uri or "").startswith("spotify:"):
+            return False, "that is not a Spotify track"
+        try:
+            self._api("/me/player/queue?uri=" + urllib.parse.quote(str(uri), safe=""), "POST")
+        except Cooling:
+            return False, self.cooling_reason()
+        except urllib.error.HTTPError as exc:
+            return False, self._explain(exc)
+        except Exception as exc:
+            return False, f"Could not reach Spotify: {str(exc)[:80]}"
+        # A 204 comes back from _api as None: nothing to say means it worked.
+        # Reading that as failure would refuse every request that succeeded.
+        self._want_reconcile = True
+        self._poke.set()
+        return True, "queued"
+
     # ------------------------------------------------------------- browsing
+
+    def search(self, text, limit=1):
+        """The first few tracks matching what somebody typed, trimmed by
+        _track to exactly what the deck already shows.
+
+        Needs no extra scope - any valid token may search - so S13 asks nobody
+        to connect again.
+        """
+        if not self.connected():
+            return False, "not connected"
+        text = str(text or "").strip()
+        if not text:
+            return False, "nothing to search for"
+        try:
+            want = max(1, min(10, int(limit or 1)))
+        except (TypeError, ValueError):
+            want = 1
+        query = urllib.parse.urlencode({"q": text, "type": "track", "limit": want})
+        try:
+            data = self._api("/search?" + query) or {}
+        except Cooling:
+            return False, self.cooling_reason()
+        except urllib.error.HTTPError as exc:
+            return False, self._explain(exc)
+        except Exception as exc:
+            return False, f"Could not reach Spotify: {str(exc)[:80]}"
+        items = ((data.get("tracks") or {}).get("items")) or []
+        tracks = [t for t in (self._track(i) for i in items) if t]
+        if not tracks:
+            return False, "nothing found for that"
+        return True, tracks
 
     def cooling_for(self):
         """Seconds left before Spotify will listen to us again, 0 when clear."""
@@ -568,7 +626,7 @@ class SpotifyAccount:
                 "now": self._track(data.get("currently_playing")),
                 "queue": [t for t in (self._track(i) for i in (data.get("queue") or [])[:30]) if t],
             }
-        # A failed read keeps the last good list on screen - labelled by its
+        # A failed read keeps the last good list on screen - labeled by its
         # age - rather than blanking the overlay mid-stream.
         if result["ok"] or self._queue_cache is None or not self._queue_cache.get("ok"):
             self._queue_cache = result

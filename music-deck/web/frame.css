@@ -65,11 +65,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
   transform: translate(-50%, 50%);
 }
 
+/* min-width, not width: a badge reading "LIVE" spilled out of a fixed circle,
+   which only showed up once a scene layer drew the same badge beside it. */
 .badge {
   position: absolute; z-index: 4;
-  width: calc(2em * var(--badge-scale)); height: calc(2em * var(--badge-scale));
+  min-width: calc(2em * var(--badge-scale)); height: calc(2em * var(--badge-scale));
+  padding: 0 calc(.5em * var(--badge-scale));
+  box-sizing: border-box;
   display: grid; place-items: center;
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--badge-color);
   color: #fff;
   font-size: calc(1em * var(--badge-scale));

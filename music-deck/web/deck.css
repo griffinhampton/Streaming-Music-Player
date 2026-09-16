@@ -529,8 +529,22 @@ code {
 /* Numbered step headings that walk the streamer down the page. */
 .band-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap;
   padding: calc(12px * var(--d)) calc(16px * var(--d)) 0;
 }
+/* A full-width third row under the heading and its buttons: what a scene is,
+   said where the door to it is. Wrapping is what makes the row work - inline
+   it would fight the buttons for the same line. */
+/* The cap goes on the words, not on the flex item. As max-width on the item
+   itself it beat the 100% basis - the box no longer needed a whole line, so
+   flexbox packed it back onto the heading's row and the hint sat out to the
+   right of the buttons, which is exactly what it must not do. */
+.band-hint {
+  flex: 1 0 100%; margin: calc(6px * var(--d)) 0 0;
+  font-size: .85em; color: var(--label); line-height: 1.45;
+}
+.band-hint > span { display: block; max-width: 82ch; }
+.band-hint b { color: var(--fg); font-weight: 600; }
 /* Top-level band heading (the "Pick a window" bar) sits on the app wallpaper,
    so give it its own panel container like every other section. The inset
    variant already lives inside a panel and keeps its bare padding. */
@@ -914,13 +928,30 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   overflow: hidden;
   background: var(--panel);
 }
+/* Every tile of pictures answers a pointer the same way: it rises a little and
+   lifts off the page, the way the picture-theme tiles (.pt) always did. One
+   idiom, so the app feels like one thing rather than six grids that each
+   decided for themselves. The press puts it back down. */
+.scene-thumb, .wincard {
+  transition: border-color 130ms ease, background 130ms ease,
+              transform 90ms ease, box-shadow 130ms ease;
+}
+.scene-thumb:hover, .wincard:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0, 0, 0, .3); }
+.scene-thumb:active, .wincard:active { transform: translateY(0); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pt, .scene-thumb, .wincard { transition: border-color 130ms ease, background 130ms ease; }
+  .pt:hover, .scene-thumb:hover, .wincard:hover { transform: none; }
+}
 .scene-thumb:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
 .scene-thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .scene-thumb-img { height: 58px; background-position: center; }
+/* Two lines, as in the Canvas Builder's copy of this tile: a scene called
+   "Gaming landscape" should not arrive as "Gaming land...". */
 .scene-thumb span {
-  display: block; padding: 4px 6px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  padding: 4px 6px; line-height: 1.25;
   font-size: .74em; color: var(--dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  overflow: hidden;
 }
 .scene-thumb.on span { color: var(--fg); }
 
@@ -982,21 +1013,41 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   padding: calc(12px * var(--d)) calc(16px * var(--d)) 0;
 }
 .windows {
-  --fade: 34px;
+  /* Two widths, because the two edges are not the same shape. Behind the
+     strip, scroll-margin-inline on a card pins the leading sliver at 30 px,
+     so 48 px covers it and stops there - any wider and the fade would reach
+     past the gap and dim a card that is WHOLE, which looks worse than the
+     bug. Ahead of it there is no such bound: where the strip comes to rest
+     decides it, measured anywhere from 16 to 210 px of a 226 px card. At 104
+     px that read as a carousel; at 180 px the card looked complete except
+     for an Edit button chopped through the middle. So the trailing fade is
+     wide enough to dissolve that last button rather than slice it. */
+  --fade: 48px;
+  --fade-end: 96px;
   display: flex; align-items: stretch;
   gap: calc(18px * var(--d));
   overflow-x: auto; overflow-y: hidden;
-  scroll-snap-type: x proximity;
+  /* Mandatory, not proximity: proximity let the strip rest wherever the wheel
+     left it, and a card halfway past the edge shows its buttons sliced down
+     the middle, which reads as a broken window rather than as more to come. */
+  scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   padding: 2px 2px 4px;
 }
 .windows::-webkit-scrollbar { display: none; }
+/* The arrows are floated over the strip, so without room of their own they sit
+   on top of whatever card is at that end - measured at 1440: the last card
+   overhangs by 8 px, and the 38 px arrow covers its Go LIVE and Edit. Reading
+   as a broken card, not as a button. So the scroller gives back the width of
+   an arrow at whichever end can scroll, and the arrow floats over that. */
+.strip.can-prev .windows { margin-left: calc(42px * var(--d)); }
+.strip.can-next .windows { margin-right: calc(42px * var(--d)); }
 .strip.can-prev .windows { mask-image: linear-gradient(to right, transparent, #000 var(--fade)); }
-.strip.can-next .windows { mask-image: linear-gradient(to left, transparent, #000 var(--fade)); }
+.strip.can-next .windows { mask-image: linear-gradient(to left, transparent, #000 var(--fade-end)); }
 .strip.can-prev.can-next .windows {
-  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade-end)), transparent);
 }
 .wc-group { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
 .wc-group-label {
@@ -1008,12 +1059,13 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 
 .strip-arrow {
   position: absolute; top: 55%; z-index: 3;
-  width: 30px; height: 30px; padding: 0;
+  /* 38, not the 30 this started at: a 30 px dot is a hard thing to aim at. */
+  width: calc(38px * var(--d)); height: calc(38px * var(--d)); padding: 0;
   display: none; place-items: center;
   border-radius: 50%;
   border: 1px solid var(--line-strong);
   background: var(--panel); color: var(--fg);
-  font-size: 18px; line-height: 1;
+  font-size: 1.1em; line-height: 1;
   cursor: pointer;
   transform: translateY(-50%);
   box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
@@ -1021,6 +1073,11 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 .strip-arrow:hover { border-color: var(--accent); }
 .strip-arrow.prev { left: 8px; }
 .strip-arrow.next { right: 8px; }
+/* The fade at a scrollable edge is on .windows above, with its own --fade
+   width; a second copy here was duplication, not a fix. What made a card look
+   broken was where the strip came to REST - proximity snapping let it stop
+   anywhere, so a card could sit halved with its buttons cut through. That is
+   fixed at the snap itself, and the arrows now have room of their own. */
 .strip.can-prev .strip-arrow.prev,
 .strip.can-next .strip-arrow.next { display: grid; }
 
@@ -1053,18 +1110,42 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
 }
 .wincard.live .wc-dot { background: var(--good); box-shadow: 0 0 8px var(--good); }
 .wc-name { font-size: .97em; font-weight: 600; }
+/* A state, drawn as one: bare gray capitals in a corner read as a label for
+   something rather than the thing itself. */
 .wc-state {
-  margin-left: auto; font-size: .72em; letter-spacing: .07em;
+  margin-left: auto; font-size: .68em; letter-spacing: .07em;
   text-transform: uppercase; color: var(--dim);
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
 }
-.wincard.live .wc-state { color: var(--good); }
+.wincard.live .wc-state {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 45%, transparent);
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+}
 .wc-sub { font-size: .8em; color: var(--label); }
+/* Pushed to the bottom of the card, so a description that wraps to two lines
+   does not leave this card's buttons sitting higher than its neighbours' -
+   which is what put six Open buttons at four different heights along the bar. */
 .wc-foot {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-top: calc(4px * var(--d));
+  gap: 8px; margin-top: auto; padding-top: calc(6px * var(--d));
 }
 .wc-size { font-size: .78em; color: var(--dim); font-variant-numeric: tabular-nums; }
 
+/* Inside a card the main action is accent-tinted rather than solid with a
+   glow. One primary is a call to action; eighteen of them along a strip are
+   wallpaper, and none of them stands out. The solid .btn-primary is untouched
+   everywhere else in the deck. */
+.wincard .wc-foot .btn-primary {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--fg); box-shadow: none;
+}
+.wincard .wc-foot .btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border-color: var(--accent);
+}
 /* Once a window is live the button is a way out, not a call to action. */
 .wincard.live .wc-foot .btn-primary {
   background: transparent; box-shadow: none; color: var(--fg);
@@ -1074,10 +1155,28 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   background: color-mix(in srgb, var(--bad) 16%, transparent);
 }
 
-/* A scene card: open its output, make it the live scene, edit it. */
+/* A scene card: open its output, make it the live scene, edit it.
+
+   Three buttons do not fit one 226 px row, so as a wrapping flex they broke
+   2 + 1 and left Edit alone beside a block of dead space, each button a
+   different width. As a two-column grid the main action takes the full width
+   and the other two share the row under it: same markup, same paint hooks,
+   no ragged tail. */
 .wincard.scene { cursor: default; }
-.wincard.scene .wc-foot { flex-wrap: wrap; justify-content: flex-start; }
-.wincard.scene .wc-size { flex: 1 0 100%; }
+.wincard.scene .wc-foot {
+  display: grid; grid-template-columns: 1fr 1fr; gap: calc(6px * var(--d));
+  align-items: stretch; justify-content: stretch;
+  /* Not pushed to the bottom, unlike a component card's. Every card in the
+     strip stretches to the tallest one, and a scene card has no description to
+     fill the difference - bottom-pinning it opened a hole between the name and
+     the buttons on all twelve. Component cards need the pinning because their
+     descriptions wrap to different heights; these all share one shape, so they
+     line up with each other anyway. */
+  margin-top: 0;
+}
+.wincard.scene .wc-size { grid-column: 1 / -1; }
+.wincard.scene [data-act="scene-open"] { grid-column: 1 / -1; }
+.wincard.scene .wc-foot .btn { width: 100%; }
 .wincard.onair { border-left-color: var(--bad); }
 .wincard.onair .wc-dot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
 .wincard.onair .wc-state { color: var(--bad); }
@@ -1249,7 +1348,7 @@ body.decor-motif .app-decor .decor-right  { right: 0; }
   cursor: pointer;
   transition: border-color 120ms ease, transform 80ms ease;
 }
-.pt:hover { border-color: var(--pt-accent, var(--accent)); transform: translateY(-1px); }
+.pt:hover { border-color: var(--pt-accent, var(--accent)); transform: translateY(-2px); }
 .pt img { width: 100%; aspect-ratio: 1.4; object-fit: cover; display: block; }
 .pt-swatches { display: flex; height: 8px; }
 .pt-swatches i { flex: 1 1 0; }

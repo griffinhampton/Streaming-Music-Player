@@ -15,7 +15,7 @@ const check = (name, ok, detail = '') => { results.push([name, !!ok]); console.l
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function open(url) {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT' })).json();
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   const page = { ws, id: 0, pending: new Map(), errors: [] };
@@ -53,9 +53,15 @@ async function waitFor(page, expr, ms = 15000) {
   console.log('scene ' + sid);
 
   const page = await open(`${RIG}/canvas.html?scene=${sid}`);
-  check('the editor loads', await waitFor(page, "!!document.getElementById('pickSource')"));
+  // "Loads" has to mean the scene is in, not merely that the markup parsed.
+  // #pickSource is static, so this passed while store.scene was still null -
+  // and openSourcePicker() returns early on that, silently, taking the nine
+  // checks below with it. Only visible when three probes run back to back and
+  // the click beats the scene fetch; alone, it always won the race.
+  check('the editor loads',
+    await waitFor(page, "!!document.getElementById('pickSource') && !!(window.Editor && Editor.scene())"));
 
-  // Saving: something you can press and reach, not a grey word in a corner.
+  // Saving: something you can press and reach, not a gray word in a corner.
   // The tooltip has to be right from the first paint - setSaveState only runs
   // when the state changes, and an editor nobody has touched never changes.
   check('the save indicator can be pressed and has words',

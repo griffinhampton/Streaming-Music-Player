@@ -3,7 +3,7 @@ black circular hole with a ring drawn over it, a red square, a near-black
 box), a synthetic BGRA source keyed into the hole (mirrored), two seconds
 of encoding, one decoded frame to look at."""
 import ctypes, math, os, struct, subprocess, sys, time
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import capture, mfenc
 from ctypes import c_void_p, c_uint, c_int32, POINTER, byref
 

@@ -22,7 +22,7 @@ if echo "$LINE" | grep -q " second "; then
   echo
   wait $PROBE      # only the probe: a bare wait also waits for the deck's Chrome, which never exits
   echo "== what can draw without a CSS animation:"
-  node "/c/Users/ghamp/streaming stuff/music-deck/tools/p0/cdp.js" 9350 deck.html '(async () => {
+  node "$N/../p0/cdp.js" 9350 deck.html '(async () => {
     const docs = [["top", document]];
     document.querySelectorAll("iframe").forEach((f, i) => { try { if (f.contentDocument) docs.push(["iframe " + i, f.contentDocument]); } catch (e) {} });
     const out = {};

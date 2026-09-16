@@ -4,7 +4,7 @@ Writes an ADTS .aac file ffprobe can read and reports levels and rate.
     python audiotest.py <seconds> <out.aac> [system 0|1]
 """
 import os, sys, time
-sys.path.insert(0, r"C:\Users\ghamp\streaming stuff\music-deck")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))   # music-deck
 import audio
 
 seconds, out = float(sys.argv[1]), sys.argv[2]

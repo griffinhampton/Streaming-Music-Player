@@ -23,6 +23,7 @@
 const SNAP_PX = 6;          // snapping reach, in screen pixels
 const DRAG_PX = 3;          // a press becomes a drag past this
 const ROT_OFF = 26;         // the rotate knob, above the box, in screen pixels
+const DBL_MS = 450, DBL_PX = 6;   // two presses this close are one double-click
 // The keys that change what a drag does. They were written down in one dialog
 // behind a "?" button, which is nowhere near the hand that needs them.
 const KEY_NAME = { shift: 'Shift', alt: 'Alt', ctrl: 'Ctrl' };
@@ -58,7 +59,13 @@ function paintPrefs() {
   if (![...gs.options].some((o) => o.value === size)) gs.add(new Option(size, size));
   gs.value = size;
   $('gridSize').disabled = !prefs.grid;
-  $('safeBtn').disabled = !zonesOf(store.scene).length;
+  // Off for a scene whose shape has none - horizontal today - and it says so
+  // rather than sitting there grey: a button with no reason reads as broken.
+  const zones = zonesOf(store.scene).length;
+  $('safeBtn').disabled = !zones;
+  $('safeBtn').title = zones
+    ? 'Show where TikTok\'s own buttons and comments sit over your scene'
+    : 'Only phone scenes have these: TikTok puts its buttons and comments over a phone live, not a wide one';
 }
 for (const [id, k, name] of PREF_BUTTONS) {
   $(id).addEventListener('click', () => { setPref(k, !prefs[k]); announce(`${name} ${prefs[k] ? 'on' : 'off'}`); });
@@ -152,6 +159,7 @@ function selectRemove(ids) { for (const id of ids) store.sel.delete(id); renderA
 
 let press = null;       // a button held on the canvas that has not moved far yet
 let gesture = null;     // a drag under way: move, resize, rotate, guide, marquee
+let lastRot = { t: -1e9, x: 0, y: 0 };   // the last press on the rotate knob
 let hoverId = null;
 let lastEv = null;
 let frameReq = 0;
@@ -169,7 +177,21 @@ vp.addEventListener('pointerdown', (e) => {
   if (t.id === 'rulerX' || t.id === 'rulerY') { gesture = startGuide(t.id === 'rulerX' ? 'h' : 'v', -1, p); paintOverlay(); return; }
   if (t.closest('.ruler-corner')) return;
   const handle = t.closest('[data-handle]');
-  if (handle) { gesture = startTransform(handle.dataset.handle, p); paintOverlay(); return; }
+  if (handle) {
+    // The knob's double-click has to be picked up here: the browser fires
+    // neither click nor dblclick on a handle, because this press repaints the
+    // HUD and detaches the element it landed on (the dblclick listener below
+    // carries the measurement). Two presses close in time and place are one.
+    if (handle.dataset.handle === 'rot') {
+      const again = e.timeStamp - lastRot.t < DBL_MS
+        && Math.abs(e.clientX - lastRot.x) <= DBL_PX && Math.abs(e.clientY - lastRot.y) <= DBL_PX;
+      lastRot = again ? { t: -1e9, x: 0, y: 0 } : { t: e.timeStamp, x: e.clientX, y: e.clientY };
+      if (again) { straighten(selUnits().flatMap((u) => u.ls).map((l) => l.id)); paintOverlay(); return; }
+    }
+    gesture = startTransform(handle.dataset.handle, p);
+    paintOverlay();
+    return;
+  }
   const guide = t.closest('[data-guide]');
   if (guide) { gesture = startGuide(guide.dataset.guide, Number(guide.dataset.i), p); paintOverlay(); return; }
   const hit = hitLayer(p);
@@ -187,6 +209,15 @@ vp.addEventListener('pointerdown', (e) => {
 vp.addEventListener('pointermove', (e) => {
   if (pan) return;
   lastEv = e;
+  // The knob is being held and moved, so this press is a turn and not the
+  // first half of a double-click. It has to be the arrival of a move that
+  // says so, not how far it went: two degrees at a fit zoom is about two
+  // pixels of travel, which no distance threshold can tell from a click. Nor
+  // can it live in stepRotate, which runs again on release at the press point
+  // and so disarmed the very click it was meant to detect. Narrow on purpose -
+  // a real double-click jitters between its two presses, and that must not
+  // count, which is why this asks for a live rotate rather than any movement.
+  if (gesture && gesture.kind === 'rotate') lastRot = { t: -1e9, x: 0, y: 0 };
   if (press && !gesture) {
     if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < DRAG_PX) return;
     gesture = press.hit || press.inside ? startMove(press) : startMarquee(press);
@@ -234,7 +265,17 @@ function endPress(e, cancelled) {
   try { vp.releasePointerCapture(e.pointerId); } catch (_) { /* already gone */ }
 }
 
-// Double-click a grouped layer: just that layer, out of its group.
+/* Double-click a grouped layer: just that layer, out of its group.
+
+   The rotate knob's double-click is deliberately NOT here. Pressing the knob
+   repaints the HUD, which replaces #hud's children - so the element the
+   mousedown landed on is detached before the mouseup, and a detached target
+   has no ancestor left in the document to carry a click. The browser fires
+   neither click nor dblclick on a handle at all: measured on the rig with a
+   capture-phase listener on window, which saw zero of either while the same
+   press-and-drag rotated the layer perfectly well. It is picked up at
+   pointerdown instead. This handler survives only because a press on the
+   canvas surface lands on something that is not repainted underneath it. */
 vp.addEventListener('dblclick', (e) => {
   if (!store.scene) return;
   const hit = hitLayer(toScene(e.clientX, e.clientY));
@@ -297,7 +338,7 @@ function cancelGesture() {
   renderAll();
   pushPreview();
   scheduleSave();
-  announce('Cancelled');
+  announce('Canceled');
 }
 /** The modifiers changed with the pointer still: take the step again with them. */
 function restep(e) {
@@ -435,7 +476,15 @@ function stepRotate(g, p, m) {
     if (m.shift) r = Math.round(r / 15) * 15;
     else if (prefs.snap && !m.alt && !m.ctrl) { const q = Math.round(r / 90) * 90; if (Math.abs(r - q) <= 3) r = q; }
     d = r - r0;
-  } else if (m.shift) d = Math.round(d / 15) * 15;
+  } else if (m.shift) {
+    d = Math.round(d / 15) * 15;
+  } else if (prefs.snap && !m.alt && !m.ctrl) {
+    // The branch above snaps a single layer's own angle to a quarter turn. A
+    // selection has no one angle, so what snaps here is the turn itself -
+    // which is what brings a wobble near the start back to no turn at all.
+    const q = Math.round(d / 90) * 90;
+    if (Math.abs(d - q) <= 3) d = q;
+  }
   const cd = Math.cos(rad(d)), sd = Math.sin(rad(d));
   // Each layer turns about the selection's center: its own center swings round it, its angle grows by d.
   for (const id of g.ids) {
@@ -540,7 +589,7 @@ function paintHud() {
     for (const l of s.layers) {
       if (!zoneHits(l).length) continue;
       const q = scr(Snap.boundsOf(l.transform));
-      out.push(`<div class="zone-badge" style="left:${q.x + 4}px;top:${q.y + 4}px">⚠</div>`);
+      out.push(`<div class="zone-badge" style="left:${q.x + 4}px;top:${q.y + 4}px">${svgIcon('warn')}</div>`);
     }
   }
   if (g && g.kind === 'marquee' && g.rect) out.push(outline(g.rect, 'marquee'));
@@ -583,7 +632,7 @@ function handles(t, out, svg) {
   const q0 = scr(pointOf(t, 0.5, 0));
   const q = { x: q0.x + Math.sin(a) * ROT_OFF, y: q0.y - Math.cos(a) * ROT_OFF };
   svg.push(`<line class="stem" x1="${q0.x}" y1="${q0.y}" x2="${q.x}" y2="${q.y}"/>`);
-  out.push(`<div class="handle rot" data-handle="rot" style="left:${q.x}px;top:${q.y}px" title="Rotate (Shift: 15° steps)"></div>`);
+  out.push(`<div class="handle rot" data-handle="rot" style="left:${q.x}px;top:${q.y}px" title="Rotate (Shift: 15° steps, double-click: straighten)"></div>`);
 }
 const label = (x, y, text, cls = '') => `<div class="hud-label${cls ? ' ' + cls : ''}" style="left:${x}px;top:${y}px">${esc(text)}</div>`;
 function seg(svg, a, b, cls) {
@@ -755,6 +804,26 @@ function distribute(axis) {
   if (done) announce(`Spaced out ${units.length} layers`);
   return done;
 }
+/** Back to straight. Each layer turns about its own center, so straightening
+    puts the letters level without walking the box across the canvas - which
+    is what setting the inspector's Rotation field to 0 does, and the reason
+    that field was never the answer to "how do I get this straight again". */
+function straighten(ids) {
+  if (!ids.length || !store.scene) return false;
+  let n = 0;
+  const done = exec('straighten', (sc) => {
+    for (const id of ids) {
+      const l = sc.layers.find((x) => x.id === id);
+      if (!l || !((l.transform.rotation || 0) % 360)) continue;
+      const c = pointOf(l.transform, 0.5, 0.5);
+      const nt = placeAt(l.transform, l.transform.w, l.transform.h, 0.5, 0.5, c, 0);
+      Object.assign(l.transform, { x: rpos(nt.x, false), y: rpos(nt.y, false), rotation: 0 });
+      n++;
+    }
+  });
+  if (done) announce(n === 1 ? 'Straightened' : `Straightened ${n} layers`);
+  return done;
+}
 /** Up or down the stack. To the back stops above background layers. */
 function arrange(ids, where) {
   if (!ids.length || !store.scene) return false;
@@ -896,7 +965,12 @@ document.addEventListener('paste', (e) => {
   const text = cd ? cd.getData('text/plain').trim() : '';
   if (text) {
     e.preventDefault();
-    addLayer(makeLayer('text', text.split('\n')[0].slice(0, 40) || 'Text', Object.assign(clone(ADD[0].props), { text: text.slice(0, 2000) }), 900, 140));
+    // By type, not by position. This cloned ADD[0], which is the PNGtuber
+    // entry, so pasted text arrived carrying idle/talking/blink props nothing
+    // reads - and without the text entry's own size, so it drew at
+    // TYPES.text's 48px fallback where a palette-added one is 72.
+    const textAdd = ADD.find((a) => a.type === 'text') || { props: {} };
+    addLayer(makeLayer('text', text.split('\n')[0].slice(0, 40) || 'Text', Object.assign(clone(textAdd.props), { text: text.slice(0, 2000) }), 900, 140));
     return;
   }
   const kept = readClip();          // nothing on the clipboard we can read: what was copied here last
@@ -986,6 +1060,7 @@ function layerMenu() {
     { row: units === 1 ? 'Align to the canvas' : 'Align', items: ALIGN.map(([k, t]) => ({ label: t, icon: ALIGN_ICON[k], off: !units, run: () => alignSel(k) })) },
     { label: 'Space out across', off: units < 3, run: () => distribute('h') },
     { label: 'Space out down', off: units < 3, run: () => distribute('v') },
+    { label: 'Straighten', off: !sel.some((l) => (l.transform.rotation || 0) % 360), run: () => straighten(ids) },
     '-',
     { label: 'Group', key: 'Ctrl+G', off: ids.length < 2, run: () => groupLayers(ids) },
     { label: 'Ungroup', key: 'Ctrl+Shift+G', off: !sel.some((l) => l.group), run: () => ungroupLayers(ids) },

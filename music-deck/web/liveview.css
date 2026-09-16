@@ -1,0 +1,101 @@
+/* The Live view (S9): the desk you run a show from - what is on air, how it is
+   going out, the switcher, sound and chat, in one window.
+
+   Same tokens as every other page, declared here because base.css declares
+   none of them (it is the custom scrollbars and nothing else); liveview.js
+   then overwrites them with the user's own colors from config, exactly as the
+   scene remote does. The controls are the .lp- family from livepanel.css, so
+   the docked Sound and chat panels look like they belong rather than like two
+   dialogs that wandered in. */
+:root {
+  --bg: #000000; --panel: #0a0a0c; --line: #1b1b22; --fg: #f0f0f4; --dim: #7e7e8c; --accent: #8b5cf6;
+  --line-strong: color-mix(in srgb, var(--fg) 18%, var(--line)); --bad: #f87171; --good: #34d399;
+  --radius: 12px; --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--font); overflow: hidden; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.lv-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-strong); }
+.lv-brand { display: flex; align-items: center; gap: 8px; }
+.lv-brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.lv-spacer { flex: 1 1 auto; }
+.lv-btn {
+  height: 32px; padding: 0 14px; cursor: pointer; font: inherit; white-space: nowrap;
+  background: color-mix(in srgb, var(--fg) 6%, var(--panel)); color: var(--fg);
+  border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .6);
+}
+.lv-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); }
+.lv-btn:disabled { opacity: .45; cursor: default; }
+.lv-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+/* Something is waiting for you. Not the on-air red, which means the internet
+   can see you - this is only "there is a decision to make". */
+.lv-btn.waiting { border-color: #f5a524; color: #f5a524; font-weight: 600; }
+.lv-btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+
+/* Three jobs, three columns; each scrolls on its own so a long chat cannot
+   push the health numbers off the bottom of the window. */
+.lv-body {
+  flex: 1 1 auto; min-height: 0; display: grid; gap: 12px; padding: 12px;
+  grid-template-columns: minmax(360px, 1.15fr) minmax(230px, .62fr) minmax(320px, 1fr);
+}
+.lv-col { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
+.lv-col.lv-chat, .lv-col.lv-scenes { overflow: hidden; }
+.lv-h { margin: 0; font-size: .74em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+
+/* The program monitor: a 16:9 well that keeps its shape whether or not there
+   is a picture in it, so the column does not jump when the output opens. */
+.lv-monitor {
+  position: relative; aspect-ratio: 16 / 9; display: grid; place-items: center; overflow: hidden;
+  background: #000; border: 1px solid var(--line-strong); border-radius: var(--radius);
+}
+.lv-monitor img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lv-none { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; text-align: center; color: var(--dim); }
+.lv-none p { margin: 0; font-size: .9em; max-width: 34ch; }
+.lv-cap { margin: 0; font-size: .9em; color: var(--dim); }
+.lv-cap span { color: var(--fg); font-weight: 600; }
+
+.lv-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lv-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .6); overflow: hidden; }
+.lv-seg button { height: 30px; padding: 0 14px; background: transparent; border: 0; color: var(--dim); cursor: pointer; font: inherit; }
+.lv-seg button + button { border-left: 1px solid var(--line-strong); }
+.lv-seg button[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--fg); }
+.lv-dur { display: flex; align-items: center; gap: 6px; font-size: .86em; color: var(--dim); }
+.lv-dur .lp-input { width: auto; height: 30px; }
+
+.lv-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.lv-scene {
+  display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 2px 8px;
+  padding: 8px 10px; cursor: pointer; text-align: left; font: inherit; color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 4%, var(--panel)); border: 1px solid var(--line-strong); border-radius: calc(var(--radius) * .7);
+}
+.lv-scene:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); }
+.lv-scene.on { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
+.lv-num { grid-row: span 2; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--dim); font-size: .8em; font-weight: 600; }
+.lv-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-fmt { grid-column: 2; font-size: .76em; color: var(--dim); }
+.lv-air { grid-column: 3; grid-row: 1 / span 2; font-size: .72em; font-weight: 700; color: #fff; background: var(--bad); padding: 2px 7px; border-radius: 999px; }
+.lv-hint { margin: 0; font-size: .8em; color: var(--dim); }
+
+/* Where a docked panel sits. The panel draws its own contents; this draws the
+   box around it, so it matches the monitor and the scene list beside it. */
+.lv-dock {
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius);
+}
+.lv-dock.grow { flex: 1 1 auto; overflow: hidden; }
+
+@media (max-width: 1100px) {
+  .lv-body { grid-template-columns: 1fr 1fr; }
+  .lv-col.lv-chat { grid-column: span 2; min-height: 320px; }
+}
+
+/* Who gifted the most coins this stream (gifts.py), under the coin tiles. Its
+   own class: it was .lv-top for a while, which is the page's top bar - and it
+   took the bar's flex row and border, running its lines together. */
+.lv-gifters { margin: 6px 0 2px; padding-left: 22px; font-size: 13px; color: var(--fg); }
+.lv-gifters li { margin: 2px 0; overflow-wrap: anywhere; }
+.lv-gifters:empty { display: none; }

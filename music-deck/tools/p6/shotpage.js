@@ -4,7 +4,13 @@ const fs = require('fs');
 const [port, url, w, h, file] = process.argv.slice(2);
 setTimeout(() => { console.log('TIMEOUT'); process.exit(3); }, 30000).unref();
 (async () => {
-  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: 'PUT' })).json();
+  // encodeURIComponent, not the raw string and not encodeURI: Chrome reads
+  // /json/new?<url> as its own query string, so an unencoded `&` turns the
+  // page's second parameter into a parameter of /json/new and the page loads
+  // without it. This asked for frame.html?kind=camera&preview=1 and
+  // photographed frame.html?kind=camera - a standalone window, hint pill and
+  // all, in place of the preview the shot claimed to show.
+  const t = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   let id = 0; const pending = new Map(); const errors = [];

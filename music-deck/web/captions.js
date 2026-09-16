@@ -111,7 +111,14 @@ function render(c, serverTime) {
   const s = el.stage;
   if (!c || !c.on) {
     s.dataset.state = 'off';
-    el.status.textContent = 'Captions are off — press Start in the deck';
+    // Why the box is empty is worth saying, the way queue.js says its own
+    // reason. What to do about it is not, and this branch is the reason: it
+    // only ever renders on stream. In the deck's preview demoTick() calls
+    // render({ on: true }) from the first tick and every 2.2 s after it, so
+    // the stage is never 'off' there and this line is never reached - the
+    // "press Start in the deck" it used to carry could only ever be read by
+    // an audience with no deck to press it in.
+    el.status.textContent = 'Captions are off';
     return;
   }
   if (c.state === 'starting') {
@@ -121,7 +128,21 @@ function render(c, serverTime) {
   }
   if (c.state === 'unavailable') {
     s.dataset.state = 'unavailable';
-    el.status.textContent = c.error || 'Captions unavailable';
+    // The same reasoning as 'off' above, with a sharper edge, because c.error
+    // is whatever the engine threw. Measured, not guessed: a model folder
+    // missing its weights makes faster-whisper say "Unable to open file
+    // 'model.bin' in model 'C:\Users\<name>\...\cache\models\small.en'", and
+    // captions_whisper.py:440 sends that on as "Whisper could not load: ..."
+    // - 130 characters against this machine's own store, 63 of them the
+    // path to it, drawn on stream at overlay size. The tamer branch is no better: captions.py:130 says
+    // "press Download on the Captions tab", an instruction to whoever is
+    // holding a deck the audience does not have.
+    // Nothing is lost by keeping both off the overlay. The deck already
+    // renders c.error in full (deck.js:3214), which is the surface that is
+    // private and the one place the path is the useful part. Capping it at
+    // the source would blind the deck and still leak, since the path starts
+    // well inside the first 160 characters.
+    el.status.textContent = 'Captions unavailable';
     return;
   }
   s.dataset.state = 'on';

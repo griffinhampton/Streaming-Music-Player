@@ -42,8 +42,8 @@ jobs:
           python -m pip install --disable-pip-version-check -r music-deck/requirements.txt
 
       - name: Check it at least parses
-        # No test suite yet, so this is the honest minimum: every module
-        # compiles, and the front end is syntactically valid.
+        # Every module compiles, and the front end is syntactically valid -
+        # before the unit tests below, so a syntax error says so plainly.
         run: |
           python -m compileall -q music-deck
           node --version
@@ -74,7 +74,7 @@ jobs:
             --name "$env:APP_NAME" --icon "$PWD\music-deck.ico" `
             --version-file "$PWD\version.txt" `
             --add-data "$PWD\web;web" --add-data "$PWD\smtc.ps1;." `
-            --add-data "$PWD\captions.ps1;." `
+            --add-data "$PWD\captions.ps1;." --add-data "$PWD\tts.ps1;." `
             --add-data "$PWD\music-deck.ico;." `
             --hidden-import tkinter --hidden-import tkinter.filedialog `
             --hidden-import tkinter.messagebox `
@@ -102,6 +102,14 @@ jobs:
             }
             if (-not $ok) { throw 'The built app did not serve deck.html within 30s' }
             Write-Host 'Built app served deck.html - good.'
+            # And what the TikTok work added, from the built app itself: the
+            # Live view, the chat and the coin ledger. The unit tests run from
+            # source, so only this sees them as PyInstaller packed them.
+            foreach ($path in 'liveview.html', 'api/chat/status', 'api/gifts/ledger', 'api/commands') {
+              $r = Invoke-WebRequest "http://127.0.0.1:8713/$path" -UseBasicParsing -TimeoutSec 5
+              if ($r.StatusCode -ne 200) { throw "The built app answered $($r.StatusCode) for /$path" }
+              Write-Host "Built app served /$path - good."
+            }
           } finally {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           }
