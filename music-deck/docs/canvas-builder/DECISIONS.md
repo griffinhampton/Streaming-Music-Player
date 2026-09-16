@@ -1091,7 +1091,11 @@ and that the page will be opened again if it stays that way. The seconds are
 reported in steps of fifteen and never rounded up, because that number rides
 the state feed: one ticking every second would put the whole state on the wire
 every second, for every window open - the mistake the gift counter is kept out
-of the snapshot for.
+of the snapshot for. `keyleak.js` exists to catch exactly that and could not
+have: it runs with no reader connected, so none of the reader's fields are in
+the payload it watches. So the guard sits where a reader is running instead -
+`ttgifts.js`, with the fixture's socket deliberately quiet, counts whole-state
+sends over ten seconds and holds them near the heartbeat's five.
 
 **The whole chain, on a real live.** The same run is what checked it: the rig's
 own server pointed at a public live for eight minutes, sampled every thirty

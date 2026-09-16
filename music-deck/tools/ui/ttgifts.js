@@ -584,6 +584,17 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   check('the chat panel says TikTok has gone quiet, and why the coins stopped',
     /sent nothing for/.test(quietHint) && /gifts and coins cannot arrive/.test(quietHint), J(quietHint));
   await closePage(quietPanel);
+  // And the reader's own fields must not push the whole state out on a timer.
+  // `quiet` climbs while the socket says nothing, and one that changed every
+  // second would put the entire state on the wire every second, to every window
+  // open - the mistake chat's message counter made (server.py _change_key).
+  // keyleak.js guards the feed, but with no reader connected it never sees
+  // these fields; this is the one probe that has one running.
+  const sends0 = ((await getJ('/api/debug/mem')).hub || {}).sends;
+  await sleep(10000);
+  const sends1 = ((await getJ('/api/debug/mem')).hub || {}).sends;
+  check('a quiet reader does not push the whole state out on a timer',
+    sends1 - sends0 <= 8, `${sends1 - sends0} sends in 10 s; the heartbeat alone is 5`);
 
   // ------------------------------------------ 10. opened before going live
   // The page shows no live and opens no room socket; the reader looks again
