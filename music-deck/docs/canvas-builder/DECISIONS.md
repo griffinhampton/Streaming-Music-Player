@@ -1067,11 +1067,20 @@ looked like twenty times the worst case, and it shipped.
 It was wrong within the hour. Watching one real live end to end, the socket
 fell silent for **157 seconds** in the middle of a stream that was still
 running - the page's own drawing took chat over meanwhile, as it is meant to -
-and then came back by itself. Three minutes would have fired 23 seconds later.
-A count of gaps in three-minute windows cannot see a lull longer than its
-window, which is the flaw in how the first number was measured, not in the
-rooms. Ten minutes is four times the longest lull yet seen, and a socket dead
-for ten minutes has cost the stream its gifts either way.
+and then came back by itself. Three minutes would have fired 23 seconds later,
+on a socket that was about to fix itself.
+
+The first guess at why was that gaps counted in three-minute windows cannot
+show a lull longer than the window. That guess was wrong as well, and is worth
+keeping for what it cost: two more rooms watched fifteen minutes each - 2,251
+frames, none bad - still never went more than 7.1 seconds without one, nine in
+ten under 1.6. Healthy rooms are quiet for seconds, whatever the window. So the
+157 seconds was no lull at all but an outage the page recovered from, which is
+a different thing to sit above. The threshold is above an outage that heals
+itself (minutes), not merely above ordinary quiet (seconds), and below leaving
+a stream's gifts to a socket that never heals - the 28 minutes this was built
+for. Three measurements, two of them overturning what the last one was taken to
+mean; the number stands at ten minutes and the reasoning is now the right one.
 
 **The whole chain, on a real live.** The same run is what checked it: the rig's
 own server pointed at a public live for eight minutes, sampled every thirty

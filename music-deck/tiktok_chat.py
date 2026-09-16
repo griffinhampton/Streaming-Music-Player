@@ -74,15 +74,16 @@ SOCKET_FRESH = 60
 # reading nothing, gifts included, and never looking again, because "there is
 # a live" was true from the moment one had ever been heard.
 #
-# How long is long enough was measured twice, and the second time moved it.
-# Five rooms watched three minutes each never went more than 7.8 seconds
-# without a frame, which made three minutes look like a wide margin. Then one
-# real live watched end to end (2026-09-15) fell silent for 157 seconds in the
-# middle of a stream that was still running, and came back on its own: three
-# minutes would have reloaded the streamer's page 23 seconds later, for
-# nothing, and lost the gifts arriving as it reloaded. Ten minutes is four
-# times the longest lull yet seen, and still finds a dead socket long before a
-# stream is over.
+# Ten minutes, from three goes at measuring it (2026-09-15, 2026-09-16). A
+# healthy room is never quiet for long: seven rooms, watched three and then
+# fifteen minutes at a time, never went more than 7.8 seconds between frames,
+# and nine in ten gaps were under two. But one live watched end to end fell
+# silent for 157 seconds in the middle of a running stream and then came back
+# by itself - an outage the page healed, not a lull, which three minutes would
+# have reloaded the streamer's page over, 23 seconds before it fixed itself.
+# So this is not set above ordinary quiet, which is seconds; it is set above an
+# outage that recovers, which was minutes, and below leaving a stream's gifts
+# to a socket that never recovers - the 28 minutes this exists for.
 SILENT = 600
 # Opened before the streamer is live, the live page shows the live has ended
 # and opens no room socket (seen 2026-09-15). Whether TikTok's page moves on to
