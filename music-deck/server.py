@@ -2920,7 +2920,15 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 first = 60
             tiktok_chat.TikTokAdapter.reopen_first = first
-            return self._json({"ok": True, "base": tiktok_chat.TikTokAdapter.base, "reopen": first})
+            # And how long a room socket may say nothing before the page is
+            # opened again (tiktok_chat.SILENT): a probe cannot wait minutes,
+            # and the probes that are not about silence want it never to fire.
+            try:
+                silent = max(2, min(3600, int(data.get("silent") or tiktok_chat.SILENT))) if base else tiktok_chat.SILENT
+            except (TypeError, ValueError):
+                silent = tiktok_chat.SILENT
+            tiktok_chat.TikTokAdapter.silent_after = silent
+            return self._json({"ok": True, "base": tiktok_chat.TikTokAdapter.base, "reopen": first, "silent": silent})
         if path == "/api/debug/gift":
             # A test hook for the Gift layer (T8), and the test rig's alone -
             # gated on TEST_RIG, not the port, because a gift that reached a

@@ -401,13 +401,56 @@ class WhatItMayDoInThePage(unittest.TestCase):
         a.page["typing"] = False
         a._loaded_at = now - 10
         a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")
-        self.assertFalse(a._reopen_due(now + 10 * tt.REOPEN_MAX), "a live: never")
+        # A live still being heard: never. One heard once and quiet ever since
+        # is opened again - test_a_live_gone_quiet_is_opened_again says why.
+        self.assertFalse(a._reopen_due(now + 5), "a live still being heard: never")
         self.assertEqual(a._wait, first, "and the wait starts over")
         self.assertTrue(a.status()["page"]["live"])
         self.assertFalse(a.status()["page"]["waiting"])
         b = tt.TikTokAdapter("probe", lambda m: None)
         b._event("Page.frameNavigated", {"frame": {"id": "m", "url": "https://www.tiktok.com/@someoneelse/live"}})
         self.assertFalse(b._reopen_due(time.monotonic() + 10 * tt.REOPEN_MAX), "someone else's page: never")
+
+    def test_a_live_gone_quiet_is_opened_again(self):
+        """Measured on a real live: the room socket stopped delivering and the
+        reader sat there for 28 minutes still saying there was a live, reading
+        nothing - gifts arrive on that socket and no other. Silence for
+        SILENT is now a reason to open the page again, with the same wait."""
+        import time
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+        now, first = time.monotonic(), tt.TikTokAdapter.reopen_first
+        a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")
+        a._loaded_at = now - 600                      # the page loaded ten minutes ago
+        a.room.heard = now - 10                       # and its socket spoke ten seconds ago
+        self.assertFalse(a._reopen_due(now), "still being heard: never")
+        a.room.heard = now - tt.SILENT - 1            # now it has said nothing for that long
+        self.assertTrue(a._reopen_due(now), "quiet that long: the page is opened again")
+        self.assertTrue(a.status()["page"]["live"], "the page did show a live; it has gone quiet")
+        self.assertGreaterEqual(a.status()["page"]["quiet"], tt.SILENT)
+        a._loaded_at = now                            # the page it has just opened again
+        self.assertFalse(a._reopen_due(now + 5), "and the wait has doubled")
+        self.assertTrue(a._reopen_due(now + 2 * first + 1), "still quiet after twice the wait")
+
+    def test_how_long_it_may_be_quiet_is_the_rigs_to_shorten(self):
+        import time
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        a._event("Page.frameNavigated", {"frame": {"id": "main", "url": "https://www.tiktok.com/@probe/live"}})
+        now = time.monotonic()
+        a.room.opened("9", "wss://webcast-ws.us.tiktok.com/webcast/im/x/")
+        a.room.heard = now - 20
+        a._loaded_at = now - tt.TikTokAdapter.reopen_first
+        self.assertFalse(a._reopen_due(now), "twenty seconds is nothing")
+        # Set on the class, as the rig's hook sets it (server.py): a reader
+        # already running picks it up, which is what a probe needs.
+        was = tt.TikTokAdapter.silent_after
+        self.addCleanup(setattr, tt.TikTokAdapter, "silent_after", was)
+        tt.TikTokAdapter.silent_after = 5
+        self.assertTrue(a._reopen_due(now))
+
+    def test_a_socket_never_heard_says_so(self):
+        a = tt.TikTokAdapter("probe", lambda m: None)
+        self.assertIsNone(a.status()["page"]["quiet"])
 
     def test_the_page_script_says_only_whether_a_field_has_focus(self):
         """For the reopening's sake the page reports that the streamer is

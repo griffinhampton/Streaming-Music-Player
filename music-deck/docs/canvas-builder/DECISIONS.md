@@ -995,6 +995,37 @@ now said only when this page showed the button and then took it away - the
 streamer signing in there - and otherwise it is null, not known. Nothing drawn
 changes: the chat panel only ever acts on "signed out".
 
+## Gone quiet, and the way back (2026-09-15)
+
+Half an hour of the shipped reader on one real live, to see what a stream's
+length does to it (`tools/ui/ttsoak.py`, headless, signed out, counts only).
+The cost was the good news: memory settled at about 920 MB and stayed there,
+and the whole Chrome at 10 per cent of one core - better than the fifth of a
+core measured over a minute, because the first minute is the page loading.
+
+The bad news was in the same numbers. After two minutes the room socket
+delivered nothing more - the live ended, or the socket died without closing -
+and for the twenty-eight minutes after that the reader said there was a live,
+on the streamer's own page, and never looked again. Nothing could have brought
+it back: "there is a live" was true from the moment one had ever been heard
+since the page loaded, and that is what the looking-again rule is told to leave
+alone. Chat would have limped on from the page's own drawing; gifts, coins, the
+goal and the top gifters arrive on the room socket and nowhere else, so they
+would have stopped dead while the app looked well.
+
+**So silence is a reason to look again.** Nothing at all on the room socket for
+`SILENT` - three minutes, where a healthy room delivered 26 to 98 frames a
+minute - and the page is opened again, on the same doubling wait as a page with
+no live on it, to at most five minutes. A live that really has ended then shows
+as waiting, and the next one is found; a socket that died is replaced by the
+new page's. The reader also reports how long it has been quiet (`quiet`, in
+seconds), which is what the check above is made of.
+
+**Checked** in `tests/test_tiktok_chat.py` - quiet for that long opens the page
+again and doubles the wait, being heard never does, and the rig may shorten it
+- and on the rig by `ttgifts.js`: nothing sent for a few seconds, and the
+reader opens the page again by itself and reads the gift that comes after.
+
 ## A new live, a new count (2026-09-15)
 
 "Needs N coins gifted this stream", the Coin goal and Top gifters all mean

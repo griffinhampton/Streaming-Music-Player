@@ -344,6 +344,10 @@ starts it again by hand.
 a live, hidden - which is how it runs unless you ask to see it. Shown as a
 window it may use more.
 
+**If TikTok goes quiet**, the reader opens your live page again by itself: a
+room socket can stop delivering without closing, and gifts arrive on nothing
+else. Three minutes of silence is enough for it to look again.
+
 **If chat stops arriving**, TikTok may have changed its page. From the
 `music-deck` folder, `python tools/ui/ttrealreader.py <someone who is live>`
 checks the reader against a real live and says which part stopped matching.

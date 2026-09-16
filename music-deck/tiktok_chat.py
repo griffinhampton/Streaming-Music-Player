@@ -68,6 +68,14 @@ MAX_FRAME = 16 * 1024 * 1024
 # SOCKET_FRESH seconds.
 PAGE_WAIT = 15
 SOCKET_FRESH = 60
+# A page whose room socket says nothing at all for this long is not being read
+# any more: the live ended, or the socket died without closing. Measured on a
+# real live (2026-09-15): a healthy room delivered 26 to 98 frames a minute,
+# and a reader whose socket went quiet sat there for 28 minutes still saying
+# there was a live - reading nothing, gifts included, and never looking again,
+# because "there is a live" was true from the moment one had ever been heard.
+# So silence for this long is a reason to open the page again, like no live.
+SILENT = 180
 # Opened before the streamer is live, the live page shows the live has ended
 # and opens no room socket (seen 2026-09-15). Whether TikTok's page moves on to
 # the live by itself when it starts was not seen either way - it asks
@@ -501,6 +509,7 @@ class TikTokAdapter(chat.Adapter):
     # live. Called through the class, like on_gift.
     on_room = None
     reopen_first = 60        # REOPEN_MAX says why
+    silent_after = SILENT    # SILENT says why; the rig shortens it
 
     def __init__(self, channel, on_message, log=None):
         super().__init__((channel or "").strip().lstrip("@#"), on_message, log)
@@ -538,26 +547,35 @@ class TikTokAdapter(chat.Adapter):
         waiting = self._own() and not live and (self._looking or time.monotonic() - self._loaded_at >= PAGE_WAIT)
         return dict(super().status(), page=dict(self.page, socket=bool(self.room.sockets), gifts=self.room.gifts,
                                                 chat_from=self._chat_from(), own=self._own(), live=live,
-                                                waiting=waiting, looks=self.looks, shown=not self.headless))
+                                                waiting=waiting, looks=self.looks, shown=not self.headless,
+                                                quiet=self._quiet()))
 
     def _live(self):
         """Has the page that last loaded shown a live - its room socket heard,
         or (the fallback) a line of its chat read - since it loaded?"""
         return self.room.heard >= self._loaded_at or self._drawn_at >= self._loaded_at
 
+    def _quiet(self):
+        """Seconds since the room socket last said anything - a gift arrives on
+        no other - or None if it has not been heard at all yet."""
+        return None if self.room.heard == float("-inf") else round(time.monotonic() - self.room.heard)
+
     def _reopen_due(self, now):
         """Time to open the streamer's own page again? Twice as long between
         looks each time; the wait starts over once there is a live.
 
-        On their page with no live on it (REOPEN_MAX) - never under someone
-        typing in the window. On any other page only when hidden: a window on
-        screen is the streamer's to steer, but a hidden one has nobody to bring
-        it back when TikTok moves an ended live on to another."""
+        On their page with no live on it (REOPEN_MAX), or with one that has
+        gone quiet - nothing at all on the room socket for SILENT, which is the
+        live ended or the socket dead, and gifts arrive on no other - never
+        under someone typing in the window. On any other page only when hidden:
+        a window on screen is the streamer's to steer, but a hidden one has
+        nobody to bring it back when TikTok moves an ended live on to
+        another."""
         if not self._own():
             if not self.headless or now - self._left_at < self._wait:
                 return False
             self._left_at = now
-        elif self._live():
+        elif self._live() and now - self.room.heard < type(self).silent_after:
             self._wait = type(self).reopen_first
             self._looking = False
             return False

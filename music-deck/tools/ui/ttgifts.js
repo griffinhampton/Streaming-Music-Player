@@ -533,6 +533,29 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   await sleep(2500);
   check('and reads it again', await n('Returned') === 1);
 
+  // --------------------------------- 9c. a live that has gone quiet
+  // A room socket can stop delivering without closing - seen on a real live,
+  // where the reader sat for 28 minutes saying there was a live and reading
+  // nothing. Nothing is sent here for a while, and the reader opens the page
+  // again by itself (tiktok_chat.SILENT), then reads what comes after.
+  await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 3, silent: 5 });
+  const quietLooks = (((await tiktokStatus()) || {}).page || {}).looks || 0;
+  const quietLoads = pageLoads;
+  let woke = null;
+  for (let i = 0; i < 80; i++) {                       // nothing sent: let it go quiet
+    await sleep(250); woke = await tiktokStatus();
+    if (woke && woke.page && woke.page.looks > quietLooks && woke.page.own === true) break;
+  }
+  check('a live that has gone quiet is opened again by itself',
+    woke && woke.page && woke.page.looks > quietLooks && pageLoads > quietLoads, J(woke && woke.page));
+  // Back to a silence nothing here will reach, so the checks below are not
+  // interrupted by a reader that is right to be impatient.
+  await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 3, silent: 3600 });
+  for (let i = 0; i < 40; i++) { await sleep(250); st = await tiktokStatus(); if (st && st.page && st.page.live) break; }
+  toRoom(G({ from: user(406, 'AfterQuiet', 'afterquiet'), streak: false }));
+  await sleep(2500);
+  check('and reads the live again afterwards', await n('AfterQuiet') === 1, J(st && st.page));
+
   // ------------------------------------------ 10. opened before going live
   // The page shows no live and opens no room socket; the reader looks again
   // by itself (tiktok_chat.py _reopen_due), and finds the live once it starts.
