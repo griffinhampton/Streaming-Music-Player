@@ -69,12 +69,15 @@ MAX_FRAME = 16 * 1024 * 1024
 PAGE_WAIT = 15
 SOCKET_FRESH = 60
 # A page whose room socket says nothing at all for this long is not being read
-# any more: the live ended, or the socket died without closing. Measured on a
-# real live (2026-09-15): a healthy room delivered 26 to 98 frames a minute,
-# and a reader whose socket went quiet sat there for 28 minutes still saying
-# there was a live - reading nothing, gifts included, and never looking again,
-# because "there is a live" was true from the moment one had ever been heard.
-# So silence for this long is a reason to open the page again, like no live.
+# any more: the live ended, or the socket died without closing. Measured on
+# real lives (2026-09-15): five rooms watched three minutes each never went
+# more than 7.8 seconds without a frame - TikTok keeps that socket busy even
+# in a room whose chat was four lines in three minutes - while a reader whose
+# socket went quiet sat there for 28 minutes still saying there was a live,
+# reading nothing, gifts included, and never looking again, because "there is
+# a live" was true from the moment one had ever been heard. So this is more
+# than twenty times the longest silence a healthy room showed, and a reason to
+# open the page again, like no live at all.
 SILENT = 180
 # Opened before the streamer is live, the live page shows the live has ended
 # and opens no room socket (seen 2026-09-15). Whether TikTok's page moves on to

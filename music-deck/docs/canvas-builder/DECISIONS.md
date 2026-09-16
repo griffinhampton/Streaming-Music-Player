@@ -1014,9 +1014,17 @@ goal and the top gifters arrive on the room socket and nowhere else, so they
 would have stopped dead while the app looked well.
 
 **So silence is a reason to look again.** Nothing at all on the room socket for
-`SILENT` - three minutes, where a healthy room delivered 26 to 98 frames a
-minute - and the page is opened again, on the same doubling wait as a page with
-no live on it, to at most five minutes. A live that really has ended then shows
+`SILENT` - three minutes - and the page is opened again, on the same doubling
+wait as a page with no live on it, to at most five minutes.
+
+**Three minutes, against what a healthy room does.** A threshold that a quiet
+live could trip would reload the streamer's page for nothing, losing a few
+seconds of gifts each time, so the gaps were counted before it was trusted:
+five real rooms, three minutes each, headless and signed out. The longest gap
+between frames on any of them was 7.8 seconds, and nine in ten were under two -
+including a room whose chat was four lines in three minutes and whose socket
+still sent 267 frames, because TikTok keeps it busy whether or not anyone is
+talking. Three minutes is more than twenty times the worst of that. A live that really has ended then shows
 as waiting, and the next one is found; a socket that died is replaced by the
 new page's. The reader also reports how long it has been quiet (`quiet`, in
 seconds), which is what the check above is made of.
