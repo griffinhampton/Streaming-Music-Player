@@ -156,6 +156,7 @@ const ChatPanel = (() => {
     // Hidden unless asked (tiktok_chat.py): running, the reader says which kind
     // it is; not running, the choice kept is what Open TikTok will start.
     const shown = tt ? pg.shown === true : saved.show;
+    const quietFor = Math.max(1, Math.round((pg.quiet || 0) / 60));
     $('[data-cp="tthint"]').textContent = !tt
       ? (shown ? 'Opens your TikTok live page in a window of its own and reads its chat and gifts - nothing leaves this PC. You do not have to sign in there.'
         : 'Reads your TikTok live page in the background - no window, muted - and takes its chat and gifts. Nothing leaves this PC, and you do not have to sign in.')
@@ -174,6 +175,11 @@ const ChatPanel = (() => {
       // window is on some other page. Which one cannot be told, so say both.
       : !reading ? (shown ? 'Waiting for your live page. If the TikTok window shows something else, open your live page there - the chat is read as soon as TikTok shows it.'
         : 'Waiting for your live page to load.')
+      // Heard nothing for a while (tiktok_chat's quiet). Chat limps on from the
+      // page's own drawing, so the panel would otherwise say all is well while
+      // gifts - which arrive on the room socket and nowhere else - stopped
+      // dead. Seen on a real live: 157 seconds, and it came back by itself.
+      : pg.quiet >= 60 ? `TikTok has sent nothing for ${quietFor} minute${quietFor === 1 ? '' : 's'}. Chat is coming from the page meanwhile, but gifts and coins cannot arrive until TikTok speaks again. If it stays quiet the reader opens your live page again.`
       : shown ? 'Reading your live chat and gifts. Leave the TikTok window open - it can sit behind everything, and it stays muted.' +
         (pg.signed_in === false ? ' Signed out is fine; sign in there only if your live does not show without it.' : '')
       : 'Reading your live chat and gifts, in the background.' +

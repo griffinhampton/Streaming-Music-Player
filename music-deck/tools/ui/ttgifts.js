@@ -573,6 +573,17 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   toRoom(G({ from: user(406, 'AfterQuiet', 'afterquiet'), streak: false }));
   await sleep(2500);
   check('and reads the live again afterwards', await n('AfterQuiet') === 1, J(st && st.page));
+  // And while it is quiet the panel says so. Chat limps on from the page's own
+  // drawing, so "Reading your live chat and gifts" would be true and useless:
+  // the coins stopped. The reader's own wait is long now, so nothing reloads
+  // while this waits out the minute the panel warns after.
+  await sleep(65000);
+  const quietPanel = await openPage(`${RIG}/liveview.html`);
+  await sleep(4000);
+  const quietHint = await quietPanel.ev(`document.querySelector('#chatPanel [data-cp="tthint"]').textContent`);
+  check('the chat panel says TikTok has gone quiet, and why the coins stopped',
+    /sent nothing for/.test(quietHint) && /gifts and coins cannot arrive/.test(quietHint), J(quietHint));
+  await closePage(quietPanel);
 
   // ------------------------------------------ 10. opened before going live
   // The page shows no live and opens no room socket; the reader looks again

@@ -85,6 +85,8 @@ SOCKET_FRESH = 60
 # outage that recovers, which was minutes, and below leaving a stream's gifts
 # to a socket that never recovers - the 28 minutes this exists for.
 SILENT = 600
+# How coarsely the reader reports that silence (_quiet says why it is coarse).
+QUIET_STEP = 15
 # Opened before the streamer is live, the live page shows the live has ended
 # and opens no room socket (seen 2026-09-15). Whether TikTok's page moves on to
 # the live by itself when it starts was not seen either way - it asks
@@ -569,8 +571,17 @@ class TikTokAdapter(chat.Adapter):
 
     def _quiet(self):
         """Seconds since the room socket last said anything - a gift arrives on
-        no other - or None if it has not been heard at all yet."""
-        return None if self.room.heard == float("-inf") else round(time.monotonic() - self.room.heard)
+        no other - or None if it has not been heard at all yet.
+
+        In steps of QUIET_STEP, and never rounded up: this rides the state feed
+        (chat.py's snapshot), where a number ticking every second would put the
+        whole state on the wire every second, for every window. That is the
+        mistake the gift counter is kept out of the snapshot for, and the one
+        tools/ui/keyleak.js watches for - though not here, since it runs with no
+        reader connected at all."""
+        if self.room.heard == float("-inf"):
+            return None
+        return int((time.monotonic() - self.room.heard) // QUIET_STEP) * QUIET_STEP
 
     def _reopen_due(self, now):
         """Time to open the streamer's own page again? Twice as long between

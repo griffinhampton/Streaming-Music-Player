@@ -1082,6 +1082,17 @@ a stream's gifts to a socket that never heals - the 28 minutes this was built
 for. Three measurements, two of them overturning what the last one was taken to
 mean; the number stands at ten minutes and the reasoning is now the right one.
 
+**And the panel says so.** During that 157-second outage the chat panel read
+"Reading your live chat and gifts" - true, and useless: chat was limping on
+from the page's own drawing while the coins had stopped dead. After a minute of
+silence it now says how long TikTok has been quiet, that chat is coming from
+the page meanwhile, that gifts and coins cannot arrive until it speaks again,
+and that the page will be opened again if it stays that way. The seconds are
+reported in steps of fifteen and never rounded up, because that number rides
+the state feed: one ticking every second would put the whole state on the wire
+every second, for every window open - the mistake the gift counter is kept out
+of the snapshot for.
+
 **The whole chain, on a real live.** The same run is what checked it: the rig's
 own server pointed at a public live for eight minutes, sampled every thirty
 seconds. It stayed on that live's page throughout, chat came from the room
