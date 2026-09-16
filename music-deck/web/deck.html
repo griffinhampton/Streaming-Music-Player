@@ -72,16 +72,21 @@
 <div class="band-head">
   <h2 class="band"><span class="band-no">1</span> Pick a window to put on stream</h2>
   <div class="band-actions">
-    <button id="canvasBtn" class="btn btn-ghost btn-sm" title="Open the Canvas Builder in its own window">Canvas Builder</button>
+    <button id="canvasBtn" class="btn btn-primary btn-sm" title="Open the Canvas Builder in its own window - design a scene of your own">Build a scene…</button>
     <button id="helpBtn" class="btn btn-ghost btn-sm" title="Show the welcome help again" aria-label="Show help">?</button>
   </div>
+  <!-- What a scene is, said once where the doorway to it lives: the word means
+       nothing until somebody tells you, and the Canvas group in the strip
+       below otherwise looks like just another window to open. -->
+  <p class="band-hint"><span>Each card below is one window you can put on your stream. A <b>scene</b> is your
+    own layout - camera, pictures, chat, gifts, all in one window - and <b>Build a scene…</b> is where you make one.</span></p>
 </div>
 <div class="strip" id="compStrip">
-  <button class="strip-arrow prev" id="stripPrev" type="button" tabindex="-1" aria-label="Scroll the windows left">&#8249;</button>
+  <button class="strip-arrow prev" id="stripPrev" type="button" aria-label="Scroll the windows left">&#8249;</button>
   <!-- Drawn by deck.js from the component registry (the state's "components"):
        Music and words, Screen sharing, Canvas. -->
   <nav class="windows" id="windowsBar" aria-label="Stream windows"></nav>
-  <button class="strip-arrow next" id="stripNext" type="button" tabindex="-1" aria-label="Scroll the windows right">&#8250;</button>
+  <button class="strip-arrow next" id="stripNext" type="button" aria-label="Scroll the windows right">&#8250;</button>
 </div>
 
 <main class="grid">

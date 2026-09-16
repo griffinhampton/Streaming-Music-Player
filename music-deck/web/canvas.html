@@ -50,8 +50,13 @@
   <button type="button" class="btn sm" id="liveViewOpen" title="The Live view: what is on air, how the stream is going out, the scene switcher, sound and chat, in one window">Live view</button>
   <button type="button" class="btn sm" id="soundBtn" aria-haspopup="dialog" title="Your microphone and the desktop sound: which one, how loud, muted or not, hearing yourself, and what counts as talking">Sound</button>
   <button type="button" class="btn sm" id="chatBtn" aria-haspopup="dialog" title="Chat from every service in one list, with commands and mentions marked. Hide a message, or stop showing someone here.">Chat</button>
-  <button type="button" class="btn" id="openOutput" title="Gives this scene a window of its own on this computer, to add as a source in TikTok Studio or OBS. On its own this does not put you on the internet - Off air does that">Open output</button>
-  <button type="button" class="btn icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-haspopup="dialog">?</button>
+  <!-- Kept together: last on the bar, the ? wrapped onto a row of its own the
+       moment the window narrowed, which looks like a mistake rather than a
+       button. A group wraps as one thing. -->
+  <div class="cb-group">
+    <button type="button" class="btn" id="openOutput" title="Gives this scene a window of its own on this computer, to add as a source in TikTok Studio or OBS. On its own this does not put you on the internet - Off air does that">Open output</button>
+    <button type="button" class="btn icon" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-haspopup="dialog">?</button>
+  </div>
 </header>
 
 <div class="cb-body">

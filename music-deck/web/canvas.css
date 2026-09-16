@@ -160,7 +160,9 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .tree { display: flex; flex-direction: column; gap: 2px; outline: none; }
 .row {
   display: flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 6px 0 calc(6px + var(--indent, 0px));
+  /* A row is a thing to hit with a mouse, not a line of text: 38 px, with the
+     eye and the lock big enough to aim at without care. */
+  height: 38px; padding: 0 6px 0 calc(6px + var(--indent, 0px));
   border-radius: calc(var(--radius) * .5);
   border: 1px solid transparent;
   cursor: default; user-select: none;
@@ -175,12 +177,12 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-name input { width: 100%; height: 24px; }
 .row-btn {
-  width: 24px; height: 24px; padding: 0; flex: 0 0 auto;
+  width: 30px; height: 30px; padding: 0; flex: 0 0 auto;
   background: transparent; border: 0; border-radius: 6px; color: var(--dim); cursor: pointer; font-size: 13px;
 }
 .row-btn:hover { color: var(--fg); background: var(--panel-2); }
 /* Sized by the button, the way deck.css sizes .icon and .icon-btn glyphs. */
-.row-btn .glyph { width: 15px; height: 15px; display: block; margin: 0 auto; }
+.row-btn .glyph { width: 17px; height: 17px; display: block; margin: 0 auto; }
 .row-btn.on { color: var(--fg); }
 .caret { width: 18px; }
 /* A type mark that is drawn rather than typed (icons.js), in the same 20 px
@@ -509,13 +511,33 @@ textarea.input { height: auto; min-height: 64px; padding: 6px 8px; resize: verti
 .ap.up { background: var(--panel-2); }
 .ap.up b { font-size: 1.5em; font-weight: 400; line-height: 1; }
 .ap.on, .scene-thumb.on, .srcgrid .src[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--fg); }
+/* Pictures, scenes and the Add cards rise a little under the pointer, the way
+   the deck's picture tiles do - one idiom across both windows, so a grid of
+   pictures behaves the same wherever it appears. The press puts it back down. */
+.ap, .scene-thumb, .srcgrid .src {
+  transition: border-color 120ms ease, transform 90ms ease, box-shadow 120ms ease;
+}
+.ap:hover, .scene-thumb:hover, .srcgrid .src:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .34);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line-strong));
+}
+.ap:active, .scene-thumb:active, .srcgrid .src:active { transform: translateY(0); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ap:hover, .scene-thumb:hover, .srcgrid .src:hover { transform: none; }
+}
 .scpick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .scene-thumb {
   padding: 0; overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
   background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: 7px; color: var(--label); font-size: .72em;
 }
 .scene-thumb-img { display: block; height: 42px; background-size: cover; background-position: center; }
-.scene-thumb > span:last-child { padding: 3px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+/* Two lines rather than an ellipsis. These names are how one piece of artwork
+   is told from another, and "Watercolor blo..." tells nobody anything. */
+.scene-thumb > span:last-child {
+  padding: 3px 4px; text-align: left; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
 .srcgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; max-height: 270px; overflow: auto; padding: 2px; }
 .srcgrid .src {
   display: flex; flex-direction: column; gap: 3px; padding: 4px; cursor: pointer; text-align: left;
@@ -610,7 +632,12 @@ button.cb-live:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(-
    control that comes and goes reads as the app mislaying things, and it moved
    everything to its right while the pointer was on the way to it. Choosing a
    size with the grid off is harmless, so it simply stays. */
-/* 150% on a 1920 x 1080 screen is 1280 wide: a tighter bar still fits one row. */
+/* 150% on a 1920 x 1080 screen is 1280 wide. This used to claim the tighter
+   bar still fits one row; it does not, and never did - measured at 1280, 1440
+   and 1600 it wraps at every one of them, with or without the groups. So what
+   this tightening decides is how much of the bar lands on the second row, not
+   whether there is one. Keeping each group's buttons together is what stops
+   that row from opening with a lone "?". */
 @media (max-width: 1440px) {
   .cb-top { gap: 6px; padding-left: 10px; padding-right: 10px; }
   #scenePick { min-width: 140px; }

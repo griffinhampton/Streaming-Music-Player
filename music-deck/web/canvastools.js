@@ -59,7 +59,13 @@ function paintPrefs() {
   if (![...gs.options].some((o) => o.value === size)) gs.add(new Option(size, size));
   gs.value = size;
   $('gridSize').disabled = !prefs.grid;
-  $('safeBtn').disabled = !zonesOf(store.scene).length;
+  // Off for a scene whose shape has none - horizontal today - and it says so
+  // rather than sitting there grey: a button with no reason reads as broken.
+  const zones = zonesOf(store.scene).length;
+  $('safeBtn').disabled = !zones;
+  $('safeBtn').title = zones
+    ? 'Show where TikTok\'s own buttons and comments sit over your scene'
+    : 'Only phone scenes have these: TikTok puts its buttons and comments over a phone live, not a wide one';
 }
 for (const [id, k, name] of PREF_BUTTONS) {
   $(id).addEventListener('click', () => { setPref(k, !prefs[k]); announce(`${name} ${prefs[k] ? 'on' : 'off'}`); });
