@@ -35,7 +35,12 @@ const RIG = `http://127.0.0.1:${rigPort}`;
 const FIXTURE_PORT = 6791;
 const PORT_FILE = path.resolve(__dirname, '..', '..', '..', '.rig', 'testrig', 'cache', 'chrome-tiktok', 'DevToolsActivePort');
 const CRLF = String.fromCharCode(13, 10);
-setTimeout(() => { console.log('TIMEOUT'); process.exit(3); }, 180000).unref();
+// Six minutes. Three was enough until the quiet section, which waits out a
+// minute of silence for the panel's warning and then counts state-feed sends
+// for ten seconds more; the probe reached its last step with every check
+// passed and was killed by its own clock, which is a failure that teaches
+// nothing. The waits are the point of those checks, so the clock gives way.
+setTimeout(() => { console.log('TIMEOUT'); process.exit(3); }, 360000).unref();
 
 const results = [];
 const check = (n, ok, d = '') => {
@@ -557,10 +562,16 @@ const PWNED = `({ pwned: window.__pwned === undefined ? null : window.__pwned,
   // nothing. Nothing is sent here for a while, and the reader opens the page
   // again by itself (tiktok_chat.SILENT), then reads what comes after.
   await post('/api/debug/tiktok-page', { base: `http://127.0.0.1:${FIXTURE_PORT}`, reopen: 3, silent: 5 });
+  // One frame first, to settle the backoff. Looking again doubles the wait each
+  // time (3, 6, 12, 24...), and the section above makes the reader look more
+  // than once - so without this the reopen below can still be pending when the
+  // poll gives up, which fails a working reader for being slow on purpose.
+  toRoom(G({ from: user(407, 'Settle', 'settle'), streak: false, coins: 1 }));
+  await sleep(1500);
   const quietLooks = (((await tiktokStatus()) || {}).page || {}).looks || 0;
   const quietLoads = pageLoads;
   let woke = null;
-  for (let i = 0; i < 80; i++) {                       // nothing sent: let it go quiet
+  for (let i = 0; i < 160; i++) {                      // nothing sent: let it go quiet
     await sleep(250); woke = await tiktokStatus();
     if (woke && woke.page && woke.page.looks > quietLooks && woke.page.own === true) break;
   }
